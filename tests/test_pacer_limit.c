@@ -1,0 +1,138 @@
+#define _GNU_SOURCE
+#include "pacer_limit.h"
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+static void write_limit(const char *path, const char *value)
+{
+    FILE *file = fopen(path, "we");
+    assert(file);
+    assert(fputs(value, file) >= 0);
+    assert(!fclose(file));
+    assert(!chmod(path, 0600));
+}
+
+int main(void)
+{
+    char directory[] = "/tmp/frame-pacer-limit.XXXXXX";
+    char config[1200], state[1200], path[1200];
+    struct frame_pacer_limit limit;
+    bool changed;
+    bool quota_enabled;
+    bool hud_enabled;
+
+    assert(mkdtemp(directory));
+    assert(snprintf(config, sizeof(config), "%s/config", directory) > 0);
+    assert(!mkdir(config, 0700));
+    assert(snprintf(state, sizeof(state), "%s/frame-pacer", config) > 0);
+    assert(!mkdir(state, 0700));
+    assert(snprintf(path, sizeof(path), "%s/frame-pacer.conf", state) > 0);
+    assert(!setenv("XDG_CONFIG_HOME", config, 1));
+    frame_pacer_limit_init(&limit);
+    assert(frame_pacer_limit_poll(&limit, 1, &changed) == FRAME_PACER_DEFAULT_FPS && !changed);
+    assert(frame_pacer_limit_hud_enabled(&limit));
+    write_limit(path, "# global cap\n"
+                      "global_fps_limit = 30\n\n"
+                      "[unrelated game]\n"
+                      "executable = \"other-game\"\n"
+                      "fps_limit = 40\n\n"
+                      "[Test process]\n"
+                      "fps_limit = 45\n"
+                      "executable = \"test_pacer_limit\"\n");
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS + 2, &changed) == 45 &&
+           changed);
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS + 3, &changed) == 45 &&
+           !changed);
+    assert(!frame_pacer_limit_thread_cpu_quota(&limit, &quota_enabled) && !quota_enabled);
+    write_limit(path, "global_fps_limit = 30\n"
+                      "hud = off\n"
+                      "[Test process]\n"
+                      "executable = \"test_pacer_limit\"\n"
+                      "fps_limit = 45\n");
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS * 2 + 3, &changed) == 45 &&
+           !changed);
+    hud_enabled = frame_pacer_limit_hud_enabled(&limit);
+    assert(!hud_enabled);
+    write_limit(path, "global_fps_limit = 30\n"
+                      "[Test process]\n"
+                      "executable = \"test_pacer_limit\"\n"
+                      "fps_limit = 45\n"
+                      "thread_cpu_limit = 75%\n");
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS * 3 + 4, &changed) == 45 &&
+           !changed);
+    assert(frame_pacer_limit_hud_enabled(&limit));
+    assert(frame_pacer_limit_thread_cpu_quota(&limit, &quota_enabled) == 75 && quota_enabled);
+    write_limit(path, "global_fps_limit = 30\n"
+                      "[Test process]\n"
+                      "executable = \"test_pacer_limit\"\n"
+                      "fps_limit = 45\n"
+                      "thread_cpu_limit = off\n");
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS * 4 + 5, &changed) == 45 &&
+           !changed);
+    assert(!frame_pacer_limit_thread_cpu_quota(&limit, &quota_enabled) && !quota_enabled);
+    write_limit(path, "global_fps_limit = 30\n"
+                      "[Test process]\n"
+                      "executable = \"test_pacer_limit\"\n"
+                      "fps_limit = 45\n"
+                      "thread_cpu_limit = 75%\n"
+                      "thread_cpu_limit = off\n");
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS * 5 + 6, &changed) ==
+           FRAME_PACER_DEFAULT_FPS && changed);
+    assert(snprintf(limit.executable_candidates[1], FRAME_PACER_EXECUTABLE_MAX,
+                    "%s", "launcher.exe") > 0);
+    limit.executable_candidate_count = 2;
+    write_limit(path, "global_fps_limit = 30\n"
+                      "[launcher]\nexecutable = \"launcher.exe\"\nfps_limit = 40\n"
+                      "[Test process]\n"
+                      "executable = \"test_pacer_limit\"\nfps_limit = 45\n");
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS * 6 + 7, &changed) == 45 &&
+           changed);
+    write_limit(path, "global_fps_limit = 30\n"
+                      "[launcher]\nexecutable = \"launcher.exe\"\nfps_limit = 40\n");
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS * 7 + 8, &changed) == 40 &&
+           changed);
+    write_limit(path, "global_fps_limit = 30\n"
+                      "[unrelated game]\nexecutable = \"other-game.exe\"\nfps_limit = 40\n");
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS * 8 + 9, &changed) == 30 &&
+           changed);
+    write_limit(path, "global_fps_limit = 30\n"
+                      "[bad rule]\nexecutable = \"test_pacer_limit\"\nfps_limit = 45\n"
+                      "[duplicate]\nexecutable = \"test_pacer_limit\"\nfps_limit = 50\n");
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS * 9 + 10, &changed) ==
+           FRAME_PACER_DEFAULT_FPS && changed);
+    write_limit(path, "fps_limit = 30\n");
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS * 10 + 11, &changed) ==
+           FRAME_PACER_DEFAULT_FPS && !changed);
+    write_limit(path, "global_fps_limit = 30\nthread_cpu_quota = 50%\n");
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS * 11 + 12, &changed) ==
+           FRAME_PACER_DEFAULT_FPS && !changed);
+    assert(!frame_pacer_limit_thread_cpu_quota(&limit, &quota_enabled) && !quota_enabled);
+    write_limit(path, "global_fps_limit = 30\n[Test process]\nexecutable = \"test_pacer_limit\"\n"
+                      "fps_limit = 45\ncpu_quota = 100%\n");
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS * 12 + 13, &changed) ==
+           FRAME_PACER_DEFAULT_FPS && !changed);
+    write_limit(path, "global_fps_limit = 30\n[Test process]\nexecutable = \"test_pacer_limit\"\n"
+                      "fps_limit = 45\nthread_cpu_limit = 0%\n");
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS * 13 + 14, &changed) ==
+           FRAME_PACER_DEFAULT_FPS && !changed);
+    write_limit(path, "global_fps_limit = 30\n[Test process]\nexecutable = \"test_pacer_limit\"\n"
+                      "fps_limit = 45\nthread_cpu_limit = 101%\n");
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS * 14 + 15, &changed) ==
+           FRAME_PACER_DEFAULT_FPS && !changed);
+    write_limit(path, "global_fps_limit = invalid\n");
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS * 15 + 16, &changed) ==
+           FRAME_PACER_DEFAULT_FPS && !changed);
+    assert(!chmod(path, 0644));
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS * 16 + 17, &changed) ==
+           FRAME_PACER_DEFAULT_FPS && !changed);
+    frame_pacer_limit_destroy(&limit);
+    assert(!unlink(path));
+    assert(!rmdir(state));
+    assert(!rmdir(config));
+    assert(!rmdir(directory));
+    return 0;
+}

@@ -1,0 +1,8 @@
+# Build products, including isolated Wine/Proton probe prefixes.
+/build/
+
+# Local editor and test artefacts.
+*.swp
+*.swo
+*~
+.cache/

@@ -4,6 +4,8 @@ Frame-pacer is a Linux frame limiter and compact performance HUD for Steam
 games. It supports Vulkan through an implicit layer and GLX/EGL through an
 opt-in per-game preload shim.
 
+![frame-pacer HUD](docs/images/frame-pacer-hud.png)
+
 > **Early release:** frame-pacer changes graphics presentation and can create a
 > private cgroup-v2 hierarchy for an explicitly configured game. Start with one
 > game, keep a rollback path, and report reproducible problems before enabling
@@ -35,6 +37,7 @@ Create `~/.config/frame-pacer/frame-pacer.conf` with permissions `0600`:
 
 ```ini
 global_fps_limit = 70
+hud = on
 
 [Example game]
 executable = "ExampleGame.exe"
@@ -45,6 +48,10 @@ thread_cpu_limit = off
 Replace `ExampleGame.exe` with the game's actual renderer executable basename.
 `thread_cpu_limit` is optional; enable it only after normal pacing is working.
 After saving the file, run `chmod 600 ~/.config/frame-pacer/frame-pacer.conf`.
+
+Set the top-level `hud` option to `off` to hide the HUD while keeping frame
+pacing active. Changing it back to `on` takes effect in a running game within
+one second.
 
 ### Enable Vulkan games
 
@@ -71,6 +78,53 @@ LD_PRELOAD=/absolute/path/to/frame-pacer/build/${LIB}/libframe_pacer_gl_shim.so 
 
 Replace `/absolute/path/to/frame-pacer` with this checkout's absolute path.
 Fully exit Steam before changing per-game launch options, then restart it.
+
+## Thread CPU limiting
+
+`thread_cpu_limit` is an optional, per-game control for a CPU-hot game thread.
+Set it only inside the executable rule you want to affect:
+
+```ini
+[Example game]
+executable = "ExampleGame.exe"
+fps_limit = 60
+thread_cpu_limit = 35%
+```
+
+Accepted values are `1%` through `100%`, or `off`. The percentage is CPU time
+relative to **one logical CPU core**. At `35%`, each individual game thread
+can use up to roughly 35 ms of CPU time in each 100 ms scheduling period before
+it is throttled. This is useful when a game has one CPU-hot thread that drives
+high boost clocks or temperatures.
+
+The limit is not global and is not a total-game CPU cap: several active game
+threads can each use their own allowance at the same time. It therefore
+reduces the maximum load of any one thread, but does not guarantee a fixed CPU
+package temperature or total CPU use.
+
+Changes apply live. Edit `35%` to another valid value, or set `off` to remove
+the limit and its controller without restarting the game or Steam. A missing or
+invalid configuration also fails closed by disabling the limit.
+
+When the limit is active, the purple `THR` HUD row appears:
+
+```text
+THR <peak thread use> <configured limit>
+```
+
+The limit is shown as a percentage only after frame-pacer verifies every
+current game thread in its own owned cgroup with the requested ceiling;
+otherwise it displays `N/A`. The first value is the real busiest-thread CPU
+use over the preceding sample window. It can modestly exceed the configured
+limit at a 100 ms quota-period boundary; a sustained or large excess should be
+reported as a bug.
+
+Frame-pacer creates only a private, transient cgroup-v2 subtree beneath a
+user-owned scope for the selected game. It never changes Steam, a parent
+cgroup, or unrelated processes. The controller removes its owned cgroups when
+the game exits, crashes, or the setting is turned off. See
+[CPU thread limiter](docs/cpu-thread-limiter.md) for the full design and
+opt-in integration checks.
 
 ## Inspired by MangoHud
 
@@ -110,9 +164,6 @@ Frame-pacer is complementary to MangoHud, not a replacement for it.
   activation boundaries.
 - [Contributing](CONTRIBUTING.md) — development and test expectations.
 - [Security policy](SECURITY.md) — reporting guidance.
-- [Backend reference](docs/reference/backends.md) and
-  [quiet-present policy](docs/reference/vulkan-quiet-present.md) — coverage,
-  limitations, and evidence.
 
 ## Support scope
 

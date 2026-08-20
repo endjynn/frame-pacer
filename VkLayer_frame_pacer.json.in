@@ -1,0 +1,11 @@
+{
+  "file_format_version": "1.0.0",
+  "layer": {
+    "name": "VK_LAYER_ENDJYNN_frame_pacer",
+    "type": "GLOBAL",
+    "library_path": "../libVkLayer_frame_pacer.so",
+    "api_version": "1.3.0",
+    "implementation_version": "1",
+    "description": "frame-pacer Vulkan limiter and performance HUD"
+  }
+}
