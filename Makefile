@@ -3,6 +3,13 @@ CFLAGS ?= -O2 -g
 WARNINGS := -Wall -Wextra -Werror -Wpedantic
 BUILD_CFLAGS := -std=c17 $(WARNINGS) -fPIC -fdebug-prefix-map=$(abspath .)=. $(CFLAGS)
 MINGW_CFLAGS := -std=c17 $(WARNINGS)
+PREFIX ?= $(HOME)/.local
+INSTALL_LIBDIR ?= $(PREFIX)/lib/frame-pacer
+INSTALL_LAYERDIR ?= $(PREFIX)/share/vulkan/implicit_layer.d
+INSTALL_X86_64_LIB := $(INSTALL_LIBDIR)/x86_64/libVkLayer_frame_pacer.so
+INSTALL_I386_LIB := $(INSTALL_LIBDIR)/i386/libVkLayer_frame_pacer.so
+INSTALL_X86_64_MANIFEST := $(INSTALL_LAYERDIR)/VkLayer_frame_pacer.x86_64.json
+INSTALL_I386_MANIFEST := $(INSTALL_LAYERDIR)/VkLayer_frame_pacer.i386.json
 
 PACER_SRC := \
 	src/pacer_clock.c \
@@ -52,10 +59,30 @@ GL_RUNTIME_ARTIFACTS := \
 	build/lib/x86_64-linux-gnu/libframe_pacer_gl_shim.so \
 	build/lib/i386-linux-gnu/libframe_pacer_gl_shim.so
 
-.PHONY: all check check-unit clean thread-cpu-quota-probe run-thread-cpu-quota-probe thread-cpu-quota-controller-integration run-thread-cpu-quota-controller-integration dxgi-forward-probe hud-shaders \
+.PHONY: all check check-unit clean install uninstall thread-cpu-quota-probe run-thread-cpu-quota-probe thread-cpu-quota-controller-integration run-thread-cpu-quota-controller-integration dxgi-forward-probe hud-shaders \
 	metrics-probe pci-probe research winepath-probe
 
 all: $(VULKAN_ARTIFACTS) $(CONTROLLER_ARTIFACT)
+install: $(VULKAN_ARTIFACTS)
+	install -d "$(DESTDIR)$(INSTALL_LIBDIR)/x86_64" \
+		"$(DESTDIR)$(INSTALL_LIBDIR)/i386" "$(DESTDIR)$(INSTALL_LAYERDIR)"
+	install -m 0755 build/x86_64/libVkLayer_frame_pacer.so \
+		"$(DESTDIR)$(INSTALL_X86_64_LIB)"
+	install -m 0755 build/i386/libVkLayer_frame_pacer.so \
+		"$(DESTDIR)$(INSTALL_I386_LIB)"
+	sed -e 's|@LIBRARY_PATH@|$(INSTALL_X86_64_LIB)|' \
+		-e 's|@LAYER_NAME@|VK_LAYER_ENDJYNN_frame_pacer_x86_64|' \
+		VkLayer_frame_pacer_implicit.json.in > "$(DESTDIR)$(INSTALL_X86_64_MANIFEST)"
+	sed -e 's|@LIBRARY_PATH@|$(INSTALL_I386_LIB)|' \
+		-e 's|@LAYER_NAME@|VK_LAYER_ENDJYNN_frame_pacer_i386|' \
+		VkLayer_frame_pacer_implicit.json.in > "$(DESTDIR)$(INSTALL_I386_MANIFEST)"
+uninstall:
+	rm -f "$(DESTDIR)$(INSTALL_X86_64_MANIFEST)" \
+		"$(DESTDIR)$(INSTALL_I386_MANIFEST)" \
+		"$(DESTDIR)$(INSTALL_X86_64_LIB)" "$(DESTDIR)$(INSTALL_I386_LIB)"
+	rmdir "$(DESTDIR)$(INSTALL_LIBDIR)/x86_64" \
+		"$(DESTDIR)$(INSTALL_LIBDIR)/i386" "$(DESTDIR)$(INSTALL_LIBDIR)" \
+		"$(DESTDIR)$(INSTALL_LAYERDIR)" 2>/dev/null || true
 $(CONTROLLER_ARTIFACT): src/thread_cpu_quota_controller.c
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -o $@ $<
@@ -260,6 +287,7 @@ check: all hud-shaders $(GL_ARTIFACTS) $(GL_RUNTIME_ARTIFACTS) \
 	build/test-gl-shim-noop \
 	build/test-gl-shim-noop-i386 \
 	check-unit
+	sh ./tests/test_install.sh
 	sh ./tests/test_gl_pacer.sh
 	sh ./tests/test_gl_pacer.sh i386
 	spirv-val --target-env vulkan1.0 build/shaders/hud.vert.spv

@@ -17,11 +17,18 @@ Clone the repository and run:
 
 ```sh
 make check
+make install
 ```
 
-This creates `build/` inside the checkout. Keep that checkout and its build
-directory in place while Steam is configured to reference it; moving or
-deleting it disables the integration.
+`make install` installs the x86_64 and i386 Vulkan layer libraries under
+`~/.local/lib/frame-pacer` and their manifests under
+`~/.local/share/vulkan/implicit_layer.d`. No root access is required. The
+Vulkan loader discovers those manifests automatically, so Steam only needs
+`ENABLE_FRAME_PACER_HUD=1` to activate frame-pacer.
+
+Set `PREFIX`, `INSTALL_LIBDIR`, or `INSTALL_LAYERDIR` when using a non-default
+installation. `DESTDIR` is supported for staged package builds. The GLX/EGL
+preload shim is not installed: it remains an explicit per-game launch option.
 
 ## Configure a game
 
@@ -46,6 +53,7 @@ backend. Start with one game, confirm the HUD and pacing, then expand slowly.
 ## Uninstall and recovery
 
 Remove frame-pacer's Steam launcher environment and any per-game GL preload
-option, then fully restart Steam. You may remove the configuration file and
-the checkout after no Steam setting references its build directory. The CPU
-controller cleans up when the game, frame-pacer, or its transient scope exits.
+option, then fully restart Steam. Run `make uninstall` from the same checkout
+to remove the installed Vulkan manifests and libraries. You may then remove
+the configuration file and checkout. The CPU controller cleans up when the
+game, frame-pacer, or its transient scope exits.

@@ -24,6 +24,7 @@ Build and test both 64-bit and 32-bit artifacts:
 git clone https://github.com/endjynn/frame-pacer.git
 cd frame-pacer
 make check
+make install
 ```
 
 Create the configuration directory and a first rule:
@@ -55,17 +56,16 @@ one second.
 
 ### Enable Vulkan games
 
-For a safe first test, start Steam from a terminal in the checkout:
+After installation, start Steam with the layer enabled:
 
 ```sh
-VK_ADD_IMPLICIT_LAYER_PATH="$PWD/build/x86_64/implicit_layer:$PWD/build/i386/implicit_layer" \
 ENABLE_FRAME_PACER_HUD=1 \
 steam
 ```
 
-This enables frame-pacer's Vulkan implicit layer for that Steam session only.
-Confirm the HUD and pacing in one Vulkan/DXVK/vkd3d-proton game. For a
-permanent desktop-launcher setup, see [Steam integration](docs/steam-integration.md).
+This enables frame-pacer's installed Vulkan implicit layer for that Steam
+session only. Confirm the HUD and pacing in one Vulkan/DXVK/vkd3d-proton game.
+For a permanent desktop-launcher setup, see [Steam integration](docs/steam-integration.md).
 
 ### Enable GLX/EGL games
 
