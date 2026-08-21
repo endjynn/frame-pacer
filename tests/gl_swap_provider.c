@@ -1,15 +1,33 @@
+#define EGL_EGLEXT_PROTOTYPES
+#define GL_GLEXT_PROTOTYPES
 #include <EGL/egl.h>
+#include <EGL/eglext.h>
 #include <GL/gl.h>
+#include <GL/glext.h>
 #include <GL/glx.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
 
-static unsigned int glx_calls, egl_calls, vertices;
+unsigned int frame_pacer_test_glx_calls(void);
+unsigned int frame_pacer_test_egl_calls(void);
+void frame_pacer_test_set_egl_context(GLboolean);
+void frame_pacer_test_set_context(uintptr_t, GLboolean);
+unsigned int frame_pacer_test_gl_vertices(void);
+unsigned int frame_pacer_test_gl_programs(void);
+unsigned int frame_pacer_test_glx_destroy_calls(void);
+unsigned int frame_pacer_test_egl_destroy_calls(void);
+unsigned int frame_pacer_test_egl_terminate_calls(void);
+unsigned int frame_pacer_test_native_vertex_shader(void);
+unsigned int frame_pacer_test_gl_state_preserved(void);
+
+static unsigned int glx_calls, egl_calls, vertices, programs;
+static unsigned int glx_destroy_calls, egl_destroy_calls, egl_terminate_calls;
 static GLboolean native_vertex_shader;
 static GLboolean egl_context_active;
+static uintptr_t current_context = 1;
 static GLint framebuffer = 7, active_texture = 0x84C3, texture = 19, sampler = 23;
-static GLint program = 29, vao = 31, array_buffer = 37;
+static GLint bound_program = 29, vao = 31, array_buffer = 37;
 static GLint viewport[4] = {41, 43, 1920, 1200};
 static GLint scissor_box[4] = {47, 53, 1800, 1000};
 static GLint color_mask[4] = {1, 0, 1, 0};
@@ -44,8 +62,41 @@ EGLBoolean eglSwapBuffersWithDamageKHR(EGLDisplay display, EGLSurface surface,
     return EGL_TRUE;
 }
 
+EGLBoolean eglSwapBuffersWithDamageEXT(EGLDisplay display, EGLSurface surface,
+                                       const EGLint *rects, EGLint count)
+{
+    (void)display;
+    (void)surface;
+    (void)rects;
+    (void)count;
+    ++egl_calls;
+    return EGL_TRUE;
+}
+
+void glXDestroyContext(Display *display, GLXContext context)
+{
+    (void)display;
+    (void)context;
+    ++glx_destroy_calls;
+}
+
+EGLBoolean eglDestroyContext(EGLDisplay display, EGLContext context)
+{
+    (void)display;
+    (void)context;
+    ++egl_destroy_calls;
+    return EGL_TRUE;
+}
+
+EGLBoolean eglTerminate(EGLDisplay display)
+{
+    (void)display;
+    ++egl_terminate_calls;
+    return EGL_TRUE;
+}
+
 EGLContext eglGetCurrentContext(void)
-{ return egl_context_active ? (EGLContext)(uintptr_t)2 : EGL_NO_CONTEXT; }
+{ return egl_context_active ? (EGLContext)current_context : EGL_NO_CONTEXT; }
 EGLBoolean eglQuerySurface(EGLDisplay display, EGLSurface surface, EGLint attribute,
                            EGLint *value)
 {
@@ -71,7 +122,16 @@ __GLXextFuncPtr glXGetProcAddress(const GLubyte *name)
 unsigned int frame_pacer_test_glx_calls(void) { return glx_calls; }
 unsigned int frame_pacer_test_egl_calls(void) { return egl_calls; }
 void frame_pacer_test_set_egl_context(GLboolean active) { egl_context_active = active; }
+void frame_pacer_test_set_context(uintptr_t context, GLboolean egl)
+{
+    current_context = context;
+    egl_context_active = egl;
+}
 unsigned int frame_pacer_test_gl_vertices(void) { return vertices; }
+unsigned int frame_pacer_test_gl_programs(void) { return programs; }
+unsigned int frame_pacer_test_glx_destroy_calls(void) { return glx_destroy_calls; }
+unsigned int frame_pacer_test_egl_destroy_calls(void) { return egl_destroy_calls; }
+unsigned int frame_pacer_test_egl_terminate_calls(void) { return egl_terminate_calls; }
 unsigned int frame_pacer_test_native_vertex_shader(void) { return native_vertex_shader; }
 unsigned int frame_pacer_test_gl_state_preserved(void)
 {
@@ -80,7 +140,7 @@ unsigned int frame_pacer_test_gl_state_preserved(void)
     if (active_texture == 0x84C3) result |= 1U << 1;
     if (texture == 19) result |= 1U << 2;
     if (sampler == 23) result |= 1U << 3;
-    if (program == 29) result |= 1U << 4;
+    if (bound_program == 29) result |= 1U << 4;
     if (vao == 31) result |= 1U << 5;
     if (array_buffer == 37) result |= 1U << 6;
     if (viewport[0] == 41 && viewport[1] == 43 && viewport[2] == 1920 && viewport[3] == 1200) result |= 1U << 7;
@@ -91,7 +151,7 @@ unsigned int frame_pacer_test_gl_state_preserved(void)
 }
 
 GLXContext glXGetCurrentContext(void)
-{ return egl_context_active ? 0 : (GLXContext)(uintptr_t)1; }
+{ return egl_context_active ? 0 : (GLXContext)current_context; }
 const GLubyte *glGetString(GLenum parameter)
 { (void)parameter; return (const GLubyte *)"4.6 frame-pacer test"; }
 void glGetIntegerv(GLenum parameter, GLint *value)
@@ -101,7 +161,7 @@ void glGetIntegerv(GLenum parameter, GLint *value)
     else if (parameter == 0x84E0) value[0] = active_texture;
     else if (parameter == 0x8069) value[0] = texture;
     else if (parameter == 0x8919) value[0] = sampler;
-    else if (parameter == 0x8B8D) value[0] = program;
+    else if (parameter == 0x8B8D) value[0] = bound_program;
     else if (parameter == 0x85B5) value[0] = vao;
     else if (parameter == 0x8894) value[0] = array_buffer;
     else if (parameter == GL_VIEWPORT) memcpy(value, viewport, sizeof(viewport));
@@ -119,14 +179,6 @@ void glXQueryDrawable(Display *display, GLXDrawable drawable, int attribute, uns
     (void)display; (void)drawable;
     *value = attribute == GLX_WIDTH ? 1920U : attribute == GLX_HEIGHT ? 1200U : 0U;
 }
-void glPushAttrib(GLbitfield value) { (void)value; }
-void glPopAttrib(void) {}
-void glMatrixMode(GLenum value) { (void)value; }
-void glPushMatrix(void) {}
-void glPopMatrix(void) {}
-void glLoadIdentity(void) {}
-void glOrtho(GLdouble left, GLdouble right, GLdouble bottom, GLdouble top, GLdouble near, GLdouble far)
-{ (void)left; (void)right; (void)bottom; (void)top; (void)near; (void)far; }
 void glDisable(GLenum value)
 { if (value == GL_BLEND) blend = GL_FALSE; else if (value == GL_CULL_FACE) cull = GL_FALSE; else if (value == GL_DEPTH_TEST) depth = GL_FALSE; else if (value == GL_STENCIL_TEST) stencil = GL_FALSE; else if (value == GL_SCISSOR_TEST) scissor = GL_FALSE; else if (value == 0x8DB9) srgb = GL_FALSE; }
 void glEnable(GLenum value)
@@ -146,11 +198,6 @@ void glScissor(GLint x, GLint y, GLsizei width, GLsizei height)
 { scissor_box[0] = x; scissor_box[1] = y; scissor_box[2] = width; scissor_box[3] = height; }
 void glColorMask(GLboolean red, GLboolean green, GLboolean blue, GLboolean alpha)
 { color_mask[0] = red; color_mask[1] = green; color_mask[2] = blue; color_mask[3] = alpha; }
-void glBegin(GLenum value) { (void)value; }
-void glEnd(void) {}
-void glColor4f(GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha)
-{ (void)red; (void)green; (void)blue; (void)alpha; }
-void glVertex2f(GLfloat x, GLfloat y) { (void)x; (void)y; ++vertices; }
 GLuint glCreateShader(GLenum type) { return (GLuint)type; }
 void glShaderSource(GLuint shader, GLsizei count, const GLchar *const *source, const GLint *length)
 {
@@ -164,7 +211,7 @@ void glGetShaderiv(GLuint shader, GLenum parameter, GLint *value)
 void glGetShaderInfoLog(GLuint shader, GLsizei size, GLsizei *length, GLchar *info)
 { (void)shader; if (length) *length = 0; if (size && info) info[0] = '\0'; }
 void glDeleteShader(GLuint shader) { (void)shader; }
-GLuint glCreateProgram(void) { return 1; }
+GLuint glCreateProgram(void) { ++programs; return programs; }
 void glAttachShader(GLuint program, GLuint shader) { (void)program; (void)shader; }
 void glBindAttribLocation(GLuint program, GLuint index, const GLchar *name)
 { (void)program; (void)index; (void)name; }
@@ -174,14 +221,18 @@ void glGetProgramiv(GLuint program, GLenum parameter, GLint *value)
 void glGetProgramInfoLog(GLuint program, GLsizei size, GLsizei *length, GLchar *info)
 { (void)program; if (length) *length = 0; if (size && info) info[0] = '\0'; }
 void glDeleteProgram(GLuint program) { (void)program; }
-void glUseProgram(GLuint value) { program = (GLint)value; }
+void glUseProgram(GLuint value) { bound_program = (GLint)value; }
 GLint glGetUniformLocation(GLuint program, const GLchar *name) { (void)program; (void)name; return 0; }
 void glUniform2f(GLint location, GLfloat x, GLfloat y) { (void)location; (void)x; (void)y; }
 void glGenVertexArrays(GLsizei count, GLuint *arrays) { while (count--) *arrays++ = 2; }
+void glDeleteVertexArrays(GLsizei count, const GLuint *arrays)
+{ (void)count; (void)arrays; }
 void glBindVertexArray(GLuint value) { vao = (GLint)value; }
 void glGenBuffers(GLsizei count, GLuint *buffers) { while (count--) *buffers++ = 3; }
+void glDeleteBuffers(GLsizei count, const GLuint *buffers)
+{ (void)count; (void)buffers; }
 void glBindBuffer(GLenum target, GLuint value) { if (target == 0x8892) array_buffer = (GLint)value; }
-void glBufferData(GLenum target, ptrdiff_t size, const void *data, GLenum usage)
+void glBufferData(GLenum target, GLsizeiptr size, const void *data, GLenum usage)
 { (void)target; (void)size; (void)data; (void)usage; }
 void glEnableVertexAttribArray(GLuint index) { (void)index; }
 void glVertexAttribPointer(GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const void *pointer)

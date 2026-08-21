@@ -9,9 +9,34 @@ git status --short
 make check
 ```
 
-`make check` builds the x86_64 and i386 Vulkan and GL artifacts, runs unit and
-GL integration tests, validates shaders and manifests, and checks the expected
-ELF architectures.
+`make check` builds the x86_64 and i386 Vulkan and GL artifacts, runs unit, GL,
+Vulkan loader, controller CLI, shell-syntax, install, and ABI checks, validates
+shaders, manifests, and the reproducibly generated HUD image, and checks the
+expected ELF architectures. It does not modify cgroups or require a graphical
+session.
+
+Additional gates are intentionally separate:
+
+| Target | Purpose and side effects |
+| --- | --- |
+| `make check-unit-i386` | Cleanly rebuild and execute every isolated unit fixture as i386, then remove its temporary artifacts. |
+| `make check-analyzer` | Clean GCC `-fanalyzer` build of the acceptance graph and presentation probes. |
+| `make check-sanitize` | Clean ASan+UBSan run of isolated unit tests. |
+| `make check-tsan` | Clean ThreadSanitizer run of isolated unit tests. |
+| `make check-coverage` | Clean normalized GCC coverage run; exercises available Vulkan, GLX, and EGL presentation paths and delegated cgroup controller integration. |
+| `make run-vulkan-present-probe` | Real x86_64/i386 X11 swapchain, two-frame HUD presentation, and teardown; requires a graphical Vulkan device. |
+| `make run-glx-present-probe` | Real x86_64/i386 GLX contexts, two HUD swaps, and GL-state restoration; requires a graphical GLX device. |
+| `make run-egl-present-probe` | Real x86_64 X11/EGL context, two HUD swaps, and GL-state restoration; requires a graphical EGL device. |
+| `make run-thread-cpu-quota-probe` | Opt-in delegated cgroup topology probe. |
+| `make run-thread-cpu-quota-controller-integration` | Opt-in live 50%→75%→off→60%→off quota reuse and cleanup test. |
+| `make run-thread-cpu-quota-controller-integration-i386` | The same live reuse/handoff driven by the i386 client, plus test-only active cgroup-write failure, recovery, and controller interruption. |
+| `make docs-hud-image` | Regenerate the README's 352x196 maximum-state HUD image from the production text, font, and vertex code. |
+
+The coverage and cgroup targets can change the calling process's transient
+user-scope topology. Run them only in a suitable delegated systemd user
+session. The analyzer, sanitizer, coverage, and TSan targets start and finish
+by removing the ignored `build/` directory so instrumented objects cannot
+contaminate a later normal incremental build.
 
 Close any game using frame-pacer before replacing its runtime libraries. Do
 not change Steam launcher settings while Steam is running.

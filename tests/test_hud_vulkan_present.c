@@ -1,4 +1,5 @@
 #include "hud_vulkan_present.h"
+#include "hud_vulkan_resources.h"
 
 #include <assert.h>
 #include <stdint.h>
@@ -42,6 +43,7 @@ static VkResult VKAPI_CALL queue_submit(VkQueue queue, uint32_t count,
     assert(info->commandBufferCount == 1);
     assert(info->pCommandBuffers);
     assert(info->pCommandBuffers[0] == (VkCommandBuffer)(uintptr_t)5);
+    assert(!info->waitSemaphoreCount || info->pWaitDstStageMask);
     ++submits;
     return fail_submit ? VK_ERROR_DEVICE_LOST : VK_SUCCESS;
 }
@@ -103,5 +105,17 @@ int main(void)
     assert(!frame_pacer_hud_prepare_present(
         &provider, device, queue, &original, fence, &hud_semaphore, command, 3,
         3, record, 0, &replacement));
+
+    {
+        VkSemaphore many_waits[FRAME_PACER_HUD_MAX_SWAPCHAIN_IMAGES + 1] = {0};
+
+        original.waitSemaphoreCount =
+            (uint32_t)(sizeof(many_waits) / sizeof(many_waits[0]));
+        original.pWaitSemaphores = many_waits;
+        fail_submit = false;
+        assert(frame_pacer_hud_prepare_present(
+            &provider, device, queue, &original, fence, &hud_semaphore, command,
+            image_index, 3, record, 0, &replacement));
+    }
     return 0;
 }

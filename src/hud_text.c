@@ -1,4 +1,5 @@
 #include "hud_text.h"
+#include "pacer_limit.h"
 
 #include <stdio.h>
 
@@ -9,7 +10,7 @@ static const char *format_metric(unsigned int available, unsigned int flag,
     /* Every metric column is four glyph cells wide: three digits plus its
      * unit.  Preserve that width for unavailable values too, otherwise the
      * following column shifts one cell left. */
-    if (!(available & flag)) {
+    if (!(available & flag) || metric > 999) {
         (void)snprintf(output, size, "%4s", "N/A");
         return output;
     }
@@ -22,9 +23,9 @@ static const char *format_metric(unsigned int available, unsigned int flag,
 static const char *format_fps_count(int valid, uint32_t value, char *output,
                                     size_t size)
 {
-    /* FPS has no suffix, but retains the percent/degree unit cell as a blank
-     * so its digits share the same columns as the other HUD metrics. */
-    if (!valid || value > 999)
+    /* Three right-aligned digits plus the compact frame glyph occupy the same
+     * four cells as every other metric column. */
+    if (!valid || value > FRAME_PACER_MAX_FPS)
         (void)snprintf(output, size, "%4s", "N/A");
     else
         (void)snprintf(output, size, "%3u\x7e", value);
@@ -38,6 +39,10 @@ void frame_pacer_hud_text_format(
     bool thread_cpu_quota_confirmed, uint32_t thread_cpu_quota)
 {
     char use[8], temperature[8], quota[8], fps_column[8], limit_column[8];
+    const struct frame_pacer_metrics_snapshot unavailable = {0};
+
+    if (!text) return;
+    if (!metrics) metrics = &unavailable;
 
     (void)snprintf(text->lines[0], sizeof(text->lines[0]), "GPU %s %s",
                    format_metric(metrics->available, FRAME_PACER_METRIC_GPU_USE,
@@ -52,7 +57,7 @@ void frame_pacer_hud_text_format(
                                  metrics->cpu_temp_celsius, temperature,
                                  sizeof(temperature), "\x7f"));
     if (thread_cpu_quota_configured) {
-        if (thread_cpu_quota_confirmed)
+        if (thread_cpu_quota_confirmed && thread_cpu_quota <= 100)
             (void)snprintf(quota, sizeof(quota), "%3u%%", thread_cpu_quota);
         else
             (void)snprintf(quota, sizeof(quota), "%4s", "N/A");

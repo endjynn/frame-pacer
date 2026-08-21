@@ -6,6 +6,7 @@
 #include "hud_vertices.h"
 #include "hud_vulkan_commands.h"
 #include "hud_vulkan_draw_resources.h"
+#include "hud_vulkan_device.h"
 #include "hud_vulkan_pipeline.h"
 #include "hud_vulkan_present.h"
 #include "hud_vulkan_record.h"
@@ -22,8 +23,6 @@
 #include <vulkan/vk_layer.h>
 #include <vulkan/vulkan.h>
 
-#include <errno.h>
-#include <fcntl.h>
 #include <inttypes.h>
 #include <pthread.h>
 #include <stdarg.h>
@@ -32,11 +31,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
-
-#define LOG_LIMIT (UINT64_C(64) * 1024 * 1024)
 
 struct instance {
     VkInstance handle;
@@ -64,20 +60,7 @@ struct device {
     PFN_vkDestroySwapchainKHR destroy_swapchain;
     PFN_vkDestroyDevice destroy_device;
     VkPhysicalDevice physical_device;
-    frame_pacer_hud_surface_capabilities_fn get_surface_capabilities;
-    struct frame_pacer_hud_vulkan_provider hud_provider;
-    struct frame_pacer_hud_commands hud_commands;
-    struct frame_pacer_hud_draw_provider hud_draw_provider;
-    struct frame_pacer_hud_pipeline_provider hud_pipeline_provider;
-    struct frame_pacer_hud_vertex_buffer_provider hud_vertex_buffer_provider;
-    struct frame_pacer_hud_record_provider hud_record_provider;
-    struct frame_pacer_hud_present_provider hud_present_provider;
-    VkPhysicalDeviceMemoryProperties memory_properties;
-    bool has_memory_properties;
-    bool hud_commands_ready;
-    struct frame_pacer_metrics metrics;
-    struct frame_pacer_metrics_snapshot metrics_snapshot;
-    uint64_t metrics_sample_ns;
+    struct frame_pacer_hud_vulkan_device hud;
     struct device *next;
 };
 
@@ -99,6 +82,7 @@ struct hud_swapchain {
     struct frame_pacer_hud_draw_resources draw_resources;
     struct frame_pacer_hud_pipeline pipeline;
     struct frame_pacer_hud_vertex_buffer vertex_buffer;
+    struct frame_pacer_hud_vertices vertices;
     bool draw_setup_attempted;
     bool disabled;
     bool submitted;
@@ -106,8 +90,6 @@ struct hud_swapchain {
      * may map an implicit layer into a separate linker namespace, so only
      * callback-local state is guaranteed to be shared with the visible draw. */
     struct frame_pacer_fps_tracker fps;
-    bool fps_valid;
-    uint32_t fps_value;
     struct hud_swapchain *next;
 };
 
@@ -118,16 +100,51 @@ static struct queue *queues;
 static struct hud_swapchain *hud_swapchains;
 static PFN_vkGetInstanceProcAddr fallback_gipa;
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
-static int logfd = -1;
-static uint64_t logbytes;
+static struct frame_pacer_runtime_log runtime_log =
+    FRAME_PACER_RUNTIME_LOG_INITIALIZER(1024);
 static uint64_t presents;
-static uint64_t submit_fallbacks;
-static bool capped;
 static struct frame_pacer_clock pacing_clock;
 static struct frame_pacer_limit pacing_limit;
 static struct frame_pacer_thread_cpu_quota thread_cpu_quota;
 static pthread_once_t pacing_clock_once = PTHREAD_ONCE_INIT;
+static pthread_once_t log_once = PTHREAD_ONCE_INIT;
 static bool pacing_initialized;
+
+#ifdef FRAME_PACER_TEST
+void frame_pacer_layer_test_fail_next_allocation(void);
+void frame_pacer_layer_test_fail_allocation_after(size_t);
+uint32_t frame_pacer_layer_test_queue_family_count(VkPhysicalDevice);
+uint32_t frame_pacer_layer_test_physical_device_count(void);
+uint32_t frame_pacer_layer_test_queue_count(void);
+
+static size_t allocations_before_failure = SIZE_MAX;
+
+__attribute__((visibility("hidden")))
+void frame_pacer_layer_test_fail_next_allocation(void)
+{
+    allocations_before_failure = 0;
+}
+
+__attribute__((visibility("hidden")))
+void frame_pacer_layer_test_fail_allocation_after(size_t successes)
+{
+    allocations_before_failure = successes;
+}
+#endif
+
+static void *allocate_zero(size_t count, size_t size)
+{
+#ifdef FRAME_PACER_TEST
+    if (allocations_before_failure != SIZE_MAX) {
+        if (!allocations_before_failure) {
+            allocations_before_failure = SIZE_MAX;
+            return 0;
+        }
+        --allocations_before_failure;
+    }
+#endif
+    return calloc(count, size);
+}
 
 static void logmsg(const char *format, ...);
 
@@ -200,73 +217,27 @@ static bool hud_enabled(uint64_t now)
 
 static void logmsg(const char *format, ...)
 {
-    char buffer[1024];
     va_list args;
-    int length;
-    size_t bytes;
-    ssize_t written;
 
-    if (logfd < 0 || capped)
-        return;
     va_start(args, format);
-    length = vsnprintf(buffer, sizeof(buffer), format, args);
+    frame_pacer_runtime_log_vwrite(&runtime_log, format, args);
     va_end(args);
-    if (length < 0)
-        return;
-    bytes = (size_t)length < sizeof(buffer) ? (size_t)length : sizeof(buffer) - 1;
-    if (logbytes + bytes + 48 > LOG_LIMIT) {
-        ssize_t ignored = write(logfd, "frame-pacer: log cap reached; pacing continues\n", 47);
-
-        (void)ignored;
-        capped = true;
-        return;
-    }
-    written = write(logfd, buffer, bytes);
-    if (written > 0)
-        logbytes += (uint64_t)written;
 }
 
-static void init_log(void)
+static void init_log_once(void)
 {
-    const char *state = getenv("XDG_STATE_HOME");
-    const char *home;
-    char root[1024];
-    char directory[1100];
-    char path[1200];
-
-    if (!frame_pacer_log_enabled())
-        return;
-    if (!state || !*state) {
-        home = getenv("HOME");
-        if (!home || !*home)
-            return;
-        if (snprintf(root, sizeof(root), "%s/.local/state", home) >=
-            (int)sizeof(root))
-            return;
-        if (mkdir(root, 0700) && errno != EEXIST)
-            return;
-        state = root;
-    }
-    if (snprintf(directory, sizeof(directory), "%s/frame-pacer", state) >=
-        (int)sizeof(directory))
-        return;
-    if (mkdir(directory, 0700) && errno != EEXIST)
-        return;
-    if (snprintf(path, sizeof(path), "%s/frame-pacer-%ld.log", directory,
-                 (long)getpid()) >= (int)sizeof(path))
-        return;
-    logfd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
     /* Wine can load a negotiated layer callback through a second linker
      * namespace in the same process.  Keep the single restrictive PID log so
      * both copies expose their lifecycle; O_APPEND keeps individual writes
      * intact and does not change rendering or pacing. */
-    if (logfd < 0 && errno == EEXIST)
-        logfd = open(path, O_WRONLY | O_APPEND | O_CLOEXEC);
-    if (logfd >= 0) {
-        frame_pacer_log_retention_prune(directory, "frame-pacer-");
+    if (frame_pacer_runtime_log_open(&runtime_log, "frame-pacer-"))
         logmsg("frame-pacer: layer init pid=%ld architecture=%zu hud=enabled\n",
                (long)getpid(), sizeof(void *) * 8);
-    }
+}
+
+static void init_log(void)
+{
+    (void)pthread_once(&log_once, init_log_once);
 }
 
 static struct device *find_device(VkDevice device)
@@ -299,6 +270,47 @@ static struct physical_device *find_physical_device(VkPhysicalDevice physical)
     return 0;
 }
 
+#ifdef FRAME_PACER_TEST
+__attribute__((visibility("hidden")))
+uint32_t frame_pacer_layer_test_queue_family_count(VkPhysicalDevice physical)
+{
+    struct physical_device *item;
+    uint32_t count;
+
+    pthread_mutex_lock(&lock);
+    item = find_physical_device(physical);
+    count = item ? item->queue_family_count : 0;
+    pthread_mutex_unlock(&lock);
+    return count;
+}
+
+__attribute__((visibility("hidden")))
+uint32_t frame_pacer_layer_test_physical_device_count(void)
+{
+    struct physical_device *item;
+    uint32_t count = 0;
+
+    pthread_mutex_lock(&lock);
+    for (item = physical_devices; item; item = item->next)
+        ++count;
+    pthread_mutex_unlock(&lock);
+    return count;
+}
+
+__attribute__((visibility("hidden")))
+uint32_t frame_pacer_layer_test_queue_count(void)
+{
+    struct queue *item;
+    uint32_t count = 0;
+
+    pthread_mutex_lock(&lock);
+    for (item = queues; item; item = item->next)
+        ++count;
+    pthread_mutex_unlock(&lock);
+    return count;
+}
+#endif
+
 static struct queue *find_queue(VkQueue queue)
 {
     struct queue *item;
@@ -309,70 +321,108 @@ static struct queue *find_queue(VkQueue queue)
     return 0;
 }
 
-static void remember_queue(VkQueue queue, struct device *device, uint32_t family,
-                           VkQueueFlags flags)
+static struct hud_swapchain *find_hud_swapchain(VkSwapchainKHR swapchain)
 {
-    struct queue *item;
+    struct hud_swapchain *item;
 
-    if (!queue || !device || find_queue(queue))
-        return;
-    item = calloc(1, sizeof(*item));
-    if (!item)
-        return;
-    item->handle = queue;
-    item->device = device;
-    item->family = family;
-    item->flags = flags;
-    item->next = queues;
-    queues = item;
+    for (item = hud_swapchains; item; item = item->next)
+        if (item->handle == swapchain)
+            return item;
+    return 0;
 }
+
+enum queue_collection_result {
+    QUEUE_COLLECTION_READY,
+    QUEUE_COLLECTION_UNAVAILABLE,
+    QUEUE_COLLECTION_OUT_OF_MEMORY,
+};
+
+static void free_queue_list(struct queue *items)
+{
+    while (items) {
+        struct queue *next = items->next;
+
+        free(items);
+        items = next;
+    }
+}
+
 /* Queue handles are dispatchable objects.  Registering those created by the
  * game is what lets the loader route later queue commands through this layer,
  * even when the game never asks this layer directly for vkGetDeviceQueue. */
-static void remember_declared_queues(struct device *device, const VkDeviceCreateInfo *info)
+static enum queue_collection_result collect_declared_queues(
+    struct device *device, const struct physical_device *physical,
+    const VkDeviceCreateInfo *info, struct queue **result)
 {
-    uint32_t create_index, queue_index;
+    struct queue *collected = 0;
+    uint32_t create_index;
     PFN_vkGetDeviceQueue get_queue;
-    if (!device || !info || !device->gdpa || !device->set_loader_data) return;
+
+    if (!result)
+        return QUEUE_COLLECTION_UNAVAILABLE;
+    *result = 0;
+    if (!device || !info ||
+        (info->queueCreateInfoCount && !info->pQueueCreateInfos))
+        return QUEUE_COLLECTION_UNAVAILABLE;
+    if (!info->queueCreateInfoCount)
+        return QUEUE_COLLECTION_READY;
+    if (!device->gdpa || !device->set_loader_data)
+        return QUEUE_COLLECTION_UNAVAILABLE;
     get_queue = (PFN_vkGetDeviceQueue)device->gdpa(device->handle, "vkGetDeviceQueue");
-    if (!get_queue) return;
+    if (!get_queue)
+        return QUEUE_COLLECTION_UNAVAILABLE;
+
     for (create_index = 0; create_index < info->queueCreateInfoCount; ++create_index) {
         const VkDeviceQueueCreateInfo *create = &info->pQueueCreateInfos[create_index];
+        uint32_t queue_index;
+
         for (queue_index = 0; queue_index < create->queueCount; ++queue_index) {
             VkQueue queue = VK_NULL_HANDLE;
+            struct queue *item;
+
             get_queue(device->handle, create->queueFamilyIndex, queue_index, &queue);
             if (!queue || device->set_loader_data(device->handle, queue) != VK_SUCCESS) {
                 logmsg("frame-pacer: queue loader-data registration failed "
-                       "family=%u index=%u; fail-open\n",
+                       "family=%u index=%u\n",
                        create->queueFamilyIndex, queue_index);
+                free_queue_list(collected);
+                return QUEUE_COLLECTION_UNAVAILABLE;
+            }
+            for (item = collected; item; item = item->next)
+                if (item->handle == queue)
+                    break;
+            if (item)
                 continue;
+            item = allocate_zero(1, sizeof(*item));
+            if (!item) {
+                free_queue_list(collected);
+                return QUEUE_COLLECTION_OUT_OF_MEMORY;
             }
-            pthread_mutex_lock(&lock);
-            {
-                struct physical_device *physical = find_physical_device(device->physical_device);
-                VkQueueFlags flags =
-                    physical &&
-                            create->queueFamilyIndex < physical->queue_family_count
-                        ? physical->queue_families[create->queueFamilyIndex]
-                              .queueFlags
-                        : 0;
-                remember_queue(queue, device, create->queueFamilyIndex, flags);
-            }
-            pthread_mutex_unlock(&lock);
+            item->handle = queue;
+            item->device = device;
+            item->family = create->queueFamilyIndex;
+            item->flags =
+                physical && create->queueFamilyIndex < physical->queue_family_count
+                    ? physical->queue_families[create->queueFamilyIndex].queueFlags
+                    : 0;
+            item->next = collected;
+            collected = item;
         }
     }
+    *result = collected;
+    return QUEUE_COLLECTION_READY;
 }
 static void destroy_hud_swapchain(struct hud_swapchain *item)
 {
     if (!item)
         return;
-    frame_pacer_hud_destroy_pipeline(&item->pipeline, &item->device->hud_pipeline_provider,
+    frame_pacer_hud_destroy_pipeline(&item->pipeline, &item->device->hud.pipeline,
                                      item->device->handle, 0);
     frame_pacer_hud_destroy_vertex_buffer(&item->vertex_buffer,
-        &item->device->hud_vertex_buffer_provider, item->device->handle, 0);
+        &item->device->hud.vertex_buffer, item->device->handle, 0);
     frame_pacer_hud_destroy_draw_resources(&item->draw_resources,
-        &item->device->hud_draw_provider, item->device->handle, 0);
-    frame_pacer_hud_destroy_image_views(&item->image_views, &item->device->hud_provider,
+        &item->device->hud.draw, item->device->handle, 0);
+    frame_pacer_hud_destroy_image_views(&item->image_views, &item->device->hud.resources,
                                         item->device->handle, 0);
     frame_pacer_fps_destroy(&item->fps);
     free(item);
@@ -421,13 +471,13 @@ static void hud_try_create_swapchain_resources(struct device *device,
     struct hud_swapchain *item;
     enum frame_pacer_hud_resource_status status;
     if (!device || !swapchain || !info) return;
-    if (!device->hud_commands_ready) {
+    if (!device->hud.commands_ready) {
         logmsg("frame-pacer: HUD unavailable swapchain=%" PRIx64
                ": required Vulkan command missing; fail-open\n",
                (uint64_t)swapchain);
         return;
     }
-    item = calloc(1, sizeof(*item));
+    item = allocate_zero(1, sizeof(*item));
     if (!item) {
         logmsg("frame-pacer: HUD unavailable swapchain=%" PRIx64
                ": state allocation failed; fail-open\n",
@@ -440,7 +490,7 @@ static void hud_try_create_swapchain_resources(struct device *device,
     item->format = info->imageFormat;
     frame_pacer_fps_init(&item->fps);
     status = frame_pacer_hud_create_image_views(&item->image_views,
-        &device->hud_provider, device->handle, swapchain, info->imageFormat,
+        &device->hud.resources, device->handle, swapchain, info->imageFormat,
         info->imageUsage);
     if (status != FRAME_PACER_HUD_RESOURCE_READY) {
         logmsg("frame-pacer: HUD unavailable swapchain=%" PRIx64 ": %s; fail-open\n",
@@ -471,23 +521,23 @@ static void hud_try_create_draw_resources(VkQueue queue, const VkPresentInfoKHR 
     }
     item->draw_setup_attempted = true;
     if (!frame_pacer_hud_create_draw_resources(&item->draw_resources,
-            &item->device->hud_draw_provider, item->device->handle, &item->image_views,
+            &item->device->hud.draw, item->device->handle, &item->image_views,
             item->format, item->extent, queue_state->family)) {
         logmsg("frame-pacer: HUD draw resources unavailable swapchain=%" PRIx64
                "; fail-open\n",
                (uint64_t)item->handle);
     } else {
-        if (!frame_pacer_hud_create_pipeline(&item->pipeline, &item->device->hud_pipeline_provider,
+        if (!frame_pacer_hud_create_pipeline(&item->pipeline, &item->device->hud.pipeline,
                 item->device->handle, item->draw_resources.render_pass,
                 (const uint32_t *)build_shaders_hud_vert_spv, sizeof(build_shaders_hud_vert_spv),
                 (const uint32_t *)build_shaders_hud_frag_spv, sizeof(build_shaders_hud_frag_spv)))
             logmsg("frame-pacer: HUD pipeline unavailable swapchain=%" PRIx64
                    "; fail-open\n",
                    (uint64_t)item->handle);
-        else if (!item->device->has_memory_properties ||
+        else if (!item->device->hud.has_memory_properties ||
                  !frame_pacer_hud_create_vertex_buffer(&item->vertex_buffer,
-                    &item->device->hud_vertex_buffer_provider, item->device->handle,
-                    &item->device->memory_properties,
+                    &item->device->hud.vertex_buffer, item->device->handle,
+                    &item->device->hud.memory_properties,
                     sizeof(struct frame_pacer_hud_vertices)))
             logmsg("frame-pacer: HUD vertex buffer unavailable swapchain=%" PRIx64
                    "; fail-open\n",
@@ -504,47 +554,40 @@ static void hud_try_create_draw_resources(VkQueue queue, const VkPresentInfoKHR 
 static bool hud_record_overlay(void *context, uint32_t image_index)
 {
     struct hud_swapchain *item = context;
-    struct frame_pacer_hud_vertices vertices;
     struct frame_pacer_hud_text text;
+    struct frame_pacer_metrics_snapshot metrics;
     uint64_t now = monotonic(0);
+    uint32_t fps = 0;
+    bool fps_valid;
     if (!item || image_index >= item->draw_resources.count ||
         !item->vertex_buffer.map)
         return false;
-    if (!item->device->metrics_sample_ns ||
-        now - item->device->metrics_sample_ns >= FRAME_PACER_FPS_SAMPLE_NS) {
-        frame_pacer_metrics_sample(&item->device->metrics, &item->device->metrics_snapshot);
-        item->device->metrics_sample_ns = now;
-    }
-    /* Count the cadence of successfully recorded overlay frames.  This runs
-     * in exactly the layer namespace that owns the visible swapchain. */
-    {
-        uint32_t sampled_fps = 0;
-        if (frame_pacer_fps_record_present(&item->fps, now, &sampled_fps)) {
-            item->fps_value = sampled_fps;
-            item->fps_valid = sampled_fps != 0;
-        }
-    }
+    frame_pacer_hud_vulkan_device_metrics_snapshot(&item->device->hud, now,
+                                                    &metrics);
+    fps_valid = frame_pacer_fps_snapshot(&item->fps, &fps);
     {
         bool thread_cpu_quota_configured;
         uint32_t limit = current_limit(now);
         uint32_t thread_cpu_quota_percent = frame_pacer_limit_thread_cpu_quota(
             &pacing_limit, &thread_cpu_quota_configured);
 
-        frame_pacer_hud_text_format(&text, &item->device->metrics_snapshot,
-                                    item->fps_valid, item->fps_value, limit,
+        frame_pacer_hud_text_format(&text, &metrics,
+                                    fps_valid, fps, limit,
                                     thread_cpu_quota_configured,
                                     frame_pacer_thread_cpu_quota_confirmed(&thread_cpu_quota, 0),
                                     thread_cpu_quota_percent);
     }
-    if (!frame_pacer_hud_vertices_build(&vertices, &text) ||
-        sizeof(vertices.data[0]) * (size_t)vertices.count > item->vertex_buffer.size)
+    if (!frame_pacer_hud_vertices_build(&item->vertices, &text) ||
+        sizeof(item->vertices.data[0]) * (size_t)item->vertices.count >
+            item->vertex_buffer.size)
         return false;
-    memcpy(item->vertex_buffer.map, vertices.data,
-           sizeof(vertices.data[0]) * (size_t)vertices.count);
-    return frame_pacer_hud_record(&item->device->hud_record_provider,
+    memcpy(item->vertex_buffer.map, item->vertices.data,
+           sizeof(item->vertices.data[0]) * (size_t)item->vertices.count);
+    return frame_pacer_hud_record(&item->device->hud.record,
         item->draw_resources.command_buffers[image_index], item->image_views.images[image_index],
         item->draw_resources.framebuffers[image_index], item->draw_resources.render_pass,
-        &item->pipeline, &item->vertex_buffer, item->extent, vertices.count);
+        &item->pipeline, &item->vertex_buffer, item->extent,
+        item->vertices.count);
 }
 static const VkPresentInfoKHR *hud_try_present(VkQueue queue,
     const VkPresentInfoKHR *info, VkPresentInfoKHR *replacement)
@@ -566,7 +609,7 @@ static const VkPresentInfoKHR *hud_try_present(VkQueue queue,
         info->pImageIndices[0] >= item->draw_resources.count)
         return info;
     image_index = info->pImageIndices[0];
-    if (!frame_pacer_hud_prepare_present(&item->device->hud_present_provider,
+    if (!frame_pacer_hud_prepare_present(&item->device->hud.present,
             item->device->handle, queue, info, item->draw_resources.fences[image_index],
             &item->draw_resources.semaphores[image_index],
             item->draw_resources.command_buffers[image_index], image_index,
@@ -597,14 +640,24 @@ static void remember_physical_devices(struct instance *instance)
         !count)
         return;
 
-    handles = calloc(count, sizeof(*handles));
-    if (!handles)
-        return;
-    get_queues = (PFN_vkGetPhysicalDeviceQueueFamilyProperties)instance->gipa(
-        instance->handle, "vkGetPhysicalDeviceQueueFamilyProperties");
-    if (enumerate(instance->handle, &count, handles) == VK_SUCCESS) {
-        for (index = 0; index < count; ++index) {
-        struct physical_device *item = calloc(1, sizeof(*item));
+    {
+        uint32_t capacity = count;
+
+        handles = allocate_zero(capacity, sizeof(*handles));
+        if (!handles)
+            return;
+        get_queues = (PFN_vkGetPhysicalDeviceQueueFamilyProperties)instance->gipa(
+            instance->handle, "vkGetPhysicalDeviceQueueFamilyProperties");
+        if (enumerate(instance->handle, &count, handles) != VK_SUCCESS) {
+            free(handles);
+            return;
+        }
+        if (count > capacity)
+            count = capacity;
+    }
+
+    for (index = 0; index < count; ++index) {
+        struct physical_device *item = allocate_zero(1, sizeof(*item));
 
         if (item) {
             item->handle = handles[index];
@@ -612,18 +665,23 @@ static void remember_physical_devices(struct instance *instance)
             if (get_queues) {
                 get_queues(handles[index], &item->queue_family_count, 0);
                 if (item->queue_family_count) {
-                    item->queue_families = calloc(
-                        item->queue_family_count, sizeof(*item->queue_families));
-                    if (item->queue_families)
-                        get_queues(handles[index], &item->queue_family_count,
+                    uint32_t capacity = item->queue_family_count;
+                    uint32_t returned = capacity;
+
+                    item->queue_families = allocate_zero(
+                        capacity, sizeof(*item->queue_families));
+                    if (item->queue_families) {
+                        get_queues(handles[index], &returned,
                                    item->queue_families);
-                    else
+                        item->queue_family_count =
+                            returned < capacity ? returned : capacity;
+                    } else {
                         item->queue_family_count = 0;
+                    }
                 }
             }
             item->next = physical_devices;
             physical_devices = item;
-        }
         }
     }
     free(handles);
@@ -670,8 +728,8 @@ vkCreateInstance(const VkInstanceCreateInfo *info,
     init_log();
     logmsg("frame-pacer: create instance entered info=%p out=%p\n",
            (const void *)info, (void *)instance);
-    if (!info) {
-        logmsg("frame-pacer: create instance missing create info\n");
+    if (!info || !instance) {
+        logmsg("frame-pacer: create instance missing create info or output\n");
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     link = instance_create_info(info->pNext, VK_LAYER_LINK_INFO);
@@ -681,6 +739,10 @@ vkCreateInstance(const VkInstanceCreateInfo *info,
     }
 
     gipa = link->u.pLayerInfo->pfnNextGetInstanceProcAddr;
+    if (!gipa) {
+        logmsg("frame-pacer: create instance missing downstream resolver\n");
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
     link->u.pLayerInfo = link->u.pLayerInfo->pNext;
     create = (PFN_vkCreateInstance)gipa(0, "vkCreateInstance");
     result = create ? create(info, allocator, instance)
@@ -689,10 +751,22 @@ vkCreateInstance(const VkInstanceCreateInfo *info,
            result == VK_SUCCESS && instance ? (void *)*instance : 0);
     if (result != VK_SUCCESS)
         return result;
+    if (!instance || !*instance) {
+        logmsg("frame-pacer: downstream create instance returned no handle\n");
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
 
-    item = calloc(1, sizeof(*item));
-    if (!item)
-        return VK_SUCCESS;
+    item = allocate_zero(1, sizeof(*item));
+    if (!item) {
+        PFN_vkDestroyInstance destroy =
+            (PFN_vkDestroyInstance)gipa(*instance, "vkDestroyInstance");
+
+        if (destroy)
+            destroy(*instance, allocator);
+        *instance = VK_NULL_HANDLE;
+        logmsg("frame-pacer: create instance bookkeeping allocation failed\n");
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
     item->handle = *instance;
     item->gipa = gipa;
 
@@ -717,21 +791,30 @@ vkCreateDevice(VkPhysicalDevice physical, const VkDeviceCreateInfo *info,
     struct physical_device *physical_state;
     struct instance *instance;
     struct device *item;
+    struct queue *declared_queues;
+    enum queue_collection_result queue_result;
     VkResult result;
 
     logmsg("frame-pacer: create device entered\n");
-    if (!info) {
-        logmsg("frame-pacer: create device missing create info; fail-open\n");
+    if (!info || !device) {
+        logmsg("frame-pacer: create device missing create info or output; "
+               "initialization failed\n");
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     link = device_create_info(info->pNext, VK_LAYER_LINK_INFO);
     data = device_create_info(info->pNext, VK_LOADER_DATA_CALLBACK);
     if (!link || !link->u.pLayerInfo) {
-        logmsg("frame-pacer: create device missing link; fail-open\n");
+        logmsg("frame-pacer: create device missing loader link; "
+               "initialization failed\n");
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
     gdpa = link->u.pLayerInfo->pfnNextGetDeviceProcAddr;
+    if (!gdpa) {
+        logmsg("frame-pacer: create device missing downstream resolver; "
+               "initialization failed\n");
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
     pthread_mutex_lock(&lock);
     physical_state = find_physical_device(physical);
     instance = physical_state ? physical_state->instance : 0;
@@ -744,13 +827,25 @@ vkCreateDevice(VkPhysicalDevice physical, const VkDeviceCreateInfo *info,
                     : VK_ERROR_INITIALIZATION_FAILED;
     if (result != VK_SUCCESS)
         return result;
+    if (!device || !*device) {
+        logmsg("frame-pacer: downstream create device returned no handle\n");
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
 
     /* VkDevice is already known to the loader.  Only queue objects acquired
      * below need pfnSetDeviceLoaderData.  Calling it for the device itself was
      * an invalid deviation from the standard layer model used by MangoHud. */
-    item = calloc(1, sizeof(*item));
-    if (!item)
-        return VK_SUCCESS;
+    item = allocate_zero(1, sizeof(*item));
+    if (!item) {
+        PFN_vkDestroyDevice destroy =
+            (PFN_vkDestroyDevice)gdpa(*device, "vkDestroyDevice");
+
+        if (destroy)
+            destroy(*device, allocator);
+        *device = VK_NULL_HANDLE;
+        logmsg("frame-pacer: create device bookkeeping allocation failed\n");
+        return VK_ERROR_OUT_OF_HOST_MEMORY;
+    }
     item->handle = *device;
     item->gdpa = gdpa;
     item->set_loader_data = data ? data->u.pfnSetDeviceLoaderData : 0;
@@ -766,133 +861,83 @@ vkCreateDevice(VkPhysicalDevice physical, const VkDeviceCreateInfo *info,
     item->destroy_device =
         (PFN_vkDestroyDevice)gdpa(*device, "vkDestroyDevice");
     item->physical_device = physical;
-    item->get_surface_capabilities = instance ?
-        (frame_pacer_hud_surface_capabilities_fn)instance->gipa(
-            instance->handle, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR") : 0;
-    if (instance) {
-        PFN_vkGetPhysicalDeviceMemoryProperties get_memory_properties =
-            (PFN_vkGetPhysicalDeviceMemoryProperties)instance->gipa(instance->handle,
-                "vkGetPhysicalDeviceMemoryProperties");
-        if (get_memory_properties) {
-            get_memory_properties(physical, &item->memory_properties);
-            item->has_memory_properties = true;
-        }
+    frame_pacer_hud_vulkan_device_init(
+        &item->hud, *device, physical, gdpa,
+        instance ? instance->handle : VK_NULL_HANDLE,
+        instance ? instance->gipa : 0, (unsigned int)getpid());
+    queue_result = collect_declared_queues(item, physical_state, info,
+                                           &declared_queues);
+    if (queue_result != QUEUE_COLLECTION_READY) {
+        frame_pacer_hud_vulkan_device_destroy(&item->hud);
+        if (item->destroy_device)
+            item->destroy_device(*device, allocator);
+        free(item);
+        *device = VK_NULL_HANDLE;
+        logmsg("frame-pacer: create device queue registration failed\n");
+        return queue_result == QUEUE_COLLECTION_OUT_OF_MEMORY
+                   ? VK_ERROR_OUT_OF_HOST_MEMORY
+                   : VK_ERROR_INITIALIZATION_FAILED;
     }
-    item->hud_provider.get_swapchain_images =
-        (PFN_vkGetSwapchainImagesKHR)gdpa(*device, "vkGetSwapchainImagesKHR");
-    item->hud_provider.create_image_view =
-        (PFN_vkCreateImageView)gdpa(*device, "vkCreateImageView");
-    item->hud_provider.destroy_image_view =
-        (PFN_vkDestroyImageView)gdpa(*device, "vkDestroyImageView");
-    item->hud_commands_ready =
-        frame_pacer_hud_resolve_commands(&item->hud_commands, gdpa, *device);
-    frame_pacer_metrics_init(&item->metrics, 0, (unsigned int)getpid());
-    item->hud_draw_provider = (struct frame_pacer_hud_draw_provider){
-        .create_render_pass = (PFN_vkCreateRenderPass)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_CREATE_RENDER_PASS],
-        .destroy_render_pass = (PFN_vkDestroyRenderPass)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_DESTROY_RENDER_PASS],
-        .create_framebuffer = (PFN_vkCreateFramebuffer)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_CREATE_FRAMEBUFFER],
-        .destroy_framebuffer = (PFN_vkDestroyFramebuffer)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_DESTROY_FRAMEBUFFER],
-        .create_command_pool = (PFN_vkCreateCommandPool)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_CREATE_COMMAND_POOL],
-        .destroy_command_pool = (PFN_vkDestroyCommandPool)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_DESTROY_COMMAND_POOL],
-        .allocate_command_buffers = (PFN_vkAllocateCommandBuffers)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_ALLOCATE_COMMAND_BUFFERS],
-        .create_fence = (PFN_vkCreateFence)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_CREATE_FENCE],
-        .destroy_fence = (PFN_vkDestroyFence)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_DESTROY_FENCE],
-        .create_semaphore = (PFN_vkCreateSemaphore)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_CREATE_SEMAPHORE],
-        .destroy_semaphore = (PFN_vkDestroySemaphore)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_DESTROY_SEMAPHORE],
-    };
-    item->hud_pipeline_provider = (struct frame_pacer_hud_pipeline_provider){
-        .create_shader_module = (PFN_vkCreateShaderModule)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_CREATE_SHADER_MODULE],
-        .destroy_shader_module = (PFN_vkDestroyShaderModule)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_DESTROY_SHADER_MODULE],
-        .create_pipeline_layout = (PFN_vkCreatePipelineLayout)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_CREATE_PIPELINE_LAYOUT],
-        .destroy_pipeline_layout = (PFN_vkDestroyPipelineLayout)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_DESTROY_PIPELINE_LAYOUT],
-        .create_graphics_pipelines = (PFN_vkCreateGraphicsPipelines)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_CREATE_GRAPHICS_PIPELINES],
-        .destroy_pipeline = (PFN_vkDestroyPipeline)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_DESTROY_PIPELINE],
-    };
-    item->hud_vertex_buffer_provider = (struct frame_pacer_hud_vertex_buffer_provider){
-        .create_buffer = (PFN_vkCreateBuffer)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_CREATE_BUFFER],
-        .destroy_buffer = (PFN_vkDestroyBuffer)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_DESTROY_BUFFER],
-        .allocate_memory = (PFN_vkAllocateMemory)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_ALLOCATE_MEMORY],
-        .free_memory = (PFN_vkFreeMemory)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_FREE_MEMORY],
-        .map_memory = (PFN_vkMapMemory)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_MAP_MEMORY],
-        .unmap_memory = (PFN_vkUnmapMemory)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_UNMAP_MEMORY],
-        .bind_memory = (PFN_vkBindBufferMemory)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_BIND_BUFFER_MEMORY],
-        .get_requirements = (PFN_vkGetBufferMemoryRequirements)
-            item->hud_commands.functions[
-                FRAME_PACER_HUD_COMMAND_GET_BUFFER_MEMORY_REQUIREMENTS],
-    };
-    item->hud_record_provider = (struct frame_pacer_hud_record_provider){
-        .reset_command_buffer = (PFN_vkResetCommandBuffer)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_RESET_COMMAND_BUFFER],
-        .begin_command_buffer = (PFN_vkBeginCommandBuffer)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_BEGIN_COMMAND_BUFFER],
-        .end_command_buffer = (PFN_vkEndCommandBuffer)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_END_COMMAND_BUFFER],
-        .pipeline_barrier = (PFN_vkCmdPipelineBarrier)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_PIPELINE_BARRIER],
-        .begin_render_pass = (PFN_vkCmdBeginRenderPass)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_BEGIN_RENDER_PASS],
-        .end_render_pass = (PFN_vkCmdEndRenderPass)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_END_RENDER_PASS],
-        .bind_pipeline = (PFN_vkCmdBindPipeline)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_BIND_PIPELINE],
-        .bind_vertex_buffers = (PFN_vkCmdBindVertexBuffers)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_BIND_VERTEX_BUFFERS],
-        .draw = (PFN_vkCmdDraw)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_DRAW],
-        .set_viewport = (PFN_vkCmdSetViewport)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_SET_VIEWPORT],
-        .set_scissor = (PFN_vkCmdSetScissor)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_SET_SCISSOR],
-        .push_constants = (PFN_vkCmdPushConstants)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_PUSH_CONSTANTS],
-    };
-    item->hud_present_provider = (struct frame_pacer_hud_present_provider){
-        .wait_for_fences = (PFN_vkWaitForFences)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_WAIT_FOR_FENCES],
-        .reset_fences = (PFN_vkResetFences)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_RESET_FENCES],
-        .queue_submit = (PFN_vkQueueSubmit)
-            item->hud_commands.functions[FRAME_PACER_HUD_COMMAND_QUEUE_SUBMIT],
-    };
 
     pthread_mutex_lock(&lock);
     item->next = devices;
     devices = item;
+    if (declared_queues) {
+        struct queue *tail = declared_queues;
+
+        while (tail->next)
+            tail = tail->next;
+        tail->next = queues;
+        queues = declared_queues;
+    }
     pthread_mutex_unlock(&lock);
-    if (!item->set_loader_data)
-        logmsg("frame-pacer: create device missing queue loader-data callback; HUD unavailable\n");
-    else
-        remember_declared_queues(item, info);
     logmsg("frame-pacer: create device present=%s submit=%s surface-caps=%s "
            "hud-commands=%s\n",
            item->present ? "yes" : "no", item->submit ? "yes" : "no",
-           item->get_surface_capabilities ? "yes" : "no",
-           item->hud_commands_ready ? "ready" : "missing");
+           item->hud.get_surface_capabilities ? "yes" : "no",
+           item->hud.commands_ready ? "ready" : "missing");
     return VK_SUCCESS;
+}
+VKAPI_ATTR void VKAPI_CALL
+vkDestroyInstance(VkInstance instance, const VkAllocationCallbacks *allocator)
+{
+    struct instance **instance_link;
+    struct physical_device **physical_link;
+    struct instance *item;
+    PFN_vkDestroyInstance destroy;
+
+    pthread_mutex_lock(&lock);
+    item = find_instance(instance);
+    destroy = item && item->gipa
+                  ? (PFN_vkDestroyInstance)item->gipa(instance,
+                                                       "vkDestroyInstance")
+                  : fallback_gipa
+                        ? (PFN_vkDestroyInstance)fallback_gipa(
+                              instance, "vkDestroyInstance")
+                        : 0;
+    physical_link = &physical_devices;
+    while (*physical_link) {
+        if ((*physical_link)->instance == item) {
+            struct physical_device *found = *physical_link;
+
+            *physical_link = found->next;
+            free(found->queue_families);
+            free(found);
+        } else {
+            physical_link = &(*physical_link)->next;
+        }
+    }
+    instance_link = &instances;
+    while (*instance_link && *instance_link != item)
+        instance_link = &(*instance_link)->next;
+    if (*instance_link)
+        *instance_link = item->next;
+    fallback_gipa = instances ? instances->gipa : 0;
+    pthread_mutex_unlock(&lock);
+
+    free(item);
+    if (destroy)
+        destroy(instance, allocator);
 }
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(VkDevice device,
     const VkSwapchainCreateInfoKHR *info, const VkAllocationCallbacks *allocator,
@@ -906,7 +951,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(VkDevice device,
     create = item ? item->create_swapchain : 0;
     pthread_mutex_unlock(&lock);
     if (!create) return VK_ERROR_INITIALIZATION_FAILED;
-    outcome = frame_pacer_hud_create_swapchain(item->get_surface_capabilities,
+    outcome = frame_pacer_hud_create_swapchain(item->hud.get_surface_capabilities,
         create, item->physical_device, device, info, allocator, out);
     if (outcome.retried_original)
         logmsg("frame-pacer: HUD augmented swapchain request failed; original request retried\n");
@@ -960,7 +1005,7 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(VkDevice device,
     pthread_mutex_unlock(&lock);
     destroy_hud_swapchain_list(hud);
     if (item) {
-        frame_pacer_metrics_destroy(&item->metrics);
+        frame_pacer_hud_vulkan_device_destroy(&item->hud);
         free(item);
     }
     if (destroy)
@@ -990,7 +1035,6 @@ static void pace_submit_fallback(VkQueue queue, uint32_t submit_count,
         return;
 
     pace(path);
-    (void)__atomic_add_fetch(&submit_fallbacks, 1, __ATOMIC_RELAXED);
     if (entered)
         logmsg("frame-pacer: Vulkan submit fallback entered; presentation quiet\n");
     logmsg("frame-pacer: Vulkan %s fallback count=%u queue_submits=%" PRIu64 "\n",
@@ -1029,13 +1073,25 @@ vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *info)
     pace("present");
     result = device->present(queue, forward);
     if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR) {
+        uint64_t accepted_ns = monotonic(0);
+        uint32_t swapchain_index;
+
         pthread_mutex_lock(&lock);
         item = find_queue(queue);
         if (item) {
             resumed = item->pacer.fallback_active;
-            item->pacer.last_present_ns = monotonic(0);
+            item->pacer.last_present_ns = accepted_ns;
             frame_pacer_queue_note_present(&item->pacer);
         }
+        if (info && info->pSwapchains)
+            for (swapchain_index = 0; swapchain_index < info->swapchainCount;
+                 ++swapchain_index) {
+                struct hud_swapchain *hud =
+                    find_hud_swapchain(info->pSwapchains[swapchain_index]);
+
+                if (hud)
+                    (void)frame_pacer_fps_record_present(&hud->fps, accepted_ns, 0);
+            }
         pthread_mutex_unlock(&lock);
         if (resumed)
             logmsg("frame-pacer: submit fallback ended; present resumed\n");
@@ -1097,6 +1153,7 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL
 vkGetDeviceProcAddr(VkDevice device, const char *name)
 {
     struct device *item;
+    PFN_vkGetDeviceProcAddr gdpa;
 
     if (!name)
         return 0;
@@ -1123,8 +1180,9 @@ vkGetDeviceProcAddr(VkDevice device, const char *name)
 
     pthread_mutex_lock(&lock);
     item = find_device(device);
+    gdpa = item ? item->gdpa : 0;
     pthread_mutex_unlock(&lock);
-    return item && item->gdpa ? item->gdpa(device, name) : 0;
+    return gdpa ? gdpa(device, name) : 0;
 }
 
 VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL
@@ -1148,6 +1206,8 @@ vkGetInstanceProcAddr(VkInstance instance, const char *name)
         logmsg("frame-pacer: HUD gipa vkCreateDevice\n");
         return (PFN_vkVoidFunction)vkCreateDevice;
     }
+    if (!strcmp(name, "vkDestroyInstance"))
+        return (PFN_vkVoidFunction)vkDestroyInstance;
     if (!strcmp(name, "vkQueuePresentKHR")) {
         logmsg("frame-pacer: HUD gipa vkQueuePresentKHR\n");
         return (PFN_vkVoidFunction)vkQueuePresentKHR;
@@ -1192,9 +1252,9 @@ vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface *version)
 static void __attribute__((destructor)) frame_pacer_shutdown(void)
 {
     logmsg("frame-pacer: shutdown presents=%" PRIu64 " log_bytes=%" PRIu64 "\n",
-           __atomic_load_n(&presents, __ATOMIC_RELAXED), logbytes);
-    if (logfd >= 0)
-        (void)close(logfd);
+           __atomic_load_n(&presents, __ATOMIC_RELAXED),
+           frame_pacer_runtime_log_bytes(&runtime_log));
+    frame_pacer_runtime_log_close(&runtime_log);
     if (pacing_initialized) {
         frame_pacer_thread_cpu_quota_destroy(&thread_cpu_quota);
         frame_pacer_limit_destroy(&pacing_limit);

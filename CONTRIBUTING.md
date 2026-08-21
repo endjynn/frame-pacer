@@ -8,7 +8,9 @@ a large architectural change.
 1. Keep changes narrowly scoped and explain the affected final presentation
    boundary.
 2. Add or update focused tests.
-3. Run `make check` on x86_64 and i386.
+3. Run `make check`, plus the applicable analyzer, sanitizer, ABI, coverage,
+   cgroup, or presentation targets described in
+   [Development](docs/development.md).
 4. Document any live-game validation and any known limitation.
 5. Do not add global Steam preloads, wrappers, permanent services, privileged
    helpers, or title-specific behavior without a reproducible justification.

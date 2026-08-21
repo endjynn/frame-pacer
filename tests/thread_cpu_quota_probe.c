@@ -184,11 +184,18 @@ static bool cgroup_path(char *output, size_t size, const char *scope)
     for (attempt = 0; attempt < 50; ++attempt) {
         FILE *file = fopen("/proc/self/cgroup", "re");
 
-        if (file && fgets(line, sizeof(line), file) && !strncmp(line, "0::/", 4)) {
+        if (file && fgets(line, sizeof(line), file) &&
+            (strchr(line, '\n') || feof(file)) && !strncmp(line, "0::/", 4)) {
+            char *terminal;
+            int written;
+
             line[strcspn(line, "\r\n")] = '\0';
-            if (strstr(line + 3, scope)) {
+            terminal = strrchr(line + 3, '/');
+            if (terminal && !strcmp(terminal + 1, scope)) {
                 (void)fclose(file);
-                return snprintf(output, size, "/sys/fs/cgroup%s", line + 3) < (int)size;
+                written = snprintf(output, size, "/sys/fs/cgroup%s",
+                                   line + 3);
+                return written >= 0 && (size_t)written < size;
             }
         }
         if (file) (void)fclose(file);

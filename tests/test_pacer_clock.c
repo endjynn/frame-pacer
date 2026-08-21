@@ -63,6 +63,29 @@ static void sequential_waits(void)
     assert(decision.first);
     assert(clock.fps == FRAME_PACER_DEFAULT_FPS);
     frame_pacer_clock_destroy(&clock);
+    frame_pacer_clock_destroy(&clock);
+    frame_pacer_clock_init(0);
+    frame_pacer_clock_wait(0, 70, fake_now, fake_sleep, &time, &decision);
+}
+
+static void deadlines_saturate_at_uint64_max(void)
+{
+    struct frame_pacer_clock clock;
+    struct frame_pacer_decision decision;
+    struct fake_time time = {.now_ns = UINT64_MAX - 1};
+
+    frame_pacer_clock_init(&clock);
+    frame_pacer_clock_wait(&clock, FRAME_PACER_DEFAULT_FPS, fake_now,
+                           fake_sleep, &time, &decision);
+    assert(decision.first);
+    assert(clock.next_deadline_ns == UINT64_MAX);
+    time.now_ns = UINT64_MAX;
+    frame_pacer_clock_wait(&clock, FRAME_PACER_DEFAULT_FPS, fake_now,
+                           fake_sleep, &time, &decision);
+    assert(decision.missed);
+    assert(decision.deadline_ns == UINT64_MAX);
+    assert(clock.next_deadline_ns == UINT64_MAX);
+    frame_pacer_clock_destroy(&clock);
 }
 
 struct worker_context {
@@ -108,6 +131,7 @@ static void concurrent_waits_are_serialized(void)
 int main(void)
 {
     sequential_waits();
+    deadlines_saturate_at_uint64_max();
     concurrent_waits_are_serialized();
     return 0;
 }

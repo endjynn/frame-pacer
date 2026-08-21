@@ -26,14 +26,21 @@ make install
 Vulkan loader discovers those manifests automatically, so Steam only needs
 `ENABLE_FRAME_PACER_HUD=1` to activate frame-pacer.
 
+The same private library directory contains
+`frame-pacer-thread-cpu-controller`. It is an executable helper used only when
+an enabled `thread_cpu_limit` must cross a Steam Runtime read-only cgroup mount;
+installation does not start it or create a permanent service.
+
 Set `PREFIX`, `INSTALL_LIBDIR`, or `INSTALL_LAYERDIR` when using a non-default
 installation. `DESTDIR` is supported for staged package builds. The GLX/EGL
 preload shim is not installed: it remains an explicit per-game launch option.
 
 ## Configure a game
 
-Create `~/.config/frame-pacer/frame-pacer.conf` with permissions that exclude
-group and other users (for example, `chmod 600`):
+Create `${XDG_CONFIG_HOME}/frame-pacer/frame-pacer.conf` when
+`XDG_CONFIG_HOME` is set, or `~/.config/frame-pacer/frame-pacer.conf`
+otherwise. The file must exclude group and other users (for example,
+`chmod 600`):
 
 ```ini
 global_fps_limit = 70

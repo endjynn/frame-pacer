@@ -49,6 +49,9 @@ thread_cpu_limit = off
 Replace `ExampleGame.exe` with the game's actual renderer executable basename.
 `thread_cpu_limit` is optional; enable it only after normal pacing is working.
 After saving the file, run `chmod 600 ~/.config/frame-pacer/frame-pacer.conf`.
+When `XDG_CONFIG_HOME` is set, use
+`${XDG_CONFIG_HOME}/frame-pacer/frame-pacer.conf` instead; the `~/.config`
+location is the fallback.
 
 Set the top-level `hud` option to `off` to hide the HUD while keeping frame
 pacing active. Changing it back to `on` takes effect in a running game within

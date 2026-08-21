@@ -16,10 +16,35 @@ static void write_limit(const char *path, const char *value)
     assert(!chmod(path, 0600));
 }
 
+static void fps_range_boundaries(void)
+{
+    char directory[] = "/tmp/frame-pacer-limit-range.XXXXXX";
+    char state[1200], path[1200];
+    struct frame_pacer_limit limit;
+    bool changed;
+
+    assert(mkdtemp(directory));
+    assert(snprintf(state, sizeof(state), "%s/frame-pacer", directory) > 0);
+    assert(!mkdir(state, 0700));
+    assert(snprintf(path, sizeof(path), "%s/frame-pacer.conf", state) > 0);
+    assert(!setenv("XDG_CONFIG_HOME", directory, 1));
+    frame_pacer_limit_init(&limit);
+    write_limit(path, "global_fps_limit = 999\n");
+    assert(frame_pacer_limit_poll(&limit, 1, &changed) == 999 && changed);
+    write_limit(path, "global_fps_limit = 1000\n");
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS + 2,
+                                  &changed) == FRAME_PACER_DEFAULT_FPS &&
+           changed);
+    frame_pacer_limit_destroy(&limit);
+    assert(!unlink(path));
+    assert(!rmdir(state));
+    assert(!rmdir(directory));
+}
+
 int main(void)
 {
     char directory[] = "/tmp/frame-pacer-limit.XXXXXX";
-    char config[1200], state[1200], path[1200];
+    char config[1200], state[1200], path[1200], target[1200];
     struct frame_pacer_limit limit;
     bool changed;
     bool quota_enabled;
@@ -129,10 +154,48 @@ int main(void)
     assert(!chmod(path, 0644));
     assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS * 16 + 17, &changed) ==
            FRAME_PACER_DEFAULT_FPS && !changed);
+    assert(!chmod(path, 0600));
+    write_limit(path, "global_fps_limit = 30\n");
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS * 17 + 18,
+                                  &changed) == 30 && changed);
+    assert(!chmod(path, 0644));
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS * 18 + 19,
+                                  &changed) == FRAME_PACER_DEFAULT_FPS && changed);
+    assert(!chmod(path, 0600));
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS * 19 + 20,
+                                  &changed) == 30 && changed);
+    assert(snprintf(target, sizeof(target), "%s/target.conf", directory) > 0);
+    write_limit(target, "global_fps_limit = 40\n");
+    assert(!unlink(path));
+    assert(!symlink(target, path));
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS * 20 + 21,
+                                  &changed) == FRAME_PACER_DEFAULT_FPS && changed);
+    assert(!unlink(path));
+    assert(!link(target, path));
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS * 21 + 22,
+                                  &changed) == FRAME_PACER_DEFAULT_FPS && !changed);
+    frame_pacer_limit_destroy(&limit);
     frame_pacer_limit_destroy(&limit);
     assert(!unlink(path));
+    assert(!unlink(target));
     assert(!rmdir(state));
     assert(!rmdir(config));
     assert(!rmdir(directory));
+    {
+        char *oversized = malloc(2000);
+
+        assert(oversized);
+        memset(oversized, 'x', 1999);
+        oversized[1999] = '\0';
+        assert(!setenv("XDG_CONFIG_HOME", oversized, 1));
+        frame_pacer_limit_init(&limit);
+        assert(limit.initialized);
+        assert(!limit.path[0]);
+        assert(frame_pacer_limit_poll(&limit, 1, &changed) ==
+               FRAME_PACER_DEFAULT_FPS);
+        frame_pacer_limit_destroy(&limit);
+        free(oversized);
+    }
+    fps_range_boundaries();
     return 0;
 }

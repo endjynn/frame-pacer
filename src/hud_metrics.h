@@ -12,17 +12,10 @@ enum frame_pacer_metric {
     FRAME_PACER_METRIC_CPU_TEMP = 1U << 1,
     FRAME_PACER_METRIC_GPU_USE = 1U << 2,
     FRAME_PACER_METRIC_GPU_TEMP = 1U << 3,
-    FRAME_PACER_METRIC_CPU_PEAK = 1U << 4,
     FRAME_PACER_METRIC_THREAD_CPU_USE = 1U << 5,
 };
 
-#define FRAME_PACER_CPU_MAX_CORES 1024U
-
-struct frame_pacer_cpu_sample {
-    uint64_t total;
-    uint64_t idle;
-    bool started;
-};
+#define FRAME_PACER_THREAD_CPU_SLOTS_MAX 1024U
 
 struct frame_pacer_thread_cpu_sample {
     uint32_t tid;
@@ -34,7 +27,6 @@ struct frame_pacer_thread_cpu_sample {
 struct frame_pacer_metrics_snapshot {
     unsigned int available;
     unsigned int cpu_use_percent;
-    unsigned int cpu_peak_percent;
     unsigned int thread_cpu_percent;
     unsigned int cpu_temp_celsius;
     unsigned int gpu_use_percent;
@@ -43,11 +35,12 @@ struct frame_pacer_metrics_snapshot {
 
 struct frame_pacer_metrics {
     pthread_mutex_t mutex;
+    bool initialized;
     uint64_t cpu_total;
     uint64_t cpu_idle;
     bool cpu_started;
-    struct frame_pacer_cpu_sample cpu_cores[FRAME_PACER_CPU_MAX_CORES];
-    struct frame_pacer_thread_cpu_sample thread_cpu[FRAME_PACER_CPU_MAX_CORES];
+    struct frame_pacer_thread_cpu_sample
+        thread_cpu[FRAME_PACER_THREAD_CPU_SLOTS_MAX];
     uint64_t thread_cpu_sample_ns;
     unsigned int thread_cpu_percent;
     bool thread_cpu_available;
@@ -82,5 +75,11 @@ bool frame_pacer_metrics_parse_cpu(const char *line, uint64_t *total, uint64_t *
 bool frame_pacer_metrics_parse_cpu_stat(const char *line, const char *key,
                                         uint64_t *value);
 bool frame_pacer_metrics_parse_render_node(const char *target, char *node, size_t node_size);
+
+#ifdef FRAME_PACER_TEST
+void frame_pacer_metrics_test_prune_thread_cpu_slots(
+    struct frame_pacer_metrics *, uint64_t sample_ns);
+bool frame_pacer_metrics_test_parse_temperature(const char *, unsigned int *);
+#endif
 
 #endif

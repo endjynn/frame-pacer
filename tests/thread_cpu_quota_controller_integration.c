@@ -4,7 +4,9 @@
 
 #include <assert.h>
 #include <dirent.h>
+#include <fcntl.h>
 #include <pthread.h>
+#include <signal.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -17,6 +19,13 @@
 struct worker { atomic_uint tid; atomic_bool stop; };
 
 #define EXTRA_WORKERS 128U
+static char last_quota_log[192];
+
+static void quota_log(const char *message)
+{
+    if (message)
+        (void)snprintf(last_quota_log, sizeof(last_quota_log), "%s", message);
+}
 
 static void *run(void *data)
 {
@@ -51,6 +60,32 @@ static bool wait_confirmed(struct frame_pacer_thread_cpu_quota *quota, uint32_t 
     return false;
 }
 
+static bool wait_path_removed(const char *path)
+{
+    unsigned int attempt;
+
+    for (attempt = 0; attempt < 80; ++attempt) {
+        struct timespec pause = {.tv_nsec = 25000000L};
+
+        if (access(path, F_OK) != 0) return true;
+        (void)nanosleep(&pause, 0);
+    }
+    return false;
+}
+
+static bool remains_unconfirmed(struct frame_pacer_thread_cpu_quota *quota)
+{
+    unsigned int attempt;
+
+    for (attempt = 0; attempt < 10; ++attempt) {
+        struct timespec pause = {.tv_nsec = 50000000L};
+
+        (void)nanosleep(&pause, 0);
+        if (frame_pacer_thread_cpu_quota_confirmed(quota, 0)) return false;
+    }
+    return true;
+}
+
 static bool tid_in_own_child(uint32_t tid, const char *root, uint32_t percent)
 {
     char proc[128], path[1400], line[256], expected[1400], quota[32];
@@ -72,6 +107,35 @@ static bool tid_in_own_child(uint32_t tid, const char *root, uint32_t percent)
     return result > 0 && (size_t)result < sizeof(quota) && !strcmp(line, quota);
 }
 
+static bool discover_owned_root(uint32_t tid, char *root, size_t size)
+{
+    char proc[128], line[1400], suffix[64];
+    FILE *file;
+    char *end;
+    int written = snprintf(proc, sizeof(proc),
+                           "/proc/self/task/%u/cgroup", tid);
+
+    if (written < 0 || (size_t)written >= sizeof(proc) ||
+        !(file = fopen(proc, "re")) || !fgets(line, sizeof(line), file)) {
+        if (file) (void)fclose(file);
+        return false;
+    }
+    (void)fclose(file);
+    line[strcspn(line, "\r\n")] = '\0';
+    written = snprintf(suffix, sizeof(suffix),
+                       "/frame-pacer-thread-cpu/t-%u", tid);
+    if (written < 0 || (size_t)written >= sizeof(suffix) ||
+        strncmp(line, "0::", 3) || strlen(line + 3) <= strlen(suffix))
+        return false;
+    end = line + strlen(line) - strlen(suffix);
+    if (strcmp(end, suffix))
+        return false;
+    *end = '\0';
+    written = snprintf(root, size, "/sys/fs/cgroup%s/frame-pacer-thread-cpu",
+                       line + 3);
+    return written >= 0 && (size_t)written < size;
+}
+
 int main(void)
 {
     struct frame_pacer_thread_cpu_quota quota;
@@ -83,7 +147,19 @@ int main(void)
     char root[sizeof(quota.cgroup)];
 
     if (!getenv("FRAME_PACER_THREAD_CPU_QUOTA_INTEGRATION")) return 77;
+#ifdef FRAME_PACER_TEST
+    {
+        char helper[1200];
+
+        if (!frame_pacer_thread_cpu_quota_test_runtime_helper_path(
+                helper, sizeof(helper))) {
+            perror("runtime helper path");
+            return 77;
+        }
+    }
+#endif
     frame_pacer_thread_cpu_quota_init(&quota);
+    frame_pacer_thread_cpu_quota_set_logger(&quota, quota_log);
     assert(!pthread_create(&left_thread, 0, run, &left));
     assert(!pthread_create(&right_thread, 0, run, &right));
     for (index = 0; index < EXTRA_WORKERS; ++index)
@@ -93,14 +169,52 @@ int main(void)
     }
     frame_pacer_thread_cpu_quota_publish(&quota, true, 50);
     if (!wait_confirmed(&quota, 50)) goto unavailable;
-    assert(tid_in_own_child(atomic_load(&left.tid), quota.cgroup, 50));
-    assert(tid_in_own_child(atomic_load(&right.tid), quota.cgroup, 50));
-    assert(snprintf(root, sizeof(root), "%s", quota.cgroup) > 0);
-    frame_pacer_thread_cpu_quota_publish(&quota, true, 75);
+    if (quota.cgroup[0])
+        assert(snprintf(root, sizeof(root), "%s", quota.cgroup) > 0);
+    else
+        assert(discover_owned_root(atomic_load(&left.tid), root,
+                                   sizeof(root)));
+    assert(tid_in_own_child(atomic_load(&left.tid), root, 50));
+    assert(tid_in_own_child(atomic_load(&right.tid), root, 50));
+    {
+        const char *failure_trigger =
+            getenv("FRAME_PACER_TEST_CONTROLLER_FAIL_WRITES_WHEN");
+        int trigger_fd = -1;
+
+        if (failure_trigger && *failure_trigger) {
+            trigger_fd = open(failure_trigger,
+                              O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+            assert(trigger_fd >= 0);
+            assert(!close(trigger_fd));
+        }
+        frame_pacer_thread_cpu_quota_publish(&quota, true, 75);
+        if (trigger_fd >= 0) {
+            assert(remains_unconfirmed(&quota));
+            assert(!unlink(failure_trigger));
+        }
+    }
     assert(wait_confirmed(&quota, 75));
-    assert(!strcmp(root, quota.cgroup)); /* live update, never a replacement subtree */
+    if (quota.cgroup[0])
+        assert(!strcmp(root, quota.cgroup));
     assert(tid_in_own_child(atomic_load(&left.tid), root, 75));
     assert(tid_in_own_child(atomic_load(&right.tid), root, 75));
+    frame_pacer_thread_cpu_quota_publish(&quota, false, 0);
+    assert(wait_path_removed(root));
+    frame_pacer_thread_cpu_quota_publish(&quota, true, 60);
+    assert(wait_confirmed(&quota, 60));
+    if (quota.cgroup[0])
+        assert(!strcmp(root, quota.cgroup));
+    else {
+        char resumed_root[sizeof(root)];
+
+        assert(discover_owned_root(atomic_load(&left.tid), resumed_root,
+                                   sizeof(resumed_root)));
+        assert(!strcmp(root, resumed_root));
+    }
+    assert(tid_in_own_child(atomic_load(&left.tid), root, 60));
+    assert(tid_in_own_child(atomic_load(&right.tid), root, 60));
+    if (quota.external_pid > 0)
+        assert(!kill(quota.external_pid, SIGTERM));
     frame_pacer_thread_cpu_quota_publish(&quota, false, 0);
     atomic_store(&left.stop, true); atomic_store(&right.stop, true);
     for (index = 0; index < EXTRA_WORKERS; ++index) atomic_store(&extra[index].stop, true);
@@ -116,5 +230,7 @@ unavailable:
     (void)pthread_join(left_thread, 0); (void)pthread_join(right_thread, 0);
     for (index = 0; index < EXTRA_WORKERS; ++index) (void)pthread_join(extra_threads[index], 0);
     frame_pacer_thread_cpu_quota_destroy(&quota);
+    if (last_quota_log[0])
+        fputs(last_quota_log, stderr);
     return 77;
 }

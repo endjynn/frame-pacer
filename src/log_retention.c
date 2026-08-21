@@ -1,11 +1,15 @@
 #define _GNU_SOURCE
 #include "log_retention.h"
+#include "state_directory.h"
 
 #include <dirent.h>
 #include <ctype.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <stdbool.h>
+#include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,6 +17,9 @@
 #include <unistd.h>
 
 #define FRAME_PACER_LOG_RETENTION 10
+#ifndef FRAME_PACER_LOG_LIMIT
+#define FRAME_PACER_LOG_LIMIT (UINT64_C(64) * 1024 * 1024)
+#endif
 
 struct log_candidate {
     char name[NAME_MAX + 1];
@@ -72,7 +79,8 @@ static bool regular_user_file(int directory_fd, const char *name)
         S_ISREG(status.st_mode) && status.st_uid == geteuid();
 }
 
-void frame_pacer_log_retention_prune(const char *directory, const char *prefix)
+static void prune_logs(const char *directory, const char *prefix,
+                       const char *protected_name)
 {
     struct log_candidate retained[FRAME_PACER_LOG_RETENTION];
     struct flock lock = { .l_type = F_WRLCK, .l_whence = SEEK_SET };
@@ -80,6 +88,7 @@ void frame_pacer_log_retention_prune(const char *directory, const char *prefix)
     struct dirent *entry;
     int directory_fd, lock_fd;
     size_t retained_count = 0;
+    size_t retention_limit = FRAME_PACER_LOG_RETENTION;
 
     stream = opendir(directory);
     if (!stream)
@@ -95,29 +104,38 @@ void frame_pacer_log_retention_prune(const char *directory, const char *prefix)
         (void)closedir(stream);
         return;
     }
+    if (protected_name && matches_log_name(protected_name, prefix) &&
+        regular_user_file(directory_fd, protected_name))
+        --retention_limit;
 
     while ((entry = readdir(stream))) {
         struct stat status;
         struct log_candidate candidate;
         size_t index;
 
-        if (!matches_log_name(entry->d_name, prefix) ||
+        if ((protected_name && !strcmp(entry->d_name, protected_name)) ||
+            !matches_log_name(entry->d_name, prefix) ||
             fstatat(directory_fd, entry->d_name, &status, AT_SYMLINK_NOFOLLOW) ||
             !S_ISREG(status.st_mode) || status.st_uid != geteuid())
             continue;
-        if (snprintf(candidate.name, sizeof(candidate.name), "%s", entry->d_name) >=
-            (int)sizeof(candidate.name))
-            continue;
+        {
+            int written = snprintf(candidate.name, sizeof(candidate.name),
+                                   "%s", entry->d_name);
+
+            if (written < 0 || (size_t)written >= sizeof(candidate.name))
+                continue;
+        }
         candidate.modified = status.st_mtim;
         for (index = 0; index < retained_count; index++)
             if (newer_than(&candidate, &retained[index]))
                 break;
-        if (index == FRAME_PACER_LOG_RETENTION)
+        if (index == retention_limit)
             continue;
-        if (retained_count < FRAME_PACER_LOG_RETENTION)
+        if (retained_count < retention_limit)
             retained_count++;
-        memmove(&retained[index + 1], &retained[index],
-                (retained_count - index - 1) * sizeof(retained[0]));
+        if (index + 1 < retained_count)
+            memmove(&retained[index + 1], &retained[index],
+                    (retained_count - index - 1) * sizeof(retained[0]));
         retained[index] = candidate;
     }
 
@@ -125,6 +143,7 @@ void frame_pacer_log_retention_prune(const char *directory, const char *prefix)
     while ((entry = readdir(stream))) {
         if (matches_log_name(entry->d_name, prefix) &&
             regular_user_file(directory_fd, entry->d_name) &&
+            (!protected_name || strcmp(entry->d_name, protected_name)) &&
             !is_retained(entry->d_name, retained, retained_count))
             (void)unlinkat(directory_fd, entry->d_name, 0);
     }
@@ -132,4 +151,107 @@ void frame_pacer_log_retention_prune(const char *directory, const char *prefix)
     (void)fcntl(lock_fd, F_SETLK, &lock);
     (void)close(lock_fd);
     (void)closedir(stream);
+}
+
+void frame_pacer_log_retention_prune(const char *directory, const char *prefix)
+{
+    prune_logs(directory, prefix, 0);
+}
+
+bool frame_pacer_runtime_log_open(struct frame_pacer_runtime_log *log,
+                                  const char *filename_prefix)
+{
+    char directory[1100], path[1200];
+    struct stat status;
+    int written;
+
+    if (!log || !filename_prefix || !*filename_prefix ||
+        !log->message_capacity || !frame_pacer_log_enabled())
+        return false;
+    if (!frame_pacer_state_directory(directory, sizeof(directory), false))
+        return false;
+    written = snprintf(path, sizeof(path), "%s/%s%ld.log", directory,
+                       filename_prefix, (long)getpid());
+    if (written < 0 || (size_t)written >= sizeof(path)) return false;
+
+    log->fd = open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC | O_NOFOLLOW,
+                   0600);
+    if (log->fd < 0 || fstat(log->fd, &status) || !S_ISREG(status.st_mode) ||
+        status.st_uid != geteuid() || status.st_nlink != 1 ||
+        fchmod(log->fd, 0600)) {
+        if (log->fd >= 0) (void)close(log->fd);
+        log->fd = -1;
+        return false;
+    }
+    log->bytes = status.st_size > 0 ? (uint64_t)status.st_size : 0;
+    log->capped = log->bytes >= FRAME_PACER_LOG_LIMIT;
+    prune_logs(directory, filename_prefix, strrchr(path, '/') + 1);
+    return true;
+}
+
+void frame_pacer_runtime_log_vwrite(struct frame_pacer_runtime_log *log,
+                                    const char *format, va_list arguments)
+{
+    static const char cap[] =
+        "frame-pacer: log cap reached; pacing continues\n";
+    char buffer[1024];
+    size_t capacity, bytes;
+    int length;
+    size_t offset, remaining;
+
+    if (!log || !format) return;
+    (void)pthread_mutex_lock(&log->mutex);
+    if (log->fd < 0 || log->capped) goto done;
+    capacity = log->message_capacity < sizeof(buffer) ? log->message_capacity :
+                                                       sizeof(buffer);
+    length = vsnprintf(buffer, capacity, format, arguments);
+    if (length < 0) goto done;
+    bytes = (size_t)length < capacity ? (size_t)length : capacity - 1;
+    if (log->bytes >= FRAME_PACER_LOG_LIMIT) {
+        log->capped = true;
+        goto done;
+    }
+    remaining = (size_t)(FRAME_PACER_LOG_LIMIT - log->bytes);
+    if (bytes > remaining || sizeof(cap) - 1 > remaining - bytes) {
+        bytes = sizeof(cap) - 1 < remaining ? sizeof(cap) - 1 : remaining;
+        memcpy(buffer, cap, bytes);
+        log->capped = true;
+    }
+    offset = 0;
+    while (offset < bytes) {
+        ssize_t written = write(log->fd, buffer + offset, bytes - offset);
+
+        if (written > 0) {
+            offset += (size_t)written;
+            log->bytes += (uint64_t)written;
+        } else if (written < 0 && errno == EINTR) {
+            continue;
+        } else {
+            break;
+        }
+    }
+done:
+    (void)pthread_mutex_unlock(&log->mutex);
+}
+
+uint64_t frame_pacer_runtime_log_bytes(struct frame_pacer_runtime_log *log)
+{
+    uint64_t bytes;
+
+    if (!log) return 0;
+    (void)pthread_mutex_lock(&log->mutex);
+    bytes = log->bytes;
+    (void)pthread_mutex_unlock(&log->mutex);
+    return bytes;
+}
+
+void frame_pacer_runtime_log_close(struct frame_pacer_runtime_log *log)
+{
+    if (!log) return;
+    (void)pthread_mutex_lock(&log->mutex);
+    if (log->fd >= 0) {
+        (void)close(log->fd);
+        log->fd = -1;
+    }
+    (void)pthread_mutex_unlock(&log->mutex);
 }

@@ -6,8 +6,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define FRAME_PACER_HUD_LINE_COUNT_MAX 4U
+#define FRAME_PACER_HUD_LINE_CHARACTERS_MAX 13U
+
 struct frame_pacer_hud_text {
-    char lines[4][24];
+    char lines[FRAME_PACER_HUD_LINE_COUNT_MAX]
+              [FRAME_PACER_HUD_LINE_CHARACTERS_MAX + 1];
     uint32_t line_count;
 };
 

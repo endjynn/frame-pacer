@@ -36,15 +36,27 @@ adopts the same controller identity rather than creating a competing subtree.
 
 Some Steam Runtime containers expose a read-only cgroup view to the game. In
 that case frame-pacer uses a short-lived, user-owned external controller tied
-to the game process. It is a transient systemd user service, not a permanent
-service or system configuration change. `libsystemd.so.0` is loaded at runtime;
-frame-pacer has no build-time systemd library dependency.
+to the game process. It normally runs as a transient systemd user service. If
+the client architecture cannot load libsystemd—for example an i386 game on a
+host with only the native library—the native helper bootstraps the same
+transient scope directly. Neither path installs a permanent service or changes
+system configuration. `libsystemd.so.0` is loaded at runtime; frame-pacer has
+no build-time systemd library dependency. Source-checkout backends use
+`build/frame-pacer-thread-cpu-controller`; `make install` places the same
+helper beside the architecture library directories so installed Vulkan layers
+retain this fallback.
+
+The controller exchanges private command/status files below
+`${XDG_STATE_HOME}/frame-pacer`, or `~/.local/state/frame-pacer` when
+`XDG_STATE_HOME` is unset. Frame-pacer creates the fallback state hierarchy on
+first use and requires the protocol directory to be owned by the current user
+with no group or other access.
 
 On `off`, configuration failure, controller failure, or backend unload, the
 controller immediately withdraws confirmation, returns only verified surviving
 owned threads to its threaded domain, and removes only its empty children and
-private root. Scope collection handles game exit, crash, or reboot. No root
-access is required.
+private root. The helper and user manager collect the transient scope after
+game exit; reboot also clears it. No root access is required.
 
 ## HUD confirmation
 
@@ -62,8 +74,8 @@ Normal builds do not create or modify cgroups:
 make check
 ```
 
-The two cgroup checks are deliberately opt-in and never part of `make check`
-or installation:
+The two dedicated cgroup checks are deliberately opt-in and never part of
+`make check` or installation:
 
 ```sh
 make run-thread-cpu-quota-probe
@@ -72,3 +84,5 @@ make run-thread-cpu-quota-controller-integration
 
 They exercise a delegated user-scope topology and controller cleanup. Run them
 only on a system where creating a transient user scope is appropriate.
+`make check-coverage` also runs the controller integration to collect its
+instrumented lifecycle data and therefore has the same requirement.

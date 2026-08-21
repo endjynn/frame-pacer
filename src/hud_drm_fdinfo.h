@@ -23,4 +23,10 @@ bool frame_pacer_drm_fdinfo_utilisation(uint64_t previous_render_ns, uint64_t re
 bool frame_pacer_drm_fdinfo_sample(struct frame_pacer_drm_fdinfo *, unsigned int process_id,
                                    const char *render_node, uint64_t now_ns, unsigned int *percent);
 
+#ifdef FRAME_PACER_TEST
+bool frame_pacer_drm_fdinfo_test_update_sample(
+    struct frame_pacer_drm_fdinfo *, uint64_t render_ns, uint64_t now_ns,
+    unsigned int *percent);
+#endif
+
 #endif

@@ -4,14 +4,6 @@
 
 #include <string.h>
 
-#define FRAME_PACER_HUD_PIXEL_SIZE 4U
-#define FRAME_PACER_HUD_CHARACTER_ADVANCE 24U
-#define FRAME_PACER_HUD_LINE_ADVANCE 40U
-#define FRAME_PACER_HUD_TEXT_X 24U
-#define FRAME_PACER_HUD_TEXT_Y 24U
-#define FRAME_PACER_HUD_PANEL_RIGHT_PADDING 16U
-#define FRAME_PACER_HUD_PANEL_BOTTOM_PADDING 12U
-
 static void add_quad(struct frame_pacer_hud_vertices *vertices, float x, float y,
                      float width, float height, const float color[4])
 {
@@ -59,12 +51,15 @@ bool frame_pacer_hud_vertices_build(struct frame_pacer_hud_vertices *vertices,
     if (!vertices || !text)
         return false;
     vertices->count = 0;
-    if (text->line_count < 3 || text->line_count > 4) return false;
+    if (text->line_count < 3 || text->line_count > FRAME_PACER_HUD_LINE_COUNT_MAX)
+        return false;
     for (line = 0; line < text->line_count; ++line) {
         size_t length = 0;
 
         while (length < sizeof(text->lines[line]) && text->lines[line][length]) ++length;
-        if (length == sizeof(text->lines[line])) return false;
+        if (length == sizeof(text->lines[line]) ||
+            length > FRAME_PACER_HUD_LINE_CHARACTERS_MAX)
+            return false;
         if (length > longest) longest = (unsigned int)length;
     }
     /* The background follows the actual row count and widest rendered metric. */

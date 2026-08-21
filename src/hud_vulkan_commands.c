@@ -19,7 +19,6 @@ static const char *const required_commands[] = {
     [FRAME_PACER_HUD_COMMAND_CREATE_COMMAND_POOL] = "vkCreateCommandPool",
     [FRAME_PACER_HUD_COMMAND_DESTROY_COMMAND_POOL] = "vkDestroyCommandPool",
     [FRAME_PACER_HUD_COMMAND_ALLOCATE_COMMAND_BUFFERS] = "vkAllocateCommandBuffers",
-    [FRAME_PACER_HUD_COMMAND_FREE_COMMAND_BUFFERS] = "vkFreeCommandBuffers",
     [FRAME_PACER_HUD_COMMAND_CREATE_FENCE] = "vkCreateFence",
     [FRAME_PACER_HUD_COMMAND_DESTROY_FENCE] = "vkDestroyFence",
     [FRAME_PACER_HUD_COMMAND_WAIT_FOR_FENCES] = "vkWaitForFences",
@@ -32,7 +31,6 @@ static const char *const required_commands[] = {
     [FRAME_PACER_HUD_COMMAND_FREE_MEMORY] = "vkFreeMemory",
     [FRAME_PACER_HUD_COMMAND_MAP_MEMORY] = "vkMapMemory",
     [FRAME_PACER_HUD_COMMAND_UNMAP_MEMORY] = "vkUnmapMemory",
-    [FRAME_PACER_HUD_COMMAND_FLUSH_MAPPED_MEMORY_RANGES] = "vkFlushMappedMemoryRanges",
     [FRAME_PACER_HUD_COMMAND_BIND_BUFFER_MEMORY] = "vkBindBufferMemory",
     [FRAME_PACER_HUD_COMMAND_GET_BUFFER_MEMORY_REQUIREMENTS] =
         "vkGetBufferMemoryRequirements",

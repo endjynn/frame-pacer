@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "hud_metrics.h"
+#include <ctype.h>
 #include <dirent.h>
 #include <dlfcn.h>
 #include <inttypes.h>
@@ -29,35 +30,109 @@ static void function_from_symbol(void *symbol, void *function, size_t size)
     memcpy(function, &symbol, size);
 }
 
+static bool parse_uint64(const char **text, uint64_t *value)
+{
+    const char *cursor = *text;
+    uint64_t parsed = 0;
+
+    if (!isdigit((unsigned char)*cursor)) return false;
+    do {
+        unsigned int digit = (unsigned int)(*cursor - '0');
+
+        if (parsed > (UINT64_MAX - digit) / 10U) return false;
+        parsed = parsed * 10U + digit;
+        ++cursor;
+    } while (isdigit((unsigned char)*cursor));
+    *text = cursor;
+    *value = parsed;
+    return true;
+}
+
+static bool parse_temperature(const char *text, unsigned int *celsius)
+{
+    const char *cursor = text;
+    uint64_t millidegrees;
+
+    if (!text || !celsius || !parse_uint64(&cursor, &millidegrees))
+        return false;
+    while (*cursor && isspace((unsigned char)*cursor)) ++cursor;
+    if (*cursor || millidegrees > UINT64_C(200000)) return false;
+    *celsius = (unsigned int)((millidegrees + 500U) / 1000U);
+    return true;
+}
+
+#ifdef FRAME_PACER_TEST
+bool frame_pacer_metrics_test_parse_temperature(const char *text,
+                                                 unsigned int *celsius)
+{
+    return parse_temperature(text, celsius);
+}
+#endif
+
 bool frame_pacer_metrics_parse_cpu(const char *line, uint64_t *total, uint64_t *idle)
 {
-    uint64_t user, nice, system, idle_time, iowait, irq, softirq, steal;
-    const char *value;
+    uint64_t values[8];
+    uint64_t parsed_total = 0;
+    uint64_t parsed_idle;
+    size_t index;
+    const char *cursor;
 
-    if (!line || strncmp(line, "cpu", 3)) return false;
-    value = line + 3;
-    while (*value >= '0' && *value <= '9') ++value;
-    if (*value != ' ') return false;
-    if (sscanf(value,
-               " %" SCNu64 " %" SCNu64 " %" SCNu64 " %" SCNu64
-               " %" SCNu64 " %" SCNu64 " %" SCNu64 " %" SCNu64,
-               &user, &nice, &system, &idle_time, &iowait, &irq, &softirq,
-               &steal) != 8)
+    if (!line || !total || !idle || strncmp(line, "cpu", 3)) return false;
+    cursor = line + 3;
+    while (isdigit((unsigned char)*cursor)) ++cursor;
+    if (*cursor != ' ' && *cursor != '\t') return false;
+    for (index = 0; index < sizeof(values) / sizeof(values[0]); ++index) {
+        while (*cursor == ' ' || *cursor == '\t') ++cursor;
+        if (!parse_uint64(&cursor, &values[index])) return false;
+        if (*cursor && *cursor != ' ' && *cursor != '\t' &&
+            *cursor != '\r' && *cursor != '\n')
+            return false;
+    }
+    /* Newer kernels may append counters after the eight fields used by the
+     * utilization formula. Validate rather than interpret those fields. */
+    for (;;) {
+        uint64_t ignored;
+
+        while (*cursor == ' ' || *cursor == '\t') ++cursor;
+        if (*cursor == '\r') ++cursor;
+        if (*cursor == '\n') ++cursor;
+        if (!*cursor) break;
+        if (!parse_uint64(&cursor, &ignored)) return false;
+        if (*cursor && *cursor != ' ' && *cursor != '\t' &&
+            *cursor != '\r' && *cursor != '\n')
+            return false;
+    }
+    for (index = 0; index < sizeof(values) / sizeof(values[0]); ++index) {
+        if (UINT64_MAX - parsed_total < values[index])
+            return false;
+        parsed_total += values[index];
+    }
+    if (UINT64_MAX - values[3] < values[4])
         return false;
-    *total = user + nice + system + idle_time + iowait + irq + softirq + steal;
-    *idle = idle_time + iowait;
-    return *total >= *idle;
+    parsed_idle = values[3] + values[4];
+    *total = parsed_total;
+    *idle = parsed_idle;
+    return true;
 }
 
 bool frame_pacer_metrics_parse_cpu_stat(const char *line, const char *key,
                                         uint64_t *value)
 {
-    char found[32]; uint64_t parsed;
+    const char *cursor;
+    uint64_t parsed;
+    size_t key_length;
 
-    if (!line || !key || !value || sscanf(line, "%31s %" SCNu64,
-                                           found, &parsed) != 2 ||
-        strcmp(found, key))
+    if (!line || !key || !*key || !value)
         return false;
+    key_length = strlen(key);
+    if (strncmp(line, key, key_length) ||
+        (line[key_length] != ' ' && line[key_length] != '\t'))
+        return false;
+    cursor = line + key_length;
+    while (*cursor == ' ' || *cursor == '\t') ++cursor;
+    if (!parse_uint64(&cursor, &parsed)) return false;
+    while (*cursor && isspace((unsigned char)*cursor)) ++cursor;
+    if (*cursor) return false;
     *value = parsed;
     return true;
 }
@@ -68,7 +143,8 @@ static bool thread_cgroup_root(char *output, size_t size)
     const char *marker = "/frame-pacer-thread-cpu/t-";
     char *match; int written;
 
-    if (!file || !fgets(line, sizeof(line), file)) {
+    if (!file || !fgets(line, sizeof(line), file) ||
+        (!strchr(line, '\n') && !feof(file))) {
         if (file) (void)fclose(file);
         return false;
     }
@@ -85,8 +161,10 @@ static bool child_usage_usec(const char *root, const char *name,
 {
     char path[PATH_MAX], line[256]; FILE *file;
 
-    if (snprintf(path, sizeof(path), "%s/%s/cpu.stat", root, name) >=
-            (int)sizeof(path) || !(file = fopen(path, "re")))
+    int written = snprintf(path, sizeof(path), "%s/%s/cpu.stat", root, name);
+
+    if (written < 0 || (size_t)written >= sizeof(path) ||
+        !(file = fopen(path, "re")))
         return false;
     while (fgets(line, sizeof(line), file))
         if (frame_pacer_metrics_parse_cpu_stat(line, "usage_usec", usage_usec)) {
@@ -101,10 +179,10 @@ static struct frame_pacer_thread_cpu_sample *thread_cpu_slot(
     struct frame_pacer_metrics *metrics, uint32_t tid)
 {
     unsigned int i;
-    for (i = 0; i < FRAME_PACER_CPU_MAX_CORES; ++i)
+    for (i = 0; i < FRAME_PACER_THREAD_CPU_SLOTS_MAX; ++i)
         if (metrics->thread_cpu[i].started && metrics->thread_cpu[i].tid == tid)
             return &metrics->thread_cpu[i];
-    for (i = 0; i < FRAME_PACER_CPU_MAX_CORES; ++i)
+    for (i = 0; i < FRAME_PACER_THREAD_CPU_SLOTS_MAX; ++i)
         if (!metrics->thread_cpu[i].started) return &metrics->thread_cpu[i];
     return 0;
 }
@@ -116,6 +194,27 @@ static void invalidate_thread_cpu(struct frame_pacer_metrics *metrics)
     metrics->thread_cpu_percent = 0;
     metrics->thread_cpu_available = false;
 }
+
+static void prune_thread_cpu_slots(struct frame_pacer_metrics *metrics,
+                                   uint64_t sample_ns)
+{
+    unsigned int index;
+
+    for (index = 0; index < FRAME_PACER_THREAD_CPU_SLOTS_MAX; ++index) {
+        struct frame_pacer_thread_cpu_sample *sample = &metrics->thread_cpu[index];
+
+        if (sample->started && sample->sample_ns != sample_ns)
+            memset(sample, 0, sizeof(*sample));
+    }
+}
+
+#ifdef FRAME_PACER_TEST
+void frame_pacer_metrics_test_prune_thread_cpu_slots(
+    struct frame_pacer_metrics *metrics, uint64_t sample_ns)
+{
+    prune_thread_cpu_slots(metrics, sample_ns);
+}
+#endif
 
 static void sample_thread_cpu(struct frame_pacer_metrics *metrics,
                               uint64_t now_ns,
@@ -154,10 +253,14 @@ static void sample_thread_cpu(struct frame_pacer_metrics *metrics,
             } else {
                 uint64_t elapsed = now_ns - previous->sample_ns;
                 uint64_t delta = usage_usec - previous->usage_usec;
-                percent = (unsigned int)((delta * UINT64_C(100000) + elapsed / 2) / elapsed);
-                if (percent > 100) percent = 100;
-                if (percent > peak) peak = percent;
-                available = true;
+                if (delta > UINT64_MAX / UINT64_C(1000)) {
+                    percent = 100;
+                    available = true;
+                } else {
+                    available = frame_pacer_drm_fdinfo_utilisation(
+                        0, delta * UINT64_C(1000), elapsed, &percent);
+                }
+                if (available && percent > peak) peak = percent;
             }
         }
         previous->tid = (uint32_t)value;
@@ -166,14 +269,13 @@ static void sample_thread_cpu(struct frame_pacer_metrics *metrics,
         previous->started = true;
     }
     (void)closedir(directory);
-    if (reset) {
+    prune_thread_cpu_slots(metrics, now_ns);
+    if (reset || !available) {
         metrics->thread_cpu_available = false;
         return;
     }
-    if (available) {
-        metrics->thread_cpu_percent = peak;
-        metrics->thread_cpu_available = true;
-    }
+    metrics->thread_cpu_percent = peak;
+    metrics->thread_cpu_available = true;
 cached:
     if (metrics->thread_cpu_available) {
         snapshot->thread_cpu_percent = metrics->thread_cpu_percent;
@@ -184,16 +286,17 @@ cached:
 bool frame_pacer_metrics_parse_render_node(const char *target, char *node, size_t node_size)
 {
     const char *base;
+    int written;
 
     if (!target || !node || !node_size)
         return false;
     base = strrchr(target, '/');
     base = base ? base + 1 : target;
     if (strncmp(base, "renderD", 7) || !base[7] ||
-        strspn(base + 7, "0123456789") != strlen(base + 7) ||
-        snprintf(node, node_size, "%s", base) >= (int)node_size)
+        strspn(base + 7, "0123456789") != strlen(base + 7))
         return false;
-    return true;
+    written = snprintf(node, node_size, "%s", base);
+    return written >= 0 && (size_t)written < node_size;
 }
 
 static void find_process_gpu(struct frame_pacer_metrics *metrics, unsigned int process_id)
@@ -201,9 +304,12 @@ static void find_process_gpu(struct frame_pacer_metrics *metrics, unsigned int p
     DIR *directory;
     struct dirent *entry;
     char directory_path[64];
-    if (!process_id ||
-        snprintf(directory_path, sizeof(directory_path), "/proc/%u/fd",
-                 process_id) >= (int)sizeof(directory_path))
+    int written;
+
+    written = snprintf(directory_path, sizeof(directory_path), "/proc/%u/fd",
+                       process_id);
+    if (!process_id || written < 0 ||
+        (size_t)written >= sizeof(directory_path))
         return;
     directory = opendir(directory_path);
     if (!directory) return;
@@ -214,8 +320,9 @@ static void find_process_gpu(struct frame_pacer_metrics *metrics, unsigned int p
 
         if (entry->d_name[0] == '.')
             continue;
-        if (snprintf(fd_path, sizeof(fd_path), "%s/%s", directory_path,
-                     entry->d_name) >= (int)sizeof(fd_path))
+        written = snprintf(fd_path, sizeof(fd_path), "%s/%s", directory_path,
+                           entry->d_name);
+        if (written < 0 || (size_t)written >= sizeof(fd_path))
             continue;
         length = readlink(fd_path, target, sizeof(target) - 1);
         if (length < 0)
@@ -239,10 +346,12 @@ static void find_cpu_temperature(struct frame_pacer_metrics *metrics)
         FILE *file;
         char path[256], name[64], label[64];
         int index;
+        int written;
         if (entry->d_name[0] == '.')
             continue;
-        if (snprintf(path, sizeof(path), "/sys/class/hwmon/%s/name",
-                     entry->d_name) >= (int)sizeof(path))
+        written = snprintf(path, sizeof(path), "/sys/class/hwmon/%s/name",
+                           entry->d_name);
+        if (written < 0 || (size_t)written >= sizeof(path))
             continue;
         file = fopen(path, "re");
         if (!file || !fgets(name, sizeof(name), file)) {
@@ -254,9 +363,10 @@ static void find_cpu_temperature(struct frame_pacer_metrics *metrics)
         name[strcspn(name, "\r\n")] = '\0';
         if (strcmp(name, "coretemp")) continue;
         for (index = 1; index <= 16; ++index) {
-            if (snprintf(path, sizeof(path),
-                         "/sys/class/hwmon/%s/temp%d_label", entry->d_name,
-                         index) >= (int)sizeof(path))
+            written = snprintf(path, sizeof(path),
+                               "/sys/class/hwmon/%s/temp%d_label",
+                               entry->d_name, index);
+            if (written < 0 || (size_t)written >= sizeof(path))
                 break;
             file = fopen(path, "re");
             if (!file || !fgets(label, sizeof(label), file)) {
@@ -266,12 +376,17 @@ static void find_cpu_temperature(struct frame_pacer_metrics *metrics)
             }
             (void)fclose(file);
             label[strcspn(label, "\r\n")] = '\0';
-            if (!strcmp(label, "Package id 0") &&
-                snprintf(metrics->cpu_temp_path, sizeof(metrics->cpu_temp_path),
-                         "/sys/class/hwmon/%s/temp%d_input", entry->d_name,
-                         index) < (int)sizeof(metrics->cpu_temp_path)) {
-                (void)closedir(directory);
-                return;
+            if (!strcmp(label, "Package id 0")) {
+                written = snprintf(metrics->cpu_temp_path,
+                                   sizeof(metrics->cpu_temp_path),
+                                   "/sys/class/hwmon/%s/temp%d_input",
+                                   entry->d_name, index);
+                if (written >= 0 &&
+                    (size_t)written < sizeof(metrics->cpu_temp_path)) {
+                    (void)closedir(directory);
+                    return;
+                }
+                metrics->cpu_temp_path[0] = '\0';
             }
         }
     }
@@ -283,8 +398,10 @@ void frame_pacer_metrics_init(struct frame_pacer_metrics *metrics,
 {
     void *symbol;
     int (*init)(void) = 0;
+    if (!metrics) return;
     memset(metrics, 0, sizeof(*metrics));
-    (void)pthread_mutex_init(&metrics->mutex, 0);
+    if (pthread_mutex_init(&metrics->mutex, 0)) return;
+    metrics->initialized = true;
     find_cpu_temperature(metrics);
     if (!process_id) return;
     metrics->process_id = process_id;
@@ -317,13 +434,13 @@ void frame_pacer_metrics_init(struct frame_pacer_metrics *metrics,
                          sizeof(metrics->nvml_temperature));
     if (!init || !metrics->nvml_shutdown || !metrics->nvml_get_count ||
         !metrics->nvml_get_device || !metrics->nvml_get_graphics_processes ||
-        !metrics->nvml_utilization || !metrics->nvml_temperature || init() != 0)
+        !metrics->nvml_utilization || !metrics->nvml_temperature)
         goto unavailable;
+    if (init() != 0) goto unavailable;
     metrics->nvml_started = true;
     frame_pacer_metrics_select_gpu(metrics, process_id);
     return;
 unavailable:
-    if (metrics->nvml_shutdown) (void)metrics->nvml_shutdown();
     metrics->nvml_started = false;
     (void)dlclose(metrics->nvml_library);
     metrics->nvml_library = 0;
@@ -332,7 +449,7 @@ unavailable:
 void frame_pacer_metrics_select_gpu(struct frame_pacer_metrics *metrics, unsigned int process_id)
 {
     unsigned int count, index;
-    if (!process_id)
+    if (!metrics || !metrics->initialized || !process_id)
         return;
     (void)pthread_mutex_lock(&metrics->mutex);
     metrics->nvml_device = 0;
@@ -342,7 +459,7 @@ void frame_pacer_metrics_select_gpu(struct frame_pacer_metrics *metrics, unsigne
         count > 64)
         goto done;
     for (index = 0; index < count; ++index) {
-        unsigned int process_count = 0, process_index;
+        unsigned int process_count = 0, process_index, capacity;
         struct nvml_process_info *processes;
         void *device = 0;
         /* NVML reports the exact required count through this initial query. */
@@ -354,7 +471,10 @@ void frame_pacer_metrics_select_gpu(struct frame_pacer_metrics *metrics, unsigne
         processes = calloc(process_count, sizeof(*processes));
         if (!processes)
             continue;
-        if (metrics->nvml_get_graphics_processes(device, &process_count, processes) == 0) {
+        capacity = process_count;
+        if (metrics->nvml_get_graphics_processes(device, &process_count,
+                                                  processes) == 0) {
+            if (process_count > capacity) process_count = capacity;
             for (process_index = 0; process_index < process_count; ++process_index) {
                 if (processes[process_index].pid == process_id) {
                     metrics->nvml_device = device;
@@ -372,6 +492,8 @@ done:
 
 void frame_pacer_metrics_destroy(struct frame_pacer_metrics *metrics)
 {
+    if (!metrics || !metrics->initialized) return;
+    metrics->initialized = false;
     if (metrics->nvml_started) (void)metrics->nvml_shutdown();
     if (metrics->nvml_library) (void)dlclose(metrics->nvml_library);
     (void)pthread_mutex_destroy(&metrics->mutex);
@@ -396,12 +518,12 @@ void frame_pacer_metrics_sample(struct frame_pacer_metrics *metrics,
     FILE *file;
     char line[256];
     uint64_t total, idle;
-    unsigned long temperature;
     struct nvml_utilization utilization;
     struct timespec now;
     uint64_t now_ns = 0;
 
-    memset(snapshot, 0, sizeof(*snapshot));
+    if (snapshot) memset(snapshot, 0, sizeof(*snapshot));
+    if (!metrics || !metrics->initialized || !snapshot) return;
     if (clock_gettime(CLOCK_MONOTONIC, &now) == 0)
         now_ns = (uint64_t)now.tv_sec * UINT64_C(1000000000) + (uint64_t)now.tv_nsec;
     if (now_ns && nvml_retry_due(metrics, now_ns))
@@ -415,51 +537,20 @@ void frame_pacer_metrics_sample(struct frame_pacer_metrics *metrics,
             uint64_t idle_delta = idle - metrics->cpu_idle;
             uint64_t bounded_idle = idle_delta > total_delta ? total_delta : idle_delta;
 
-            snapshot->cpu_use_percent = (unsigned int)(
-                ((total_delta - bounded_idle) * 100 + total_delta / 2) /
-                total_delta);
-            snapshot->available |= FRAME_PACER_METRIC_CPU_USE;
+            if (frame_pacer_drm_fdinfo_utilisation(
+                    0, total_delta - bounded_idle, total_delta,
+                    &snapshot->cpu_use_percent))
+                snapshot->available |= FRAME_PACER_METRIC_CPU_USE;
         }
         metrics->cpu_total = total;
         metrics->cpu_idle = idle;
         metrics->cpu_started = true;
-        {
-            unsigned int core = 0, peak = 0;
-
-            while (core < FRAME_PACER_CPU_MAX_CORES && fgets(line, sizeof(line), file)) {
-                struct frame_pacer_cpu_sample *previous;
-
-                if (strncmp(line, "cpu", 3) || line[3] < '0' || line[3] > '9')
-                    break;
-                if (!frame_pacer_metrics_parse_cpu(line, &total, &idle)) {
-                    ++core;
-                    continue;
-                }
-                previous = &metrics->cpu_cores[core];
-                if (previous->started && total > previous->total && idle >= previous->idle) {
-                    uint64_t total_delta = total - previous->total;
-                    uint64_t idle_delta = idle - previous->idle;
-                    uint64_t bounded_idle = idle_delta > total_delta ? total_delta : idle_delta;
-                    unsigned int use = (unsigned int)(((total_delta - bounded_idle) * 100 +
-                        total_delta / 2) / total_delta);
-
-                    if (use > peak) peak = use;
-                    snapshot->available |= FRAME_PACER_METRIC_CPU_PEAK;
-                }
-                previous->total = total;
-                previous->idle = idle;
-                previous->started = true;
-                ++core;
-            }
-            if (snapshot->available & FRAME_PACER_METRIC_CPU_PEAK)
-                snapshot->cpu_peak_percent = peak;
-        }
     }
     if (file) (void)fclose(file);
     sample_thread_cpu(metrics, now_ns, snapshot);
     if (metrics->cpu_temp_path[0] && (file = fopen(metrics->cpu_temp_path, "re"))) {
-        if (fscanf(file, "%lu", &temperature) == 1 && temperature <= 200000) {
-            snapshot->cpu_temp_celsius = (unsigned int)((temperature + 500) / 1000);
+        if (fgets(line, sizeof(line), file) &&
+            parse_temperature(line, &snapshot->cpu_temp_celsius)) {
             snapshot->available |= FRAME_PACER_METRIC_CPU_TEMP;
         }
         (void)fclose(file);

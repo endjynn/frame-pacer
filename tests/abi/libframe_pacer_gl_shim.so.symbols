@@ -1,0 +1,11 @@
+T dlsym
+T eglDestroyContext
+T eglGetProcAddress
+T eglSwapBuffers
+T eglSwapBuffersWithDamageEXT
+T eglSwapBuffersWithDamageKHR
+T eglTerminate
+T glXDestroyContext
+T glXGetProcAddress
+T glXGetProcAddressARB
+T glXSwapBuffers

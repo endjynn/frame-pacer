@@ -15,6 +15,7 @@ typedef int (*frame_pacer_sleep_fn)(void *, uint64_t);
 
 struct frame_pacer_clock {
     pthread_mutex_t mutex;
+    bool initialized;
     bool started;
     uint32_t fps;
     uint64_t next_deadline_ns;

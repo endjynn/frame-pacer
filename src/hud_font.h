@@ -6,6 +6,7 @@
 
 #define FRAME_PACER_FONT_WIDTH 5U
 #define FRAME_PACER_FONT_HEIGHT 7U
+#define FRAME_PACER_FONT_LIT_PIXELS_MAX 19U
 
 bool frame_pacer_font_pixel(unsigned char character, unsigned int x, unsigned int y);
 void frame_pacer_font_rasterize(const char *text, uint8_t *pixels,

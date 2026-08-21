@@ -1,7 +1,10 @@
 # HUD
 
 The HUD appears in the top-left corner. Its compact, fixed-cell layout keeps
-values aligned even when a provider is unavailable.
+values aligned even when a provider is unavailable. The complete panel is at
+most 352 by 196 pixels with the optional fourth row; the usual three-row panel
+is 352 by 156 pixels. Every value occupies four glyph cells, including the
+supported maximum of 999 FPS.
 
 Set `hud = off` at the top level of `frame-pacer.conf` to disable it without
 disabling frame pacing. `hud = on` is the default; valid changes are applied
@@ -12,7 +15,7 @@ to a running game within one second.
 | `GPU <GPU usage> <GPU temperature>` | Game-associated GPU utilisation and temperature. |
 | `CPU <CPU usage> <CPU temperature>` | System CPU utilisation and CPU package temperature. |
 | `THR <peak thread CPU usage> <configured limit>` | Per-thread CPU activity and configured thread ceiling. Visible only for an active `thread_cpu_limit`. |
-| `FPS <current frame rate>` | Measured frame rate. |
+| `FPS <current frame rate> <configured limit>` | Measured frame rate and the active presentation cap. |
 
 Available percentages use `%`; temperatures use the small degree glyph; FPS
 uses a matching half-height frame glyph. `N/A` occupies the same value column

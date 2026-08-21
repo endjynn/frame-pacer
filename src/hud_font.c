@@ -43,7 +43,8 @@ static const uint8_t glyphs[128][FRAME_PACER_FONT_HEIGHT] = {
 
 bool frame_pacer_font_pixel(unsigned char character, unsigned int x, unsigned int y)
 {
-    if (x >= FRAME_PACER_FONT_WIDTH || y >= FRAME_PACER_FONT_HEIGHT)
+    if (character >= sizeof(glyphs) / sizeof(glyphs[0]) ||
+        x >= FRAME_PACER_FONT_WIDTH || y >= FRAME_PACER_FONT_HEIGHT)
         return false;
     return (glyphs[character][y] & (1U << (FRAME_PACER_FONT_WIDTH - 1U - x))) != 0;
 }

@@ -2,6 +2,7 @@
 #include "pacer_limit.h"
 
 #include <ctype.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <stddef.h>
@@ -15,15 +16,22 @@ static void set_path(struct frame_pacer_limit *limit)
 {
     const char *config = getenv("XDG_CONFIG_HOME");
     const char *home;
+    int written;
 
     if (config && *config) {
-        (void)snprintf(limit->path, sizeof(limit->path), "%s/frame-pacer/frame-pacer.conf", config);
+        written = snprintf(limit->path, sizeof(limit->path),
+                           "%s/frame-pacer/frame-pacer.conf", config);
+        if (written < 0 || (size_t)written >= sizeof(limit->path))
+            limit->path[0] = '\0';
         return;
     }
     home = getenv("HOME");
-    if (home && *home)
-        (void)snprintf(limit->path, sizeof(limit->path),
-                       "%s/.config/frame-pacer/frame-pacer.conf", home);
+    if (home && *home) {
+        written = snprintf(limit->path, sizeof(limit->path),
+                           "%s/.config/frame-pacer/frame-pacer.conf", home);
+        if (written < 0 || (size_t)written >= sizeof(limit->path))
+            limit->path[0] = '\0';
+    }
 }
 
 static bool same_executable(const char *left, const char *right)
@@ -83,13 +91,26 @@ static ssize_t read_command(pid_t process_id, char command[FRAME_PACER_EXECUTABL
 {
     char path[64];
     ssize_t bytes;
+    char extra;
     int fd;
+    int written;
 
-    if (snprintf(path, sizeof(path), "/proc/%ld/cmdline", (long)process_id) >=
-        (int)sizeof(path)) return -1;
+    written = snprintf(path, sizeof(path), "/proc/%ld/cmdline",
+                       (long)process_id);
+    if (written < 0 || (size_t)written >= sizeof(path)) return -1;
     fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
     if (fd < 0) return -1;
-    bytes = read(fd, command, FRAME_PACER_EXECUTABLE_MAX - 1);
+    do {
+        bytes = read(fd, command, FRAME_PACER_EXECUTABLE_MAX);
+    } while (bytes < 0 && errno == EINTR);
+    if (bytes == FRAME_PACER_EXECUTABLE_MAX) {
+        ssize_t remaining;
+
+        do {
+            remaining = read(fd, &extra, 1);
+        } while (remaining < 0 && errno == EINTR);
+        if (remaining != 0) bytes = -1;
+    }
     (void)close(fd);
     return bytes;
 }
@@ -100,9 +121,10 @@ static pid_t parent_process_id(pid_t process_id)
     ssize_t bytes;
     long parent;
     int fd;
+    int written;
 
-    if (snprintf(path, sizeof(path), "/proc/%ld/stat", (long)process_id) >=
-        (int)sizeof(path)) return 0;
+    written = snprintf(path, sizeof(path), "/proc/%ld/stat", (long)process_id);
+    if (written < 0 || (size_t)written >= sizeof(path)) return 0;
     fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
     if (fd < 0) return 0;
     bytes = read(fd, text, sizeof(text) - 1);
@@ -125,8 +147,9 @@ static bool process_owned_by_user(pid_t process_id)
 {
     char path[64];
     struct stat status;
+    int written = snprintf(path, sizeof(path), "/proc/%ld", (long)process_id);
 
-    return snprintf(path, sizeof(path), "/proc/%ld", (long)process_id) < (int)sizeof(path) &&
+    return written >= 0 && (size_t)written < sizeof(path) &&
            !stat(path, &status) && status.st_uid == getuid();
 }
 
@@ -154,7 +177,7 @@ void frame_pacer_limit_init(struct frame_pacer_limit *limit)
 {
     if (!limit) return;
     memset(limit, 0, sizeof(*limit));
-    (void)pthread_mutex_init(&limit->mutex, 0);
+    if (pthread_mutex_init(&limit->mutex, 0)) return;
     limit->fps = FRAME_PACER_DEFAULT_FPS;
     limit->hud_enabled = true;
     set_path(limit);
@@ -164,7 +187,10 @@ void frame_pacer_limit_init(struct frame_pacer_limit *limit)
 
 void frame_pacer_limit_destroy(struct frame_pacer_limit *limit)
 {
-    if (limit && limit->initialized) (void)pthread_mutex_destroy(&limit->mutex);
+    if (limit && limit->initialized) {
+        limit->initialized = false;
+        (void)pthread_mutex_destroy(&limit->mutex);
+    }
 }
 
 const char *frame_pacer_limit_executable(const struct frame_pacer_limit *limit)
@@ -393,21 +419,34 @@ static uint32_t read_limit(const struct frame_pacer_limit *limit,
     uint32_t fps = FRAME_PACER_DEFAULT_FPS;
 
     if (!limit->path[0] || !expected || expected->st_uid != getuid() ||
-        !S_ISREG(expected->st_mode) || (expected->st_mode & (S_IRWXG | S_IRWXO)) ||
+        !S_ISREG(expected->st_mode) || expected->st_nlink != 1 ||
+        (expected->st_mode & (S_IRWXG | S_IRWXO)) ||
         expected->st_size < 1 || expected->st_size >= (off_t)sizeof(text))
         return FRAME_PACER_DEFAULT_FPS;
     fd = open(limit->path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
     if (fd < 0) return FRAME_PACER_DEFAULT_FPS;
     if (fstat(fd, &status) || status.st_uid != expected->st_uid ||
         status.st_dev != expected->st_dev || status.st_ino != expected->st_ino ||
-        !S_ISREG(status.st_mode) || (status.st_mode & (S_IRWXG | S_IRWXO)) ||
+        !S_ISREG(status.st_mode) || status.st_nlink != 1 ||
+        (status.st_mode & (S_IRWXG | S_IRWXO)) ||
         status.st_size != expected->st_size) {
         (void)close(fd);
         return FRAME_PACER_DEFAULT_FPS;
     }
-    bytes = read(fd, text, sizeof(text) - 1);
-    (void)close(fd);
-    if (bytes < 0 || bytes != expected->st_size) return FRAME_PACER_DEFAULT_FPS;
+    do {
+        bytes = read(fd, text, sizeof(text) - 1);
+    } while (bytes < 0 && errno == EINTR);
+    if (bytes < 0 || bytes != expected->st_size || fstat(fd, &status) ||
+        status.st_uid != expected->st_uid || status.st_dev != expected->st_dev ||
+        status.st_ino != expected->st_ino || status.st_nlink != 1 ||
+        status.st_mode != expected->st_mode ||
+        status.st_mtim.tv_sec != expected->st_mtim.tv_sec ||
+        status.st_mtim.tv_nsec != expected->st_mtim.tv_nsec ||
+        status.st_size != expected->st_size) {
+        (void)close(fd);
+        return FRAME_PACER_DEFAULT_FPS;
+    }
+    if (close(fd)) return FRAME_PACER_DEFAULT_FPS;
     text[bytes] = '\0';
     return parse_limit(text, limit, &fps, quota_enabled, quota, hud_enabled) ?
         fps : FRAME_PACER_DEFAULT_FPS;
@@ -432,7 +471,11 @@ uint32_t frame_pacer_limit_poll(struct frame_pacer_limit *limit, uint64_t now_ns
         return next;
     }
     limit->last_check_ns = now_ns;
-    if (limit->path[0] && !stat(limit->path, &status)) current = stamp_for(&status);
+    if (limit->path[0] && !lstat(limit->path, &status) &&
+        status.st_uid == getuid() && S_ISREG(status.st_mode) &&
+        status.st_nlink == 1 &&
+        !(status.st_mode & (S_IRWXG | S_IRWXO)))
+        current = stamp_for(&status);
     if (!same_stamp(&limit->stamp, &current)) {
         next = current.present ? read_limit(limit, &status, &quota_enabled, &quota, &hud_enabled) :
                                  FRAME_PACER_DEFAULT_FPS;

@@ -63,9 +63,30 @@ static void stale_presentation_is_not_fabricated(void)
     frame_pacer_fps_destroy(&tracker);
 }
 
+static void extreme_interval_count_saturates(void)
+{
+    struct frame_pacer_fps_tracker tracker;
+    uint32_t fps = 0;
+    uint64_t now = FRAME_PACER_FPS_SAMPLE_NS + 1;
+
+    frame_pacer_fps_init(&tracker);
+    tracker.started = true;
+    tracker.sample_start_ns = 1;
+    tracker.last_present_ns = now - 1;
+    tracker.present_intervals = UINT64_MAX;
+    assert(frame_pacer_fps_record_present(&tracker, now, &fps));
+    assert(fps == UINT32_MAX);
+    frame_pacer_fps_destroy(&tracker);
+    frame_pacer_fps_destroy(&tracker);
+    frame_pacer_fps_init(0);
+    assert(!frame_pacer_fps_record_present(0, now, &fps));
+    assert(!frame_pacer_fps_snapshot(0, &fps));
+}
+
 int main(void)
 {
     normal_cadence();
     lower_and_higher_cadence();
     stale_presentation_is_not_fabricated();
+    extreme_interval_count_saturates();
 }

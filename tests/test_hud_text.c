@@ -10,6 +10,8 @@ int main(void)
     assert(!strcmp(text.lines[0], "GPU  18%  56\x7f"));
     assert(!strcmp(text.lines[1], "CPU   2%  68\x7f"));
     assert(!strcmp(text.lines[2], "FPS  60\x7e  70\x7e"));
+    assert(text.lines[0][4] == ' ' && text.lines[0][5] == '1');
+    assert(text.lines[2][4] == ' ' && text.lines[2][5] == '6');
     assert(!strcmp(text.lines[3], ""));
     assert(text.line_count == 3);
     frame_pacer_hud_text_format(&text, &metrics, 1, 0, 30, true, true, 75);
@@ -21,4 +23,13 @@ int main(void)
     assert(!strcmp(text.lines[0], "GPU  N/A  N/A"));
     assert(!strcmp(text.lines[2], "THR  N/A  N/A"));
     assert(!strcmp(text.lines[3], "FPS  N/A  70\x7e"));
+    frame_pacer_hud_text_format(&text, &metrics, 1, 999, 999,
+                                false, false, 0);
+    assert(!strcmp(text.lines[2], "FPS 999\x7e 999\x7e"));
+    frame_pacer_hud_text_format(&text, 0, 1, 1000, 1000,
+                                true, true, 101);
+    assert(!strcmp(text.lines[0], "GPU  N/A  N/A"));
+    assert(!strcmp(text.lines[2], "THR  N/A  N/A"));
+    assert(!strcmp(text.lines[3], "FPS  N/A  N/A"));
+    frame_pacer_hud_text_format(0, &metrics, 1, 60, 70, false, false, 0);
 }

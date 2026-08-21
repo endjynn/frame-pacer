@@ -13,6 +13,7 @@
  * backend has accepted the frame. */
 struct frame_pacer_fps_tracker {
     pthread_mutex_t mutex;
+    bool initialized;
     bool started;
     bool valid;
     uint64_t sample_start_ns;

@@ -18,6 +18,7 @@ esac
 cleanup() { rm -rf -- "$state"; }
 trap cleanup EXIT HUP INT TERM
 mkdir -p "$state/frame-pacer"
+chmod 700 "$state/frame-pacer"
 printf '%s\n' 'global_fps_limit = 70' > "$state/frame-pacer/frame-pacer.conf"
 
 XDG_CONFIG_HOME="$state" XDG_STATE_HOME="$state" \
@@ -33,6 +34,17 @@ XDG_CONFIG_HOME="$state" XDG_STATE_HOME="$state" \
 log=$(find "$state/frame-pacer" -type f -name 'frame-pacer-gl-*.log' -print -quit)
 test -n "$log"
 grep -q 'GL interposer init.*dlsym=1 glx=1 egl=1' "$log"
-test "$(grep -c 'glXSwapBuffers .*cap=70' "$log")" -eq 3
-test "$(grep -c 'eglSwapBuffers .*cap=70' "$log")" -eq 2
-test "$(grep -c 'eglSwapBuffersWithDamageKHR .*cap=70' "$log")" -eq 1
+test "$(grep -c 'glXSwapBuffers .*cap=70' "$log")" -eq 5
+test "$(grep -c 'eglSwapBuffers .*cap=70' "$log")" -eq 4
+test "$(grep -c 'eglSwapBuffersWithDamageKHR .*cap=70' "$log")" -eq 2
+test "$(grep -c 'eglSwapBuffersWithDamageEXT .*cap=70' "$log")" -eq 2
+
+# A launcher may stage only a symlink to the shim. dladdr then names the staged
+# path while /proc/self/maps identifies the adjacent backend's canonical path.
+mkdir -p "$state/staged" "$state/mapped"
+ln -s "$root/build/$arch/libframe_pacer_gl_shim.so" "$state/staged/preload.so"
+XDG_CONFIG_HOME="$state" XDG_STATE_HOME="$state/mapped" \
+    LD_LIBRARY_PATH="$root/build/$arch" \
+    FRAME_PACER_LOG=1 \
+    LD_PRELOAD="$state/staged/preload.so" \
+    "$test_program"
