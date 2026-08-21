@@ -35,6 +35,8 @@ HUD_SRC := \
 	src/hud_vertices.c
 VULKAN_SRC := \
 	src/frame_pacer_layer.c \
+	src/vulkan_layer_registry.c \
+	src/vulkan_layer_hud.c \
 	$(PACER_SRC) \
 	$(LOG_RETENTION_SRC) \
 	src/pacer_queue.c \
