@@ -177,8 +177,9 @@ void frame_pacer_limit_init(struct frame_pacer_limit *limit)
 {
     if (!limit) return;
     memset(limit, 0, sizeof(*limit));
+    atomic_init(&limit->last_check_ns, 0);
+    atomic_init(&limit->fps, FRAME_PACER_DEFAULT_FPS);
     if (pthread_mutex_init(&limit->mutex, 0)) return;
-    limit->fps = FRAME_PACER_DEFAULT_FPS;
     limit->hud_enabled = true;
     set_path(limit);
     set_executable_candidates(limit);
@@ -460,17 +461,24 @@ uint32_t frame_pacer_limit_poll(struct frame_pacer_limit *limit, uint64_t now_ns
     bool quota_enabled = false;
     bool hud_enabled = true;
     uint32_t quota = 0;
+    uint64_t last_check_ns;
 
     if (changed) *changed = false;
     if (!limit || !limit->initialized) return FRAME_PACER_DEFAULT_FPS;
+    last_check_ns = atomic_load_explicit(&limit->last_check_ns,
+                                         memory_order_acquire);
+    if (last_check_ns && now_ns >= last_check_ns &&
+        now_ns - last_check_ns < FRAME_PACER_CONFIG_POLL_NS)
+        return atomic_load_explicit(&limit->fps, memory_order_relaxed);
     (void)pthread_mutex_lock(&limit->mutex);
-    if (limit->last_check_ns && now_ns >= limit->last_check_ns &&
-        now_ns - limit->last_check_ns < FRAME_PACER_CONFIG_POLL_NS) {
-        next = limit->fps;
+    last_check_ns = atomic_load_explicit(&limit->last_check_ns,
+                                         memory_order_relaxed);
+    if (last_check_ns && now_ns >= last_check_ns &&
+        now_ns - last_check_ns < FRAME_PACER_CONFIG_POLL_NS) {
+        next = atomic_load_explicit(&limit->fps, memory_order_relaxed);
         (void)pthread_mutex_unlock(&limit->mutex);
         return next;
     }
-    limit->last_check_ns = now_ns;
     if (limit->path[0] && !lstat(limit->path, &status) &&
         status.st_uid == getuid() && S_ISREG(status.st_mode) &&
         status.st_nlink == 1 &&
@@ -479,14 +487,17 @@ uint32_t frame_pacer_limit_poll(struct frame_pacer_limit *limit, uint64_t now_ns
     if (!same_stamp(&limit->stamp, &current)) {
         next = current.present ? read_limit(limit, &status, &quota_enabled, &quota, &hud_enabled) :
                                  FRAME_PACER_DEFAULT_FPS;
-        if (next != limit->fps && changed) *changed = true;
-        limit->fps = next;
+        if (next != atomic_load_explicit(&limit->fps, memory_order_relaxed) &&
+            changed)
+            *changed = true;
+        atomic_store_explicit(&limit->fps, next, memory_order_relaxed);
         limit->thread_cpu_quota_enabled = quota_enabled;
         limit->thread_cpu_quota = quota;
         limit->hud_enabled = hud_enabled;
         limit->stamp = current;
     }
-    next = limit->fps;
+    next = atomic_load_explicit(&limit->fps, memory_order_relaxed);
+    atomic_store_explicit(&limit->last_check_ns, now_ns, memory_order_release);
     (void)pthread_mutex_unlock(&limit->mutex);
     return next;
 }

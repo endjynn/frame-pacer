@@ -41,12 +41,19 @@ static const uint8_t glyphs[128][FRAME_PACER_FONT_HEIGHT] = {
     [127] = {14, 17, 17, 14, 0, 0, 0}, /* Internal degree glyph. */
 };
 
-bool frame_pacer_font_pixel(unsigned char character, unsigned int x, unsigned int y)
+uint8_t frame_pacer_font_row(unsigned char character, unsigned int y)
 {
     if (character >= sizeof(glyphs) / sizeof(glyphs[0]) ||
-        x >= FRAME_PACER_FONT_WIDTH || y >= FRAME_PACER_FONT_HEIGHT)
-        return false;
-    return (glyphs[character][y] & (1U << (FRAME_PACER_FONT_WIDTH - 1U - x))) != 0;
+        y >= FRAME_PACER_FONT_HEIGHT)
+        return 0;
+    return glyphs[character][y];
+}
+
+bool frame_pacer_font_pixel(unsigned char character, unsigned int x, unsigned int y)
+{
+    return x < FRAME_PACER_FONT_WIDTH &&
+           (frame_pacer_font_row(character, y) &
+            (1U << (FRAME_PACER_FONT_WIDTH - 1U - x))) != 0;
 }
 
 void frame_pacer_font_rasterize(const char *text, uint8_t *pixels,

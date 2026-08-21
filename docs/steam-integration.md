@@ -19,9 +19,9 @@ add `LD_PRELOAD`, `FRAME_PACER_LOG`, a wrapper, or any other frame-pacer
 variable globally. The manifests declare
 `DISABLE_FRAME_PACER_HUD` for Vulkan-loader compliance; leave it unset.
 
-Changing a desktop launcher requires Steam to be fully stopped first. Some
-desktop environments cache launcher entries, so log out and back in before
-trusting an edited launcher.
+Changing a desktop launcher requires Steam to be fully stopped first. GNOME
+caches desktop-launcher state, so after changing Steam's global launcher
+environment, log out of GNOME and back in before validation.
 
 ## GLX/EGL shim
 

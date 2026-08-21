@@ -3,6 +3,7 @@
 
 #include <pthread.h>
 #include <stdbool.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <sys/types.h>
 
@@ -25,8 +26,8 @@ struct frame_pacer_limit_stamp {
 struct frame_pacer_limit {
     pthread_mutex_t mutex;
     char path[1200];
-    uint64_t last_check_ns;
-    uint32_t fps;
+    _Atomic uint64_t last_check_ns;
+    _Atomic uint32_t fps;
     uint32_t thread_cpu_quota;
     bool thread_cpu_quota_enabled;
     bool hud_enabled;

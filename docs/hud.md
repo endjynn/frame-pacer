@@ -10,6 +10,11 @@ Set `hud = off` at the top level of `frame-pacer.conf` to disable it without
 disabling frame pacing. `hud = on` is the default; valid changes are applied
 to a running game within one second.
 
+The FPS value is recalculated every 500 ms from accepted presentation calls.
+GPU, CPU, temperature, and thread metrics are sampled once per second. The HUD
+is still drawn on presentation between samples using the latest coherent
+snapshot; these cadences are independent of the configured FPS limit.
+
 | Row | Meaning |
 | --- | --- |
 | `GPU <GPU usage> <GPU temperature>` | Game-associated GPU utilisation and temperature. |

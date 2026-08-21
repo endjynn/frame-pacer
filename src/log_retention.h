@@ -4,6 +4,7 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdarg.h>
+#include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -15,7 +16,7 @@
 
 struct frame_pacer_runtime_log {
     pthread_mutex_t mutex;
-    int fd;
+    _Atomic int fd;
     uint64_t bytes;
     size_t message_capacity;
     bool capped;

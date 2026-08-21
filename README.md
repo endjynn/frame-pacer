@@ -6,17 +6,17 @@ opt-in per-game preload shim.
 
 ![frame-pacer HUD](docs/images/frame-pacer-hud.png)
 
-> **Early release:** frame-pacer changes graphics presentation and can create a
+> **Initial release:** frame-pacer changes graphics presentation and can create a
 > private cgroup-v2 hierarchy for an explicitly configured game. Start with one
 > game, keep a rollback path, and report reproducible problems before enabling
 > it broadly.
 
 ## Quick start
 
-Frame-pacer is currently used directly from a source checkout. It needs a
-systemd-based Linux desktop, cgroup v2 for the optional CPU limiter, Steam, a
-working Vulkan loader, and the build tools listed in
-[Build requirements](docs/reference/environment.md).
+Frame-pacer is currently distributed as source and installed into user-local
+paths from its checkout. It needs a systemd-based Linux desktop, cgroup v2 for
+the optional CPU limiter, Steam, a working Vulkan loader, and the build tools
+listed in [Build requirements](docs/reference/environment.md).
 
 Build and test both 64-bit and 32-bit artifacts:
 

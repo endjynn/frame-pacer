@@ -199,7 +199,9 @@ void frame_pacer_runtime_log_vwrite(struct frame_pacer_runtime_log *log,
     int length;
     size_t offset, remaining;
 
-    if (!log || !format) return;
+    if (!log || !format ||
+        atomic_load_explicit(&log->fd, memory_order_relaxed) < 0)
+        return;
     (void)pthread_mutex_lock(&log->mutex);
     if (log->fd < 0 || log->capped) goto done;
     capacity = log->message_capacity < sizeof(buffer) ? log->message_capacity :

@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## Initial release — 2026-08-21
 
-Initial public release preparation.
+First public release.
 
 - Vulkan implicit-layer and GLX/EGL preload frame pacing.
 - Compact GPU, CPU, thread, and FPS HUD.
@@ -32,6 +32,9 @@ Initial public release preparation.
   loader-data failure, with bounded provider enumeration counts.
 - A hidden Vulkan device-HUD module for dispatch completeness, coherent metrics
   snapshots, memory-property ownership, and teardown.
+- Refactored the original Vulkan layer monolith into focused registry,
+  lifecycle, HUD orchestration, resource, and presentation modules while
+  preserving the exported ABI and fail-open behavior.
 - Shared synchronized HUD metrics caching and renderer-owned maximum vertex
   workspaces, keeping the complete 352x196 panel off presentation stacks.
 - Shared XDG state-directory and systemd-provider boundaries, including a
@@ -44,3 +47,13 @@ Initial public release preparation.
   cleanup independently of direct cgroup reconciliation.
 - A deterministic full-size HUD image generated from the production formatter,
   font, and geometry as part of the documentation acceptance gate.
+- Measured HUD hot-path tuning: fixed-width text assembly and row-at-a-time
+  glyph lookup reduce the repository benchmark's combined HUD preparation CPU
+  cost by 25.10% without changing text, geometry, ABI, or backend behavior.
+- Measured limiter-path tuning: steady-state configuration polling is 54.6%
+  faster, and disabled per-present logging is 25–26% faster, using atomic
+  publication while retaining serialized reloads and enabled log writes.
+- Clean release builds and the complete automated acceptance suite pass for
+  both x86_64 and i386, including ABI, deterministic HUD image, Vulkan and GLX
+  presentation on both architectures, EGL presentation on x86_64,
+  installation, configuration-security, and cleanup checks.

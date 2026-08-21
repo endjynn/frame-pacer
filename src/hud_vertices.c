@@ -79,11 +79,13 @@ bool frame_pacer_hud_vertices_build(struct frame_pacer_hud_vertices *vertices,
             unsigned int y;
 
             for (y = 0; y < FRAME_PACER_FONT_HEIGHT; ++y) {
+                uint8_t pixels = frame_pacer_font_row(
+                    (unsigned char)text->lines[line][character], y);
                 unsigned int x;
 
                 for (x = 0; x < FRAME_PACER_FONT_WIDTH; ++x) {
-                    if (frame_pacer_font_pixel(
-                            (unsigned char)text->lines[line][character], x, y)) {
+                    if (pixels &
+                        (1U << (FRAME_PACER_FONT_WIDTH - 1U - x))) {
                         float pixel_x;
                         float pixel_y;
 
