@@ -6,8 +6,9 @@ GL/EGL development headers for both architectures, a Vulkan loader, `make`,
 `jq`, `xxd`, `file`, `glslangValidator`, and `spirv-val`.
 
 The optional real presentation probe additionally needs Xlib headers and
-x86_64/i386 X11 runtime libraries. ABI checks use `nm`; normalized coverage
-uses GCC's `gcov` and `jq`.
+x86_64/i386 X11 runtime libraries. ABI and embedded-helper checks use `nm`,
+`readelf`, `strings`, and `pgrep`; normalized coverage uses GCC's `gcov` and
+`jq`.
 
 On Debian/Ubuntu-family systems, the principal package names are commonly:
 
@@ -39,3 +40,8 @@ Logs are written below `${XDG_STATE_HOME}/frame-pacer`, or
 `~/.local/state/frame-pacer` when `XDG_STATE_HOME` is unset.
 When the Steam Runtime requires the external CPU controller, its private
 command/status files use the same directory and are removed during teardown.
+
+For an i386 process on an NVIDIA system, frame-pacer may execute its embedded
+x86_64 NVML telemetry helper from a sealed anonymous file. The helper uses a
+private socket, exits with the owning process, and creates no configuration,
+state, installed executable, service, or other persistent runtime file.

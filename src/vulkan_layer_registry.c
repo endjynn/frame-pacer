@@ -183,6 +183,8 @@ PFN_vkDestroyInstance frame_pacer_vulkan_registry_remove_instance(
 
     if (removed)
         *removed = 0;
+    if (!registry)
+        return 0;
     frame_pacer_vulkan_registry_lock(registry);
     item = frame_pacer_vulkan_registry_find_instance(registry, instance);
     destroy = item && item->gipa

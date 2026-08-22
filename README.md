@@ -152,7 +152,8 @@ Frame-pacer is complementary to MangoHud, not a replacement for it.
 - Live, per-executable FPS rules.
 - Optional live per-thread CPU ceilings using a private transient cgroup-v2
   controller.
-- GPU, CPU, FPS, and thread-CPU HUD telemetry that degrades safely to `N/A`.
+- GPU, CPU, FPS, and thread-CPU HUD telemetry that degrades safely to `N/A`,
+  with a transient embedded x86_64 NVML helper for i386 NVIDIA games.
 
 ## Documentation
 

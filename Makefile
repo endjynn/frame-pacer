@@ -2,7 +2,9 @@ CC := gcc
 CFLAGS ?= -O2 -g
 WARNINGS := -Wall -Wextra -Werror -Wpedantic -Wformat=2 -Wundef -Wshadow \
 	-Wmissing-prototypes -Wstrict-prototypes -Wold-style-definition
-BUILD_CFLAGS := -std=c17 $(WARNINGS) -fPIC -fdebug-prefix-map=$(abspath .)=. $(CFLAGS)
+BUILD_CFLAGS := -std=c17 $(WARNINGS) -fPIC -fdebug-prefix-map=$(abspath .)=. \
+	-Ibuild $(CFLAGS)
+HELPER_CFLAGS := -std=c17 $(WARNINGS) -Os -fPIE -fdebug-prefix-map=$(abspath .)=.
 MINGW_CFLAGS := -std=c17 $(WARNINGS)
 PREFIX ?= $(HOME)/.local
 INSTALL_LIBDIR ?= $(PREFIX)/lib/frame-pacer
@@ -25,12 +27,17 @@ PACER_SRC := \
 	$(THREAD_CPU_SYSTEMD_SRC) \
 	$(STATE_DIRECTORY_SRC)
 LOG_RETENTION_SRC := src/log_retention.c
+NVML_SRC := \
+	src/hud_nvml_client.c \
+	src/hud_nvml_protocol.c \
+	src/hud_nvml_provider.c
 HUD_SRC := \
 	src/hud_drm_fdinfo.c \
 	src/hud_font.c \
 	src/hud_fps.c \
 	src/hud_metrics.c \
 	src/hud_metrics_cache.c \
+	$(NVML_SRC) \
 	src/hud_text.c \
 	src/hud_vertices.c
 VULKAN_SRC := \
@@ -78,6 +85,7 @@ GL_RUNTIME_ARTIFACTS := \
 	thread-cpu-quota-controller-integration run-thread-cpu-quota-controller-integration \
 	thread-cpu-quota-controller-integration-i386 run-thread-cpu-quota-controller-integration-i386 \
 	dxgi-forward-probe hud-shaders metrics-probe pci-probe research winepath-probe \
+	run-nvml-helper-probe \
 	vulkan-present-probe run-vulkan-present-probe glx-present-probe \
 	run-glx-present-probe egl-present-probe run-egl-present-probe
 
@@ -164,14 +172,14 @@ dxgi-forward-probe: build/windows/x86_64/dxgi.dll build/windows/dxgi-proxy-clien
 	./tests/test_dxgi_forward.sh
 build/x86_64/libVkLayer_frame_pacer.so: $(VULKAN_SRC) $(HDRS) build/hud_spv.h
 	mkdir -p $(@D)
-	$(CC) $(BUILD_CFLAGS) -Ibuild -shared -Wl,-Bsymbolic -o $@ $(VULKAN_SRC) -ldl -pthread
-build/i386/libVkLayer_frame_pacer.so: $(VULKAN_SRC) $(HDRS) build/hud_spv.h
+	$(CC) $(BUILD_CFLAGS) -shared -Wl,-Bsymbolic -o $@ $(VULKAN_SRC) -ldl -pthread
+build/i386/libVkLayer_frame_pacer.so: $(VULKAN_SRC) $(HDRS) build/hud_spv.h build/hud_nvml_helper_image.h
 	mkdir -p $(@D)
-	$(CC) -m32 $(BUILD_CFLAGS) -Ibuild -shared -Wl,-Bsymbolic -o $@ $(VULKAN_SRC) -ldl -pthread
+	$(CC) -m32 $(BUILD_CFLAGS) -shared -Wl,-Bsymbolic -o $@ $(VULKAN_SRC) -ldl -pthread
 build/x86_64/libframe_pacer_gl.so: $(GL_SRC) $(HDRS)
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -shared -Wl,-Bsymbolic -o $@ $(GL_SRC) -ldl -pthread
-build/i386/libframe_pacer_gl.so: $(GL_SRC) $(HDRS)
+build/i386/libframe_pacer_gl.so: $(GL_SRC) $(HDRS) build/hud_nvml_helper_image.h
 	mkdir -p $(@D)
 	$(CC) -m32 $(BUILD_CFLAGS) -shared -Wl,-Bsymbolic -o $@ $(GL_SRC) -ldl -pthread
 build/x86_64/libframe_pacer_gl_shim.so: src/gl_pacer_shim.c
@@ -180,6 +188,19 @@ build/x86_64/libframe_pacer_gl_shim.so: src/gl_pacer_shim.c
 build/i386/libframe_pacer_gl_shim.so: src/gl_pacer_shim.c
 	mkdir -p $(@D)
 	$(CC) -m32 $(BUILD_CFLAGS) -shared -Wl,-Bsymbolic -o $@ $< -ldl -pthread
+build/frame-pacer-nvml-helper: src/hud_nvml_helper.c src/hud_nvml_protocol.c src/hud_nvml_protocol.h src/hud_nvml_provider.c src/hud_nvml_provider.h
+	mkdir -p $(@D)
+	$(CC) -m64 $(HELPER_CFLAGS) -Isrc -Wl,-s -pie -o $@ \
+		src/hud_nvml_helper.c src/hud_nvml_protocol.c src/hud_nvml_provider.c -ldl
+	test "$$(stat -c %s $@)" -le 65536
+build/hud_nvml_helper_image.h: build/frame-pacer-nvml-helper Makefile
+	{ echo '#ifndef FRAME_PACER_HUD_NVML_HELPER_IMAGE_H'; \
+	  echo '#define FRAME_PACER_HUD_NVML_HELPER_IMAGE_H'; \
+	  echo 'static const unsigned char frame_pacer_nvml_helper_image[] = {'; \
+	  xxd -i < $<; \
+	  echo '};'; \
+	  echo 'static const unsigned int frame_pacer_nvml_helper_image_len = sizeof(frame_pacer_nvml_helper_image);'; \
+	  echo '#endif'; } > $@
 build/lib/x86_64-linux-gnu/%.so: build/x86_64/%.so
 	mkdir -p $(@D)
 	cp $< $@
@@ -239,12 +260,69 @@ build/test-nvml.so: tests/nvml_provider.c
 build/test-nvml-incomplete.so: tests/nvml_provider.c
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -DFRAME_PACER_TEST_NVML_INCOMPLETE -shared -o $@ $<
-build/test_hud_metrics: tests/test_hud_metrics.c src/hud_drm_fdinfo.c src/hud_drm_fdinfo.h src/hud_metrics.c src/hud_metrics.h build/test-nvml.so build/test-nvml-incomplete.so
+build/frame-pacer-nvml-helper-test: src/hud_nvml_helper.c src/hud_nvml_protocol.c src/hud_nvml_protocol.h src/hud_nvml_provider.c src/hud_nvml_provider.h
 	mkdir -p $(@D)
-	$(CC) $(BUILD_CFLAGS) -DFRAME_PACER_TEST -Isrc -o $@ tests/test_hud_metrics.c src/hud_drm_fdinfo.c src/hud_metrics.c -ldl -pthread
-build/test_hud_metrics_cache: tests/test_hud_metrics_cache.c src/hud_metrics_cache.c src/hud_metrics_cache.h src/hud_metrics.c src/hud_drm_fdinfo.c
+	$(CC) -m64 $(HELPER_CFLAGS) -DFRAME_PACER_TEST -Isrc -Wl,-s -pie -o $@ \
+		src/hud_nvml_helper.c src/hud_nvml_protocol.c src/hud_nvml_provider.c -ldl
+build/hud_nvml_helper_test_image.h: build/frame-pacer-nvml-helper-test Makefile
+	{ echo '#ifndef FRAME_PACER_HUD_NVML_HELPER_TEST_IMAGE_H'; \
+	  echo '#define FRAME_PACER_HUD_NVML_HELPER_TEST_IMAGE_H'; \
+	  echo 'static const unsigned char frame_pacer_nvml_helper_image[] = {'; \
+	  xxd -i < $<; \
+	  echo '};'; \
+	  echo 'static const unsigned int frame_pacer_nvml_helper_image_len = sizeof(frame_pacer_nvml_helper_image);'; \
+	  echo '#endif'; } > $@
+build/test_hud_nvml_protocol: tests/test_hud_nvml_protocol.c src/hud_nvml_protocol.c src/hud_nvml_protocol.h src/hud_nvml_provider.h
 	mkdir -p $(@D)
-	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_metrics_cache.c src/hud_metrics_cache.c src/hud_metrics.c src/hud_drm_fdinfo.c -ldl -pthread
+	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_nvml_protocol.c src/hud_nvml_protocol.c
+build/test-hud-nvml-client-i386: tests/test_hud_nvml_client.c src/hud_nvml_client.c src/hud_nvml_client.h src/hud_nvml_protocol.c src/hud_nvml_protocol.h build/hud_nvml_helper_test_image.h build/test-nvml.so
+	mkdir -p $(@D)
+	$(CC) -m32 $(BUILD_CFLAGS) -DFRAME_PACER_TEST \
+		-DFRAME_PACER_TEST_REJECT_FD='"77"' \
+		-DFRAME_PACER_NVML_HELPER_IMAGE_HEADER='"hud_nvml_helper_test_image.h"' \
+		-DFRAME_PACER_TEST_NVML_LIBRARY='"$(abspath build/test-nvml.so)"' \
+		-Isrc -o $@ tests/test_hud_nvml_client.c \
+		src/hud_nvml_client.c src/hud_nvml_protocol.c -pthread
+build/test-hud-nvml-client-retry-i386: tests/test_hud_nvml_client.c src/hud_nvml_client.c src/hud_nvml_client.h src/hud_nvml_protocol.c src/hud_nvml_protocol.h build/hud_nvml_helper_test_image.h
+	mkdir -p $(@D)
+	$(CC) -m32 $(BUILD_CFLAGS) -DFRAME_PACER_TEST \
+		-DFRAME_PACER_TEST_EXPECT_FAILURE \
+		-DFRAME_PACER_NVML_RETRY_ONE_NS=UINT64_C\(10000000\) \
+		-DFRAME_PACER_NVML_RETRY_TWO_NS=UINT64_C\(30000000\) \
+		-DFRAME_PACER_NVML_HELPER_IMAGE_HEADER='"hud_nvml_helper_test_image.h"' \
+		-DFRAME_PACER_TEST_NVML_LIBRARY='"/frame-pacer/missing-nvml.so"' \
+		-Isrc -o $@ tests/test_hud_nvml_client.c \
+		src/hud_nvml_client.c src/hud_nvml_protocol.c -pthread
+build/test-hud-nvml-client-target-exit-i386: tests/test_hud_nvml_client.c src/hud_nvml_client.c src/hud_nvml_client.h src/hud_nvml_protocol.c src/hud_nvml_protocol.h build/hud_nvml_helper_test_image.h build/test-nvml.so
+	mkdir -p $(@D)
+	$(CC) -m32 $(BUILD_CFLAGS) -DFRAME_PACER_TEST \
+		-DFRAME_PACER_TEST_TARGET_EXIT \
+		-DFRAME_PACER_NVML_RETRY_ONE_NS=UINT64_C\(10000000\) \
+		-DFRAME_PACER_NVML_RETRY_TWO_NS=UINT64_C\(30000000\) \
+		-DFRAME_PACER_NVML_HELPER_IMAGE_HEADER='"hud_nvml_helper_test_image.h"' \
+		-DFRAME_PACER_TEST_NVML_LIBRARY='"$(abspath build/test-nvml.so)"' \
+		-Isrc -o $@ tests/test_hud_nvml_client.c \
+		src/hud_nvml_client.c src/hud_nvml_protocol.c -pthread
+build/test-hud-metrics-external-i386: tests/test_hud_metrics_external.c src/hud_metrics.c src/hud_metrics.h $(NVML_SRC) src/hud_drm_fdinfo.c build/hud_nvml_helper_test_image.h build/test-nvml.so
+	mkdir -p $(@D)
+	$(CC) -m32 $(BUILD_CFLAGS) -DFRAME_PACER_TEST \
+		-DFRAME_PACER_NVML_HELPER_IMAGE_HEADER='"hud_nvml_helper_test_image.h"' \
+		-DFRAME_PACER_TEST_NVML_LIBRARY='"$(abspath build/test-nvml.so)"' \
+		-Isrc -o $@ tests/test_hud_metrics_external.c \
+		src/hud_metrics.c $(NVML_SRC) src/hud_drm_fdinfo.c -ldl -pthread
+build/hud-nvml-helper-probe-i386: tests/hud_nvml_helper_probe.c src/hud_nvml_client.c src/hud_nvml_client.h src/hud_nvml_protocol.c src/hud_nvml_protocol.h build/hud_nvml_helper_image.h
+	mkdir -p $(@D)
+	$(CC) -m32 $(BUILD_CFLAGS) -Isrc -o $@ \
+		tests/hud_nvml_helper_probe.c src/hud_nvml_client.c \
+		src/hud_nvml_protocol.c -pthread
+run-nvml-helper-probe: build/hud-nvml-helper-probe-i386
+	sh ./tests/test_hud_nvml_helper.sh
+build/test_hud_metrics: tests/test_hud_metrics.c src/hud_metrics.c src/hud_metrics.h $(NVML_SRC) src/hud_drm_fdinfo.c src/hud_drm_fdinfo.h build/test-nvml.so build/test-nvml-incomplete.so
+	mkdir -p $(@D)
+	$(CC) $(BUILD_CFLAGS) -DFRAME_PACER_TEST -Isrc -o $@ tests/test_hud_metrics.c src/hud_metrics.c $(NVML_SRC) src/hud_drm_fdinfo.c -ldl -pthread
+build/test_hud_metrics_cache: tests/test_hud_metrics_cache.c src/hud_metrics_cache.c src/hud_metrics_cache.h src/hud_metrics.c $(NVML_SRC) src/hud_drm_fdinfo.c
+	mkdir -p $(@D)
+	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_metrics_cache.c src/hud_metrics_cache.c src/hud_metrics.c $(NVML_SRC) src/hud_drm_fdinfo.c -ldl -pthread
 build/test_hud_text: tests/test_hud_text.c src/hud_text.c src/hud_text.h src/hud_metrics.h src/pacer_limit.h
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_text.c src/hud_text.c
@@ -272,9 +350,9 @@ build/test_hud_swapchain_policy: tests/test_hud_swapchain_policy.c src/hud_swapc
 build/test_hud_vulkan_commands: tests/test_hud_vulkan_commands.c src/hud_vulkan_commands.c src/hud_vulkan_commands.h
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_vulkan_commands.c src/hud_vulkan_commands.c
-build/test_hud_vulkan_device: tests/test_hud_vulkan_device.c src/hud_vulkan_device.c src/hud_vulkan_device.h src/hud_vulkan_commands.c src/hud_metrics_cache.c src/hud_metrics.c src/hud_drm_fdinfo.c
+build/test_hud_vulkan_device: tests/test_hud_vulkan_device.c src/hud_vulkan_device.c src/hud_vulkan_device.h src/hud_vulkan_commands.c src/hud_metrics_cache.c src/hud_metrics.c $(NVML_SRC) src/hud_drm_fdinfo.c
 	mkdir -p $(@D)
-	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_vulkan_device.c src/hud_vulkan_device.c src/hud_vulkan_commands.c src/hud_metrics_cache.c src/hud_metrics.c src/hud_drm_fdinfo.c -ldl -pthread
+	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_vulkan_device.c src/hud_vulkan_device.c src/hud_vulkan_commands.c src/hud_metrics_cache.c src/hud_metrics.c $(NVML_SRC) src/hud_drm_fdinfo.c -ldl -pthread
 build/test_hud_vulkan_draw_resources: tests/test_hud_vulkan_draw_resources.c src/hud_vulkan_draw_resources.c src/hud_vulkan_draw_resources.h src/hud_vulkan_resources.h
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_vulkan_draw_resources.c src/hud_vulkan_draw_resources.c
@@ -292,11 +370,11 @@ build/test_hud_vulkan_present: tests/test_hud_vulkan_present.c src/hud_vulkan_pr
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_vulkan_present.c src/hud_vulkan_present.c
 build/test_frame_pacer_layer: tests/test_frame_pacer_layer.c $(VULKAN_SRC) $(HDRS) build/hud_spv.h
 	mkdir -p $(@D)
-	$(CC) $(BUILD_CFLAGS) -DFRAME_PACER_TEST -Ibuild -Isrc -o $@ tests/test_frame_pacer_layer.c $(VULKAN_SRC) -ldl -pthread
+	$(CC) $(BUILD_CFLAGS) -DFRAME_PACER_TEST -Isrc -o $@ tests/test_frame_pacer_layer.c $(VULKAN_SRC) -ldl -pthread
 metrics-probe: build/hud-metrics-probe
-build/hud-metrics-probe: tests/hud_metrics_probe.c src/hud_drm_fdinfo.c src/hud_drm_fdinfo.h src/hud_metrics.c src/hud_metrics.h
+build/hud-metrics-probe: tests/hud_metrics_probe.c src/hud_drm_fdinfo.c src/hud_drm_fdinfo.h src/hud_metrics.c src/hud_metrics.h $(NVML_SRC)
 	mkdir -p $(@D)
-	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/hud_metrics_probe.c src/hud_drm_fdinfo.c src/hud_metrics.c -ldl -pthread
+	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/hud_metrics_probe.c src/hud_drm_fdinfo.c src/hud_metrics.c $(NVML_SRC) -ldl -pthread
 pci-probe: build/pci-bus-probe
 build/pci-bus-probe: tests/pci_bus_probe.c
 	mkdir -p $(@D)
@@ -357,6 +435,7 @@ UNIT_TESTS := \
 	build/test_pacer_queue \
 	build/test_pacer_compatibility \
 	build/test_hud_fps \
+	build/test_hud_nvml_protocol \
 	build/test_hud_metrics \
 	build/test_hud_metrics_cache \
 	build/test_hud_text \
@@ -375,7 +454,7 @@ UNIT_TESTS := \
 # Unit recipes compile source files directly instead of through dependency
 # objects. Rebuild them after any production-header edit so transitive includes
 # cannot leave an apparently current but stale fixture in build/.
-$(UNIT_TESTS): $(HDRS)
+$(UNIT_TESTS): $(HDRS) build/hud_nvml_helper_image.h
 SHELL_TESTS := $(wildcard tests/*.sh)
 
 check-unit: $(UNIT_TESTS)
@@ -395,7 +474,18 @@ check: all hud-shaders $(GL_ARTIFACTS) $(GL_RUNTIME_ARTIFACTS) \
 	build/test-gl-shim-noop \
 	build/test-gl-shim-noop-i386 \
 	build/smoke build/smoke-i386 build/smoke-device build/smoke-device-i386 \
+	build/test-hud-nvml-client-i386 \
+	build/test-hud-nvml-client-retry-i386 \
+	build/test-hud-nvml-client-target-exit-i386 \
+	build/test-hud-metrics-external-i386 \
+	build/hud-nvml-helper-probe-i386 \
 	check-unit check-shell check-docs check-hud-image check-abi
+	./build/test-hud-nvml-client-i386
+	./build/test-hud-nvml-client-retry-i386
+	./build/test-hud-nvml-client-target-exit-i386
+	./build/test-hud-metrics-external-i386
+	sh ./tests/test_hud_nvml_helper.sh
+	sh ./tests/test_nvml_helper_embedding.sh
 	sh ./tests/test_install.sh
 	sh ./tests/test_gl_pacer.sh
 	sh ./tests/test_gl_pacer.sh i386

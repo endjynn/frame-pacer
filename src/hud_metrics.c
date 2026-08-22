@@ -1,8 +1,8 @@
 #define _POSIX_C_SOURCE 200809L
 #include "hud_metrics.h"
+#include "hud_nvml_client.h"
 #include <ctype.h>
 #include <dirent.h>
-#include <dlfcn.h>
 #include <inttypes.h>
 #include <limits.h>
 #include <stdio.h>
@@ -11,24 +11,8 @@
 #include <time.h>
 #include <unistd.h>
 
-struct nvml_utilization {
-    unsigned int gpu;
-    unsigned int memory;
-};
-
-struct nvml_process_info {
-    unsigned int pid;
-    unsigned long long used_gpu_memory;
-};
-
-#define NVML_MAX_GRAPHICS_PROCESSES 4096U
 #define NVML_RETRY_INTERVAL_NS UINT64_C(1000000000)
 #define THREAD_CPU_SAMPLE_INTERVAL_NS UINT64_C(1000000000)
-
-static void function_from_symbol(void *symbol, void *function, size_t size)
-{
-    memcpy(function, &symbol, size);
-}
 
 static bool parse_uint64(const char **text, uint64_t *value)
 {
@@ -299,11 +283,105 @@ bool frame_pacer_metrics_parse_render_node(const char *target, char *node, size_
     return written >= 0 && (size_t)written < node_size;
 }
 
+static bool parse_gpu_vendor(const char *text, unsigned int *vendor)
+{
+    char *end;
+    unsigned long value;
+
+    if (!text || !vendor || strncmp(text, "0x", 2) || !isxdigit(text[2]))
+        return false;
+    value = strtoul(text + 2, &end, 16);
+    while (*end && isspace((unsigned char)*end)) ++end;
+    if (*end || value > UINT32_MAX) return false;
+    *vendor = (unsigned int)value;
+    return true;
+}
+
+static bool parse_pci_bus_id(const char *target, char *pci, size_t size)
+{
+    static const unsigned int hex_positions[] = { 0, 1, 2, 3, 5, 6,
+                                                   8, 9, 11 };
+    const char *base;
+    unsigned int index;
+
+    if (!target || !pci || size < 13) return false;
+    base = strrchr(target, '/');
+    base = base ? base + 1 : target;
+    if (strlen(base) != 12 || base[4] != ':' || base[7] != ':' ||
+        base[10] != '.')
+        return false;
+    for (index = 0; index < sizeof(hex_positions) / sizeof(hex_positions[0]);
+         ++index)
+        if (!isxdigit((unsigned char)base[hex_positions[index]])) return false;
+    memcpy(pci, base, 13);
+    return true;
+}
+
+static void find_gpu_identity(struct frame_pacer_metrics *metrics)
+{
+    char path[128], line[64], target[PATH_MAX];
+    FILE *file;
+    ssize_t length;
+    int written;
+
+    metrics->gpu_vendor = 0;
+    metrics->gpu_pci_bus_id[0] = '\0';
+    if (!metrics->gpu_render_node[0]) return;
+    written = snprintf(path, sizeof(path), "/sys/class/drm/%s/device/vendor",
+                       metrics->gpu_render_node);
+    if (written < 0 || (size_t)written >= sizeof(path) ||
+        !(file = fopen(path, "re")))
+        return;
+    if (!fgets(line, sizeof(line), file) ||
+        !parse_gpu_vendor(line, &metrics->gpu_vendor))
+        metrics->gpu_vendor = 0;
+    (void)fclose(file);
+    written = snprintf(path, sizeof(path), "/sys/class/drm/%s/device",
+                       metrics->gpu_render_node);
+    if (written < 0 || (size_t)written >= sizeof(path)) return;
+    length = readlink(path, target, sizeof(target) - 1);
+    if (length < 0) return;
+    target[length] = '\0';
+    (void)parse_pci_bus_id(
+        target, metrics->gpu_pci_bus_id, sizeof(metrics->gpu_pci_bus_id));
+}
+
+#ifdef FRAME_PACER_TEST
+bool frame_pacer_metrics_test_parse_gpu_vendor(const char *text,
+                                               unsigned int *vendor)
+{
+    return parse_gpu_vendor(text, vendor);
+}
+
+bool frame_pacer_metrics_test_parse_pci_bus_id(const char *target, char *pci,
+                                               size_t size)
+{
+    return parse_pci_bus_id(target, pci, size);
+}
+
+void frame_pacer_metrics_test_set_gpu_identity(
+    struct frame_pacer_metrics *metrics, const char *render_node,
+    unsigned int vendor, const char *pci_bus_id)
+{
+    if (!metrics) return;
+    (void)snprintf(metrics->gpu_render_node,
+                   sizeof(metrics->gpu_render_node), "%s",
+                   render_node ? render_node : "");
+    (void)snprintf(metrics->gpu_pci_bus_id,
+                   sizeof(metrics->gpu_pci_bus_id), "%s",
+                   pci_bus_id ? pci_bus_id : "");
+    metrics->gpu_vendor = vendor;
+}
+#endif
+
 static void find_process_gpu(struct frame_pacer_metrics *metrics, unsigned int process_id)
 {
     DIR *directory;
     struct dirent *entry;
     char directory_path[64];
+    char fallback_node[sizeof(metrics->gpu_render_node)] = "";
+    char fallback_pci[sizeof(metrics->gpu_pci_bus_id)] = "";
+    unsigned int fallback_vendor = 0;
     int written;
 
     written = snprintf(directory_path, sizeof(directory_path), "/proc/%u/fd",
@@ -328,12 +406,29 @@ static void find_process_gpu(struct frame_pacer_metrics *metrics, unsigned int p
         if (length < 0)
             continue;
         target[length] = '\0';
-        if (frame_pacer_metrics_parse_render_node(
+        if (!frame_pacer_metrics_parse_render_node(
                 target, metrics->gpu_render_node,
                 sizeof(metrics->gpu_render_node)))
-            break;
+            continue;
+        find_gpu_identity(metrics);
+        if (metrics->gpu_vendor == 0x10deU) break;
+        if (!fallback_node[0]) {
+            (void)snprintf(fallback_node, sizeof(fallback_node), "%s",
+                           metrics->gpu_render_node);
+            (void)snprintf(fallback_pci, sizeof(fallback_pci), "%s",
+                           metrics->gpu_pci_bus_id);
+            fallback_vendor = metrics->gpu_vendor;
+        }
     }
     (void)closedir(directory);
+    if (metrics->gpu_vendor != 0x10deU && fallback_node[0]) {
+        (void)snprintf(metrics->gpu_render_node,
+                       sizeof(metrics->gpu_render_node), "%s",
+                       fallback_node);
+        (void)snprintf(metrics->gpu_pci_bus_id,
+                       sizeof(metrics->gpu_pci_bus_id), "%s", fallback_pci);
+        metrics->gpu_vendor = fallback_vendor;
+    }
 }
 
 static void find_cpu_temperature(struct frame_pacer_metrics *metrics)
@@ -396,8 +491,6 @@ static void find_cpu_temperature(struct frame_pacer_metrics *metrics)
 void frame_pacer_metrics_init(struct frame_pacer_metrics *metrics,
                               const char *library, unsigned int process_id)
 {
-    void *symbol;
-    int (*init)(void) = 0;
     if (!metrics) return;
     memset(metrics, 0, sizeof(*metrics));
     if (pthread_mutex_init(&metrics->mutex, 0)) return;
@@ -406,110 +499,47 @@ void frame_pacer_metrics_init(struct frame_pacer_metrics *metrics,
     if (!process_id) return;
     metrics->process_id = process_id;
     find_process_gpu(metrics, process_id);
-    metrics->nvml_library =
-        dlopen(library && *library ? library : "libnvidia-ml.so.1",
-               RTLD_LAZY | RTLD_LOCAL);
-    if (!metrics->nvml_library)
-        return;
-    symbol = dlsym(metrics->nvml_library, "nvmlInit_v2");
-    function_from_symbol(symbol, &init, sizeof(init));
-    symbol = dlsym(metrics->nvml_library, "nvmlShutdown");
-    function_from_symbol(symbol, &metrics->nvml_shutdown,
-                         sizeof(metrics->nvml_shutdown));
-    symbol = dlsym(metrics->nvml_library, "nvmlDeviceGetCount_v2");
-    function_from_symbol(symbol, &metrics->nvml_get_count,
-                         sizeof(metrics->nvml_get_count));
-    symbol = dlsym(metrics->nvml_library, "nvmlDeviceGetHandleByIndex_v2");
-    function_from_symbol(symbol, &metrics->nvml_get_device,
-                         sizeof(metrics->nvml_get_device));
-    symbol = dlsym(metrics->nvml_library,
-                   "nvmlDeviceGetGraphicsRunningProcesses");
-    function_from_symbol(symbol, &metrics->nvml_get_graphics_processes,
-                         sizeof(metrics->nvml_get_graphics_processes));
-    symbol = dlsym(metrics->nvml_library, "nvmlDeviceGetUtilizationRates");
-    function_from_symbol(symbol, &metrics->nvml_utilization,
-                         sizeof(metrics->nvml_utilization));
-    symbol = dlsym(metrics->nvml_library, "nvmlDeviceGetTemperature");
-    function_from_symbol(symbol, &metrics->nvml_temperature,
-                         sizeof(metrics->nvml_temperature));
-    if (!init || !metrics->nvml_shutdown || !metrics->nvml_get_count ||
-        !metrics->nvml_get_device || !metrics->nvml_get_graphics_processes ||
-        !metrics->nvml_utilization || !metrics->nvml_temperature)
-        goto unavailable;
-    if (init() != 0) goto unavailable;
-    metrics->nvml_started = true;
-    frame_pacer_metrics_select_gpu(metrics, process_id);
-    return;
-unavailable:
-    metrics->nvml_started = false;
-    (void)dlclose(metrics->nvml_library);
-    metrics->nvml_library = 0;
-}
-
-void frame_pacer_metrics_select_gpu(struct frame_pacer_metrics *metrics, unsigned int process_id)
-{
-    unsigned int count, index;
-    if (!metrics || !metrics->initialized || !process_id)
-        return;
-    (void)pthread_mutex_lock(&metrics->mutex);
-    metrics->nvml_device = 0;
-    if (!metrics->gpu_render_node[0])
-        find_process_gpu(metrics, process_id);
-    if (!metrics->nvml_started || metrics->nvml_get_count(&count) != 0 ||
-        count > 64)
-        goto done;
-    for (index = 0; index < count; ++index) {
-        unsigned int process_count = 0, process_index, capacity;
-        struct nvml_process_info *processes;
-        void *device = 0;
-        /* NVML reports the exact required count through this initial query. */
-        if (metrics->nvml_get_device(index, &device) != 0 || !device)
-            continue;
-        (void)metrics->nvml_get_graphics_processes(device, &process_count, 0);
-        if (!process_count || process_count > NVML_MAX_GRAPHICS_PROCESSES)
-            continue;
-        processes = calloc(process_count, sizeof(*processes));
-        if (!processes)
-            continue;
-        capacity = process_count;
-        if (metrics->nvml_get_graphics_processes(device, &process_count,
-                                                  processes) == 0) {
-            if (process_count > capacity) process_count = capacity;
-            for (process_index = 0; process_index < process_count; ++process_index) {
-                if (processes[process_index].pid == process_id) {
-                    metrics->nvml_device = device;
-                    break;
-                }
-            }
-        }
-        free(processes);
-        if (metrics->nvml_device)
-            break;
+    if (frame_pacer_nvml_provider_init(&metrics->nvml, library)) {
+        ++metrics->nvml_select_attempts;
+        (void)frame_pacer_nvml_provider_select_process(&metrics->nvml,
+                                                       process_id);
     }
-done:
-    (void)pthread_mutex_unlock(&metrics->mutex);
 }
 
 void frame_pacer_metrics_destroy(struct frame_pacer_metrics *metrics)
 {
     if (!metrics || !metrics->initialized) return;
     metrics->initialized = false;
-    if (metrics->nvml_started) (void)metrics->nvml_shutdown();
-    if (metrics->nvml_library) (void)dlclose(metrics->nvml_library);
+    if (metrics->nvml_external) frame_pacer_nvml_client_release();
+    frame_pacer_nvml_provider_destroy(&metrics->nvml);
     (void)pthread_mutex_destroy(&metrics->mutex);
 }
 
-static bool nvml_retry_due(struct frame_pacer_metrics *metrics, uint64_t now_ns)
+static void refresh_gpu_provider(struct frame_pacer_metrics *metrics,
+                                 uint64_t now_ns)
 {
-    bool retry = false;
     (void)pthread_mutex_lock(&metrics->mutex);
-    if (metrics->nvml_started && !metrics->nvml_device &&
-        (!metrics->nvml_retry_ns || now_ns - metrics->nvml_retry_ns >= NVML_RETRY_INTERVAL_NS)) {
+    if ((!metrics->gpu_render_node[0] ||
+         (metrics->nvml.started && !metrics->nvml.device)) &&
+        (!metrics->nvml_retry_ns ||
+         now_ns - metrics->nvml_retry_ns >= NVML_RETRY_INTERVAL_NS)) {
         metrics->nvml_retry_ns = now_ns;
-        retry = true;
+        if (!metrics->gpu_render_node[0])
+            find_process_gpu(metrics, metrics->process_id);
+        if (metrics->nvml.started && !metrics->nvml.device) {
+            ++metrics->nvml_select_attempts;
+            (void)frame_pacer_nvml_provider_select_process(
+                &metrics->nvml, metrics->process_id);
+        }
+    }
+    if (!metrics->nvml_external && metrics->gpu_vendor == 0x10deU &&
+        metrics->gpu_pci_bus_id[0] &&
+        (!metrics->nvml.started ||
+         (!metrics->nvml.device && metrics->nvml_select_attempts >= 3))) {
+        metrics->nvml_external = frame_pacer_nvml_client_acquire(
+            metrics->process_id, metrics->gpu_pci_bus_id);
     }
     (void)pthread_mutex_unlock(&metrics->mutex);
-    return retry;
 }
 
 void frame_pacer_metrics_sample(struct frame_pacer_metrics *metrics,
@@ -518,7 +548,8 @@ void frame_pacer_metrics_sample(struct frame_pacer_metrics *metrics,
     FILE *file;
     char line[256];
     uint64_t total, idle;
-    struct nvml_utilization utilization;
+    struct frame_pacer_nvml_sample nvml_sample;
+    struct frame_pacer_nvml_message external_message;
     struct timespec now;
     uint64_t now_ns = 0;
 
@@ -526,8 +557,7 @@ void frame_pacer_metrics_sample(struct frame_pacer_metrics *metrics,
     if (!metrics || !metrics->initialized || !snapshot) return;
     if (clock_gettime(CLOCK_MONOTONIC, &now) == 0)
         now_ns = (uint64_t)now.tv_sec * UINT64_C(1000000000) + (uint64_t)now.tv_nsec;
-    if (now_ns && nvml_retry_due(metrics, now_ns))
-        frame_pacer_metrics_select_gpu(metrics, metrics->process_id);
+    if (now_ns) refresh_gpu_provider(metrics, now_ns);
     (void)pthread_mutex_lock(&metrics->mutex);
     file = fopen("/proc/stat", "re");
     if (file && fgets(line, sizeof(line), file) &&
@@ -555,18 +585,22 @@ void frame_pacer_metrics_sample(struct frame_pacer_metrics *metrics,
         }
         (void)fclose(file);
     }
-    if (metrics->nvml_device &&
-        metrics->nvml_utilization(metrics->nvml_device, &utilization) == 0 &&
-        utilization.gpu <= 100) {
-        snapshot->gpu_use_percent = utilization.gpu;
+    memset(&nvml_sample, 0, sizeof(nvml_sample));
+    if (metrics->nvml.device)
+        (void)frame_pacer_nvml_provider_sample(&metrics->nvml, &nvml_sample);
+    else if (metrics->nvml_external &&
+             frame_pacer_nvml_client_snapshot(&external_message))
+        nvml_sample = external_message.sample;
+    if (nvml_sample.available & FRAME_PACER_NVML_GPU_USE) {
+        snapshot->gpu_use_percent = nvml_sample.gpu_use_percent;
         snapshot->available |= FRAME_PACER_METRIC_GPU_USE;
     }
-    if (metrics->nvml_device &&
-        metrics->nvml_temperature(metrics->nvml_device, 0,
-                                  &snapshot->gpu_temp_celsius) == 0 &&
-        snapshot->gpu_temp_celsius <= 200)
+    if (nvml_sample.available & FRAME_PACER_NVML_GPU_TEMP) {
+        snapshot->gpu_temp_celsius = nvml_sample.gpu_temp_celsius;
         snapshot->available |= FRAME_PACER_METRIC_GPU_TEMP;
-    if (!metrics->nvml_device && metrics->gpu_render_node[0] && now_ns &&
+    }
+    if (!(snapshot->available & FRAME_PACER_METRIC_GPU_USE) &&
+        metrics->gpu_render_node[0] && now_ns &&
         frame_pacer_drm_fdinfo_sample(&metrics->drm_fdinfo,
                                       metrics->process_id,
                                       metrics->gpu_render_node, now_ns,

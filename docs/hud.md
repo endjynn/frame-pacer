@@ -51,11 +51,22 @@ behavior.
 
 CPU use is read from `/proc/stat`; CPU temperature comes from the suitable
 `coretemp` hwmon entry. GPU association starts with the DRM render node opened
-by the game. NVIDIA utilisation is obtained by dynamically loading
-`libnvidia-ml.so.1` in the game process's own architecture and loader
-namespace. Other DRM drivers can expose render-engine time through
-`/proc/<pid>/fdinfo`; duplicate DRM client IDs are counted once.
+by the game and its PCI identity. NVIDIA utilisation and temperature normally
+come from `libnvidia-ml.so.1` loaded directly in the game process.
+
+When a 32-bit NVIDIA game cannot load 32-bit NVML, frame-pacer starts its
+embedded x86-64 telemetry image from a sealed anonymous `memfd`. The helper
+loads the host's existing 64-bit NVML, selects the exact PCI device, and sends
+one versioned snapshot per second over a private socket. A dedicated client
+thread owns process management and socket I/O; presentation only copies the
+latest validated snapshot. The helper has no separately installed executable,
+named temporary file, service, or persistent state and exits when its socket or
+target process disappears. Startup is bounded to three attempts for the owning
+backend and target process; failure leaves the affected values at `N/A`.
+
+Other DRM drivers can expose render-engine time through `/proc/<pid>/fdinfo`;
+duplicate DRM client IDs are counted once.
 
 Unavailable providers display `N/A` and never affect pacing or HUD rendering.
-Frame-pacer does not bundle NVML, search hard-coded host paths, run
-`nvidia-smi`, or start a telemetry helper.
+Frame-pacer does not bundle NVML, search hard-coded host library paths, invoke
+`nvidia-smi`, or require an i386 NVIDIA compute package.

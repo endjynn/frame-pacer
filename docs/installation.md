@@ -31,6 +31,12 @@ The same private library directory contains
 an enabled `thread_cpu_limit` must cross a Steam Runtime read-only cgroup mount;
 installation does not start it or create a permanent service.
 
+No NVIDIA telemetry executable is installed. The i386 HUD-capable libraries
+contain a small x86-64 image used only when a 32-bit NVIDIA process cannot load
+NVML directly. It executes anonymously from sealed memory, uses the existing
+host driver library, and disappears with the game. Installing a separate
+32-bit NVIDIA compute package is not required.
+
 Set `PREFIX`, `INSTALL_LIBDIR`, or `INSTALL_LAYERDIR` when using a non-default
 installation. `DESTDIR` is supported for staged package builds. The GLX/EGL
 preload shim is not installed: it remains an explicit per-game launch option.
@@ -62,5 +68,6 @@ backend. Start with one game, confirm the HUD and pacing, then expand slowly.
 Remove frame-pacer's Steam launcher environment and any per-game GL preload
 option, then fully restart Steam. Run `make uninstall` from the same checkout
 to remove the installed Vulkan manifests and libraries. You may then remove
-the configuration file and checkout. The CPU controller cleans up when the
-game, frame-pacer, or its transient scope exits.
+the configuration file and checkout. The CPU controller and anonymous NVIDIA
+telemetry helper clean up when the game, frame-pacer, or their owning runtime
+connections exit.

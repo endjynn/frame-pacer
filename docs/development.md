@@ -10,10 +10,10 @@ make check
 ```
 
 `make check` builds the x86_64 and i386 Vulkan and GL artifacts, runs unit, GL,
-Vulkan loader, controller CLI, shell-syntax, install, and ABI checks, validates
-shaders, manifests, and the reproducibly generated HUD image, and checks the
-expected ELF architectures. It does not modify cgroups or require a graphical
-session.
+Vulkan loader, controller CLI, NVML-helper, shell-syntax, install, and ABI
+checks, validates shaders, manifests, and the reproducibly generated HUD image,
+and checks the expected ELF architectures. It does not modify cgroups or
+require a graphical session or a game.
 
 Additional gates are intentionally separate:
 
@@ -30,6 +30,7 @@ Additional gates are intentionally separate:
 | `make run-thread-cpu-quota-probe` | Opt-in delegated cgroup topology probe. |
 | `make run-thread-cpu-quota-controller-integration` | Opt-in live 50%→75%→off→60%→off quota reuse and cleanup test. |
 | `make run-thread-cpu-quota-controller-integration-i386` | The same live reuse/handoff driven by the i386 client, plus test-only active cgroup-write failure, recovery, and controller interruption. |
+| `make run-nvml-helper-probe` | Exercise the production i386 client and anonymous x86_64 telemetry helper against the host NVIDIA driver and Steam Linux Runtime, when available. |
 | `make docs-hud-image` | Regenerate the README's 352x196 maximum-state HUD image from the production text, font, and vertex code. |
 
 The coverage and cgroup targets can change the calling process's transient
@@ -56,12 +57,19 @@ The CPU controller must remain strictly opt-in, private to its transient user
 scope, and fail closed. It must never modify a parent cgroup, Steam, or an
 unrelated process.
 
+The i386 NVIDIA telemetry fallback must remain transient and process-owned.
+Its x86_64 helper is embedded only in i386 rendering libraries, executed from
+a sealed anonymous file, communicates over a private socket, and must never be
+installed as a persistent executable or service.
+
 ## Validation
 
-Validate FPS and `thread_cpu_limit` changes live. Test `off` as well as an
-enabled value. For Vulkan quiet-present changes, test focused, unfocused, and
-refocused behavior using physical GPU measurements; HUD values and logs alone
-do not prove hidden GPU work is capped.
+Implementation and completion gates are fully automated. No manual or human
+test is required for completion. Add deterministic fixtures and probes for
+every supported behavior, including enabled and disabled settings, failure
+paths, cleanup, and both ELF architectures where applicable. Optional live
+observations may provide extra diagnostic evidence, but they never replace or
+block the automated acceptance suite.
 
 ## Logs
 

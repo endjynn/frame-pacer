@@ -1,4 +1,5 @@
 #include "hud_metrics.h"
+#include "hud_nvml_client.h"
 #include <assert.h>
 #include <dlfcn.h>
 #include <string.h>
@@ -35,9 +36,21 @@ static void cpu_parser(void)
 static void render_node_parser(void)
 {
     char node[32];
+    char pci[16];
+    unsigned int vendor;
+
     assert(frame_pacer_metrics_parse_render_node("/dev/dri/renderD128", node, sizeof(node)));
     assert(!strcmp(node, "renderD128"));
     assert(!frame_pacer_metrics_parse_render_node("/dev/dri/card1", node, sizeof(node)));
+    assert(frame_pacer_metrics_test_parse_gpu_vendor("0x10de\n", &vendor));
+    assert(vendor == 0x10deU);
+    assert(!frame_pacer_metrics_test_parse_gpu_vendor("10de\n", &vendor));
+    assert(!frame_pacer_metrics_test_parse_gpu_vendor("0x10de junk", &vendor));
+    assert(frame_pacer_metrics_test_parse_pci_bus_id(
+        "/sys/devices/pci0000:00/0000:01:00.0", pci, sizeof(pci)));
+    assert(!strcmp(pci, "0000:01:00.0"));
+    assert(!frame_pacer_metrics_test_parse_pci_bus_id(
+        "/sys/devices/pci0000:00/0000:01:00", pci, sizeof(pci)));
 }
 
 static void temperature_parser(void)
@@ -114,11 +127,12 @@ static void nvml_backend(void)
     struct frame_pacer_metrics metrics;
     struct frame_pacer_metrics_snapshot snapshot;
     frame_pacer_metrics_init(&metrics, "build/test-nvml.so", (unsigned int)getpid());
-    assert(!metrics.nvml_device);
+    assert(!metrics.nvml.device);
     frame_pacer_metrics_sample(&metrics, &snapshot);
-    assert(metrics.nvml_device);
+    assert(metrics.nvml.device);
     assert((snapshot.available & FRAME_PACER_METRIC_GPU_USE) && snapshot.gpu_use_percent == 37);
     assert((snapshot.available & FRAME_PACER_METRIC_GPU_TEMP) && snapshot.gpu_temp_celsius == 64);
+    assert(frame_pacer_nvml_client_test_attempts() == 0);
     frame_pacer_metrics_destroy(&metrics);
     frame_pacer_metrics_destroy(&metrics);
 }
@@ -128,7 +142,7 @@ static void unavailable_is_safe(void)
     struct frame_pacer_metrics metrics;
     struct frame_pacer_metrics_snapshot snapshot;
     frame_pacer_metrics_init(&metrics, "build/test-nvml.so", UINT32_MAX);
-    assert(!metrics.nvml_device);
+    assert(!metrics.nvml.device);
     frame_pacer_metrics_sample(&metrics, &snapshot);
     assert(!(snapshot.available & (FRAME_PACER_METRIC_GPU_USE | FRAME_PACER_METRIC_GPU_TEMP)));
     frame_pacer_metrics_destroy(&metrics);
@@ -147,7 +161,7 @@ static void incomplete_nvml_is_not_shutdown_without_init(void)
     assert(shutdown_calls && shutdown_calls() == 0);
     frame_pacer_metrics_init(&metrics, "build/test-nvml-incomplete.so",
                              (unsigned int)getpid());
-    assert(!metrics.nvml_library && !metrics.nvml_started);
+    assert(!metrics.nvml.library && !metrics.nvml.started);
     assert(shutdown_calls() == 0);
     frame_pacer_metrics_destroy(&metrics);
     assert(shutdown_calls() == 0);

@@ -10,6 +10,7 @@ int nvmlShutdown(void);
 unsigned int frame_pacer_test_nvml_shutdown_calls(void);
 int nvmlDeviceGetCount_v2(unsigned int *);
 int nvmlDeviceGetHandleByIndex_v2(unsigned int, void **);
+int nvmlDeviceGetHandleByPciBusId_v2(const char *, void **);
 int nvmlDeviceGetGraphicsRunningProcesses(
     void *, unsigned int *, struct nvml_process_info *);
 int nvmlDeviceGetUtilizationRates(void *, struct nvml_utilization *);
@@ -37,6 +38,12 @@ int nvmlDeviceGetCount_v2(unsigned int *count)
 int nvmlDeviceGetHandleByIndex_v2(unsigned int index, void **device)
 {
     if (index || !device) return 1;
+    *device = (void *)(uintptr_t)0x1234;
+    return 0;
+}
+int nvmlDeviceGetHandleByPciBusId_v2(const char *pci, void **device)
+{
+    if (!pci || strcmp(pci, "0000:01:00.0") || !device) return 1;
     *device = (void *)(uintptr_t)0x1234;
     return 0;
 }

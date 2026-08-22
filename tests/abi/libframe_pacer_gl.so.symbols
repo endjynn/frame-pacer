@@ -33,7 +33,6 @@ T frame_pacer_metrics_parse_cpu
 T frame_pacer_metrics_parse_cpu_stat
 T frame_pacer_metrics_parse_render_node
 T frame_pacer_metrics_sample
-T frame_pacer_metrics_select_gpu
 T frame_pacer_thread_cpu_quota_confirmed
 T frame_pacer_thread_cpu_quota_destroy
 T frame_pacer_thread_cpu_quota_init

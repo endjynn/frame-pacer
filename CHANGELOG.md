@@ -9,12 +9,16 @@ First public release.
 - Per-executable live FPS rules.
 - Opt-in per-thread cgroup-v2 CPU ceilings with transient cleanup.
 - x86_64 and i386 build and test coverage.
+- NVIDIA GPU telemetry for i386 games through a transient embedded x86_64 NVML
+  helper, with coherent asynchronous snapshots, bounded retry and teardown,
+  and no installed 32-bit driver packages, executables, or services.
 - Real-loader Vulkan instance, device, swapchain, presentation, HUD submission,
   and teardown characterization for both ELF architectures.
 - ABI, strict declaration/format warning, GCC analyzer, sanitizer,
   shell-syntax, and normalized coverage gates.
 - Correct cleanup for Vulkan instances, repeated log initialization, external
   CPU controllers, controller interruption, and failed quota-state writes.
+- Fail-closed handling for an absent Vulkan registry during instance teardown.
 - Overflow-safe HUD counter parsing and utilization arithmetic, plus fail-closed
   configuration reloads when a config becomes insecure or is replaced by a
   symlink.

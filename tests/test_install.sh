@@ -16,6 +16,7 @@ test "$(stat -c %a build/frame-pacer-thread-cpu-controller)" = 755
 test -x "$prefix/lib/frame-pacer/x86_64/libVkLayer_frame_pacer.so"
 test -x "$prefix/lib/frame-pacer/i386/libVkLayer_frame_pacer.so"
 test -x "$prefix/lib/frame-pacer/frame-pacer-thread-cpu-controller"
+test ! -e "$prefix/lib/frame-pacer/frame-pacer-nvml-helper"
 test "$(stat -c %a "$prefix/lib/frame-pacer/frame-pacer-thread-cpu-controller")" = 755
 jq -e '.layer.name == "VK_LAYER_ENDJYNN_frame_pacer_x86_64" and
        .layer.library_path == $PREFIX + "/lib/frame-pacer/x86_64/libVkLayer_frame_pacer.so"' \
@@ -40,6 +41,7 @@ jq -e '.layer.library_path == "/usr/local/lib/frame-pacer/x86_64/libVkLayer_fram
 jq -e '.layer.library_path == "/usr/local/lib/frame-pacer/i386/libVkLayer_frame_pacer.so"' \
     "$stage/usr/local/share/vulkan/implicit_layer.d/VkLayer_frame_pacer.i386.json" >/dev/null
 test -x "$stage/usr/local/lib/frame-pacer/frame-pacer-thread-cpu-controller"
+test ! -e "$stage/usr/local/lib/frame-pacer/frame-pacer-nvml-helper"
 
 make uninstall DESTDIR="$stage" PREFIX=/usr/local
 
