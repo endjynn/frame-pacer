@@ -63,8 +63,8 @@ int main(void)
         };
 
         window = XCreateWindow(x_display, RootWindow(x_display, visual->screen),
-                               0, 0, FRAME_PACER_HUD_WIDTH_MAX + 32U,
-                               FRAME_PACER_HUD_HEIGHT_MAX + 32U, 0,
+                               0, 0, FRAME_PACER_HUD_REFERENCE_WIDTH + 32U,
+                               FRAME_PACER_HUD_REFERENCE_HEIGHT + 32U, 0,
                                visual->depth, InputOutput,
                                visual->visual, CWColormap | CWEventMask,
                                &attributes);
@@ -82,8 +82,8 @@ int main(void)
     }
     if (!eglQuerySurface(display, surface, EGL_WIDTH, &surface_width) ||
         !eglQuerySurface(display, surface, EGL_HEIGHT, &surface_height) ||
-        surface_width < (EGLint)FRAME_PACER_HUD_WIDTH_MAX ||
-        surface_height < (EGLint)FRAME_PACER_HUD_HEIGHT_MAX) {
+        surface_width < (EGLint)FRAME_PACER_HUD_REFERENCE_WIDTH ||
+        surface_height < (EGLint)FRAME_PACER_HUD_REFERENCE_HEIGHT) {
         fputs("EGL surface cannot contain the complete HUD\n", stderr);
         goto cleanup;
     }

@@ -34,7 +34,7 @@ XDG_CONFIG_HOME="$state" XDG_STATE_HOME="$state" \
 log=$(find "$state/frame-pacer" -type f -name 'frame-pacer-gl-*.log' -print -quit)
 test -n "$log"
 grep -q 'GL interposer init.*dlsym=1 glx=1 egl=1' "$log"
-test "$(grep -c 'glXSwapBuffers .*cap=70' "$log")" -eq 5
+test "$(grep -c 'glXSwapBuffers .*cap=70' "$log")" -eq 6
 test "$(grep -c 'eglSwapBuffers .*cap=70' "$log")" -eq 4
 test "$(grep -c 'eglSwapBuffersWithDamageKHR .*cap=70' "$log")" -eq 2
 test "$(grep -c 'eglSwapBuffersWithDamageEXT .*cap=70' "$log")" -eq 2

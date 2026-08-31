@@ -60,8 +60,9 @@ int main(void)
         return 77;
     }
     window = XCreateSimpleWindow(display, DefaultRootWindow(display), 0, 0,
-                                 FRAME_PACER_HUD_WIDTH_MAX + 32U,
-                                 FRAME_PACER_HUD_HEIGHT_MAX + 32U, 0, 0, 0);
+                                 FRAME_PACER_HUD_REFERENCE_WIDTH + 32U,
+                                 FRAME_PACER_HUD_REFERENCE_HEIGHT + 32U,
+                                 0, 0, 0);
     if (!window) goto cleanup;
     XMapWindow(display, window);
     XSync(display, False);
@@ -177,11 +178,11 @@ int main(void)
     }
     extent = capabilities.currentExtent;
     if (extent.width == UINT32_MAX) {
-        extent.width = FRAME_PACER_HUD_WIDTH_MAX + 32U;
-        extent.height = FRAME_PACER_HUD_HEIGHT_MAX + 32U;
+        extent.width = FRAME_PACER_HUD_REFERENCE_WIDTH + 32U;
+        extent.height = FRAME_PACER_HUD_REFERENCE_HEIGHT + 32U;
     }
-    if (extent.width < FRAME_PACER_HUD_WIDTH_MAX ||
-        extent.height < FRAME_PACER_HUD_HEIGHT_MAX) {
+    if (extent.width < FRAME_PACER_HUD_REFERENCE_WIDTH ||
+        extent.height < FRAME_PACER_HUD_REFERENCE_HEIGHT) {
         fputs("Vulkan swapchain cannot contain the complete HUD\n", stderr);
         goto cleanup;
     }

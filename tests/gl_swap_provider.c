@@ -14,6 +14,9 @@ unsigned int frame_pacer_test_egl_calls(void);
 void frame_pacer_test_set_egl_context(GLboolean);
 void frame_pacer_test_set_context(uintptr_t, GLboolean);
 unsigned int frame_pacer_test_gl_vertices(void);
+unsigned int frame_pacer_test_hud_width(void);
+unsigned int frame_pacer_test_hud_height(void);
+void frame_pacer_test_set_drawable_size(unsigned int, unsigned int);
 unsigned int frame_pacer_test_gl_programs(void);
 unsigned int frame_pacer_test_glx_destroy_calls(void);
 unsigned int frame_pacer_test_egl_destroy_calls(void);
@@ -22,6 +25,8 @@ unsigned int frame_pacer_test_native_vertex_shader(void);
 unsigned int frame_pacer_test_gl_state_preserved(void);
 
 static unsigned int glx_calls, egl_calls, vertices, programs;
+static unsigned int drawable_width = 1920, drawable_height = 1200;
+static unsigned int hud_width, hud_height;
 static unsigned int glx_destroy_calls, egl_destroy_calls, egl_terminate_calls;
 static GLboolean native_vertex_shader;
 static GLboolean egl_context_active;
@@ -103,7 +108,8 @@ EGLBoolean eglQuerySurface(EGLDisplay display, EGLSurface surface, EGLint attrib
     (void)display;
     (void)surface;
     if (!value) return EGL_FALSE;
-    *value = attribute == EGL_WIDTH ? 1920 : attribute == EGL_HEIGHT ? 1200 : 0;
+    *value = attribute == EGL_WIDTH ? (EGLint)drawable_width :
+             attribute == EGL_HEIGHT ? (EGLint)drawable_height : 0;
     return EGL_TRUE;
 }
 
@@ -128,6 +134,13 @@ void frame_pacer_test_set_context(uintptr_t context, GLboolean egl)
     egl_context_active = egl;
 }
 unsigned int frame_pacer_test_gl_vertices(void) { return vertices; }
+unsigned int frame_pacer_test_hud_width(void) { return hud_width; }
+unsigned int frame_pacer_test_hud_height(void) { return hud_height; }
+void frame_pacer_test_set_drawable_size(unsigned int width, unsigned int height)
+{
+    drawable_width = width;
+    drawable_height = height;
+}
 unsigned int frame_pacer_test_gl_programs(void) { return programs; }
 unsigned int frame_pacer_test_glx_destroy_calls(void) { return glx_destroy_calls; }
 unsigned int frame_pacer_test_egl_destroy_calls(void) { return egl_destroy_calls; }
@@ -177,7 +190,8 @@ void glGetIntegerv(GLenum parameter, GLint *value)
 void glXQueryDrawable(Display *display, GLXDrawable drawable, int attribute, unsigned int *value)
 {
     (void)display; (void)drawable;
-    *value = attribute == GLX_WIDTH ? 1920U : attribute == GLX_HEIGHT ? 1200U : 0U;
+    *value = attribute == GLX_WIDTH ? drawable_width :
+             attribute == GLX_HEIGHT ? drawable_height : 0U;
 }
 void glDisable(GLenum value)
 { if (value == GL_BLEND) blend = GL_FALSE; else if (value == GL_CULL_FACE) cull = GL_FALSE; else if (value == GL_DEPTH_TEST) depth = GL_FALSE; else if (value == GL_STENCIL_TEST) stencil = GL_FALSE; else if (value == GL_SCISSOR_TEST) scissor = GL_FALSE; else if (value == 0x8DB9) srgb = GL_FALSE; }
@@ -233,7 +247,17 @@ void glDeleteBuffers(GLsizei count, const GLuint *buffers)
 { (void)count; (void)buffers; }
 void glBindBuffer(GLenum target, GLuint value) { if (target == 0x8892) array_buffer = (GLint)value; }
 void glBufferData(GLenum target, GLsizeiptr size, const void *data, GLenum usage)
-{ (void)target; (void)size; (void)data; (void)usage; }
+{
+    const float *values = data;
+
+    (void)target;
+    (void)usage;
+    /* Six vertices with six floats each comprise the leading panel quad. */
+    if (values && size >= (GLsizeiptr)(36 * sizeof(*values))) {
+        hud_width = (unsigned int)values[6];
+        hud_height = (unsigned int)values[13];
+    }
+}
 void glEnableVertexAttribArray(GLuint index) { (void)index; }
 void glVertexAttribPointer(GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const void *pointer)
 { (void)index; (void)size; (void)type; (void)normalized; (void)stride; (void)pointer; }

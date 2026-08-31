@@ -140,7 +140,7 @@ The two projects have deliberately different priorities:
 | Project | Primary focus | HUD role |
 | --- | --- | --- |
 | MangoHud | A highly configurable performance and monitoring HUD; FPS limiting is one of its capabilities. | Rich and configurable. |
-| frame-pacer | Predictable FPS pacing and opt-in per-thread CPU limiting. | Minimal, fixed, and secondary to pacing. |
+| frame-pacer | Predictable FPS pacing and opt-in per-thread CPU limiting. | Minimal, automatically scaled, and secondary to pacing. |
 
 Frame-pacer is complementary to MangoHud, not a replacement for it.
 
@@ -153,7 +153,8 @@ Frame-pacer is complementary to MangoHud, not a replacement for it.
 - Optional live per-thread CPU ceilings using a private transient cgroup-v2
   controller.
 - GPU, CPU, FPS, and thread-CPU HUD telemetry that degrades safely to `N/A`,
-  with a transient embedded x86_64 NVML helper for i386 NVIDIA games.
+  with resolution-aware scaling and a transient embedded x86_64 NVML helper
+  for i386 NVIDIA games.
 
 ## Documentation
 

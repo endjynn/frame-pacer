@@ -199,8 +199,8 @@ static unsigned char channel(float value)
 
 int main(int argc, char **argv)
 {
-    const uint32_t width = FRAME_PACER_HUD_WIDTH_MAX;
-    const uint32_t height = FRAME_PACER_HUD_HEIGHT_MAX;
+    const uint32_t width = FRAME_PACER_HUD_REFERENCE_WIDTH;
+    const uint32_t height = FRAME_PACER_HUD_REFERENCE_HEIGHT;
     struct frame_pacer_metrics_snapshot metrics = {
         .available = FRAME_PACER_METRIC_GPU_USE |
                      FRAME_PACER_METRIC_GPU_TEMP |

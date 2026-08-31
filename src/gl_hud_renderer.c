@@ -346,7 +346,8 @@ void frame_pacer_gl_hud_render(struct frame_pacer_gl_hud_renderer *renderer,
         height = (unsigned int)viewport[3];
     }
     save_state(gl, &state);
-    if (!frame_pacer_hud_vertices_build(renderer->vertices, text) ||
+    if (!frame_pacer_hud_vertices_build_for_extent(renderer->vertices, text,
+                                                    width, height) ||
         !create_resources(renderer, gl, api, display, context, &resource)) {
         restore_state(gl, &state);
         goto out;

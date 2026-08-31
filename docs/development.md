@@ -31,7 +31,7 @@ Additional gates are intentionally separate:
 | `make run-thread-cpu-quota-controller-integration` | Opt-in live 50%→75%→off→60%→off quota reuse and cleanup test. |
 | `make run-thread-cpu-quota-controller-integration-i386` | The same live reuse/handoff driven by the i386 client, plus test-only active cgroup-write failure, recovery, and controller interruption. |
 | `make run-nvml-helper-probe` | Exercise the production i386 client and anonymous x86_64 telemetry helper against the host NVIDIA driver and Steam Linux Runtime, when available. |
-| `make docs-hud-image` | Regenerate the README's 352x196 maximum-state HUD image from the production text, font, and vertex code. |
+| `make docs-hud-image` | Regenerate the README's 264x147 reference-size maximum-state HUD image from the production text, font, and vertex code. |
 
 The coverage and cgroup targets can change the calling process's transient
 user-scope topology. Run them only in a suitable delegated systemd user

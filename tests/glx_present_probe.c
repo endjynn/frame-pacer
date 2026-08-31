@@ -38,8 +38,8 @@ int main(void)
         };
 
         window = XCreateWindow(display, RootWindow(display, visual->screen),
-                               0, 0, FRAME_PACER_HUD_WIDTH_MAX + 32U,
-                               FRAME_PACER_HUD_HEIGHT_MAX + 32U, 0,
+                               0, 0, FRAME_PACER_HUD_REFERENCE_WIDTH + 32U,
+                               FRAME_PACER_HUD_REFERENCE_HEIGHT + 32U, 0,
                                visual->depth, InputOutput,
                                visual->visual, CWColormap | CWEventMask,
                                &window_attributes);
@@ -54,8 +54,8 @@ int main(void)
     }
     glXQueryDrawable(display, window, GLX_WIDTH, &drawable_width);
     glXQueryDrawable(display, window, GLX_HEIGHT, &drawable_height);
-    if (drawable_width < FRAME_PACER_HUD_WIDTH_MAX ||
-        drawable_height < FRAME_PACER_HUD_HEIGHT_MAX) {
+    if (drawable_width < FRAME_PACER_HUD_REFERENCE_WIDTH ||
+        drawable_height < FRAME_PACER_HUD_REFERENCE_HEIGHT) {
         fputs("GLX drawable cannot contain the complete HUD\n", stderr);
         goto cleanup;
     }

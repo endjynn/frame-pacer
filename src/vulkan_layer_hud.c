@@ -234,7 +234,8 @@ static bool record_overlay(void *context, uint32_t image_index)
     now = hud->now(hud->callback_context);
     hud->format_text(hud->callback_context, item->device, &item->fps, now,
                      &text);
-    if (!frame_pacer_hud_vertices_build(&item->vertices, &text) ||
+    if (!frame_pacer_hud_vertices_build_for_extent(
+            &item->vertices, &text, item->extent.width, item->extent.height) ||
         sizeof(item->vertices.data[0]) * (size_t)item->vertices.count >
             item->vertex_buffer.size)
         return false;

@@ -1,10 +1,27 @@
 # HUD
 
 The HUD appears in the top-left corner. Its compact, fixed-cell layout keeps
-values aligned even when a provider is unavailable. The complete panel is at
-most 352 by 196 pixels with the optional fourth row; the usual three-row panel
-is 352 by 156 pixels. Every value occupies four glyph cells, including the
-supported maximum of 999 FPS.
+values aligned even when a provider is unavailable. Its geometry scales
+automatically from the current Vulkan swapchain or GLX/EGL drawable extent;
+it does not query the window system, desktop environment, monitor, or physical
+DPI.
+
+The 2560 by 1600 reference resolution uses three screen pixels for each
+bitmap-font pixel. At that size, the complete panel is 264 by 147 pixels with
+the optional fourth row and the usual three-row panel is 264 by 117 pixels. A
+1920 by 1200 drawable selects two screen pixels per font pixel, making those
+panels 176 by 98 and 176 by 78 pixels respectively. Every value occupies four
+glyph cells, including the supported maximum of 999 FPS.
+
+Scaling uses whichever drawable axis is more constrained and rounds to the
+nearest whole font-pixel size. This keeps the pixel font sharp, prevents an
+ultrawide or tall aspect ratio from enlarging the HUD based on only one axis,
+and updates naturally when a drawable or swapchain is recreated at a new
+resolution. Extremely small drawables are additionally constrained so the
+complete optional panel cannot extend outside their bounds. Because rendering
+APIs do not expose physical DPI portably, the policy preserves proportional
+screen footprint rather than an exact physical measurement across unrelated
+monitors.
 
 Set `hud = off` at the top level of `frame-pacer.conf` to disable it without
 disabling frame pacing. `hud = on` is the default; valid changes are applied
