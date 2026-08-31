@@ -235,6 +235,8 @@ int main(int argc, char **argv)
         uint32_t y1 = (uint32_t)quad[2].position[1];
         uint32_t y, x;
 
+        if ((float)x1 < quad[2].position[0]) ++x1;
+        if ((float)y1 < quad[2].position[1]) ++y1;
         if (x1 > width || y1 > height || x0 > x1 || y0 > y1) return 1;
         for (y = y0; y < y1; ++y)
             for (x = x0; x < x1; ++x) {

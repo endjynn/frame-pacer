@@ -34,30 +34,29 @@ static const float *label_color(const char *text, unsigned int line,
     return colors[line];
 }
 
-static uint32_t pixel_size_for(uint32_t width, uint32_t height)
+static float scale_for(uint32_t width, uint32_t height)
 {
-    uint64_t width_size, height_size;
-    uint32_t size, fit_width, fit_height, fit;
+    float width_scale, height_scale, scale, fit_width, fit_height, fit;
 
-    if (!width || !height) return 0;
-    /* Round the limiting axis to the nearest whole font pixel.  Integer
-     * geometry keeps the 5x7 bitmap font sharp at every selected size. */
-    width_size = ((uint64_t)width * FRAME_PACER_HUD_REFERENCE_PIXEL_SIZE +
-                  FRAME_PACER_HUD_REFERENCE_VIEWPORT_WIDTH / 2U) /
-                 FRAME_PACER_HUD_REFERENCE_VIEWPORT_WIDTH;
-    height_size = ((uint64_t)height * FRAME_PACER_HUD_REFERENCE_PIXEL_SIZE +
-                   FRAME_PACER_HUD_REFERENCE_VIEWPORT_HEIGHT / 2U) /
-                  FRAME_PACER_HUD_REFERENCE_VIEWPORT_HEIGHT;
-    size = (uint32_t)(width_size < height_size ? width_size : height_size);
-    if (!size) size = 1;
+    if (!width || !height) return 0.0f;
+    width_scale = (float)width *
+        (float)FRAME_PACER_HUD_REFERENCE_SCALE_NUMERATOR /
+        ((float)FRAME_PACER_HUD_REFERENCE_VIEWPORT_WIDTH *
+         (float)FRAME_PACER_HUD_REFERENCE_SCALE_DENOMINATOR);
+    height_scale = (float)height *
+        (float)FRAME_PACER_HUD_REFERENCE_SCALE_NUMERATOR /
+        ((float)FRAME_PACER_HUD_REFERENCE_VIEWPORT_HEIGHT *
+         (float)FRAME_PACER_HUD_REFERENCE_SCALE_DENOMINATOR);
+    scale = width_scale < height_scale ? width_scale : height_scale;
+    if (scale < 1.0f) scale = 1.0f;
 
     /* Even unusual tiny drawables must never receive geometry outside their
      * bounds.  Account for the optional fourth row so toggling it cannot
      * silently overflow or change the selected scale. */
-    fit_width = width / FRAME_PACER_HUD_WIDTH_UNITS;
-    fit_height = height / FRAME_PACER_HUD_HEIGHT_UNITS;
+    fit_width = (float)width / (float)FRAME_PACER_HUD_WIDTH_UNITS;
+    fit_height = (float)height / (float)FRAME_PACER_HUD_HEIGHT_UNITS;
     fit = fit_width < fit_height ? fit_width : fit_height;
-    return size < fit ? size : fit;
+    return scale < fit ? scale : fit;
 }
 
 bool frame_pacer_hud_vertices_build_for_extent(
@@ -74,14 +73,14 @@ bool frame_pacer_hud_vertices_build_for_extent(
         {0.75f, 0.35f, 1.0f, 1.0f},
         {1.0f, 0.2f, 0.2f, 1.0f},
     };
-    uint32_t pixel_size;
+    float scale;
     unsigned int line, longest = 0;
 
     if (!vertices || !text)
         return false;
     vertices->count = 0;
-    pixel_size = pixel_size_for(drawable_width, drawable_height);
-    if (!pixel_size) return false;
+    scale = scale_for(drawable_width, drawable_height);
+    if (scale <= 0.0f) return false;
     if (text->line_count < 3 || text->line_count > FRAME_PACER_HUD_LINE_COUNT_MAX)
         return false;
     for (line = 0; line < text->line_count; ++line) {
@@ -95,14 +94,13 @@ bool frame_pacer_hud_vertices_build_for_extent(
     }
     /* The background follows the actual row count and widest rendered metric. */
     add_quad(vertices, 0.0f, 0.0f,
-             (float)(pixel_size *
-                     (FRAME_PACER_HUD_TEXT_X_UNITS +
-                      longest * FRAME_PACER_HUD_CHARACTER_ADVANCE_UNITS +
-                      FRAME_PACER_HUD_PANEL_RIGHT_PADDING_UNITS)),
-             (float)(pixel_size *
-                     (FRAME_PACER_HUD_TEXT_Y_UNITS +
-                      text->line_count * FRAME_PACER_HUD_LINE_ADVANCE_UNITS +
-                      FRAME_PACER_HUD_PANEL_BOTTOM_PADDING_UNITS)), panel_color);
+             scale * (float)(FRAME_PACER_HUD_TEXT_X_UNITS +
+                             longest * FRAME_PACER_HUD_CHARACTER_ADVANCE_UNITS +
+                             FRAME_PACER_HUD_PANEL_RIGHT_PADDING_UNITS),
+             scale * (float)(FRAME_PACER_HUD_TEXT_Y_UNITS +
+                             text->line_count * FRAME_PACER_HUD_LINE_ADVANCE_UNITS +
+                             FRAME_PACER_HUD_PANEL_BOTTOM_PADDING_UNITS),
+             panel_color);
     for (line = 0; line < text->line_count; ++line) {
         unsigned int character;
 
@@ -127,15 +125,14 @@ bool frame_pacer_hud_vertices_build_for_extent(
                             vertices->count = 0;
                             return false;
                         }
-                        pixel_x = (float)(pixel_size *
-                            (FRAME_PACER_HUD_TEXT_X_UNITS +
-                             character * FRAME_PACER_HUD_CHARACTER_ADVANCE_UNITS +
-                             x));
-                        pixel_y = (float)(pixel_size *
-                            (FRAME_PACER_HUD_TEXT_Y_UNITS +
-                             line * FRAME_PACER_HUD_LINE_ADVANCE_UNITS + y));
+                        pixel_x = scale * (float)(
+                            FRAME_PACER_HUD_TEXT_X_UNITS +
+                            character * FRAME_PACER_HUD_CHARACTER_ADVANCE_UNITS + x);
+                        pixel_y = scale * (float)(
+                            FRAME_PACER_HUD_TEXT_Y_UNITS +
+                            line * FRAME_PACER_HUD_LINE_ADVANCE_UNITS + y);
                         add_quad(vertices, pixel_x, pixel_y,
-                                 (float)pixel_size, (float)pixel_size, color);
+                                 scale, scale, color);
                     }
                 }
             }

@@ -6,22 +6,22 @@ automatically from the current Vulkan swapchain or GLX/EGL drawable extent;
 it does not query the window system, desktop environment, monitor, or physical
 DPI.
 
-The 2560 by 1600 reference resolution uses three screen pixels for each
-bitmap-font pixel. At that size, the complete panel is 264 by 147 pixels with
-the optional fourth row and the usual three-row panel is 264 by 117 pixels. A
-1920 by 1200 drawable selects two screen pixels per font pixel, making those
-panels 176 by 98 and 176 by 78 pixels respectively. Every value occupies four
-glyph cells, including the supported maximum of 999 FPS.
+The 2560 by 1600 reference resolution uses 2.5 screen pixels for each
+bitmap-font pixel. At that size, the complete panel is approximately 220 by
+123 pixels with the optional fourth row and the usual three-row panel is 220
+by 98 pixels. A 1920 by 1200 drawable uses a 1.875-pixel scale, making those
+panels approximately 165 by 92 and 165 by 73 pixels respectively. Every value
+occupies four glyph cells, including the supported maximum of 999 FPS.
 
-Scaling uses whichever drawable axis is more constrained and rounds to the
-nearest whole font-pixel size. This keeps the pixel font sharp, prevents an
-ultrawide or tall aspect ratio from enlarging the HUD based on only one axis,
-and updates naturally when a drawable or swapchain is recreated at a new
-resolution. Extremely small drawables are additionally constrained so the
-complete optional panel cannot extend outside their bounds. Because rendering
-APIs do not expose physical DPI portably, the policy preserves proportional
-screen footprint rather than an exact physical measurement across unrelated
-monitors.
+Scaling uses whichever drawable axis is more constrained. Its continuous
+scale avoids the large size jump that would occur between one- and two-pixel
+font steps at lower resolutions, prevents an ultrawide or tall aspect ratio
+from enlarging the HUD based on only one axis, and updates naturally when a
+drawable or swapchain is recreated at a new resolution. Extremely small
+drawables are additionally constrained so the complete optional panel cannot
+extend outside their bounds. Because rendering APIs do not expose physical DPI
+portably, the policy preserves proportional screen footprint rather than an
+exact physical measurement across unrelated monitors.
 
 Set `hud = off` at the top level of `frame-pacer.conf` to disable it without
 disabling frame pacing. `hud = on` is the default; valid changes are applied

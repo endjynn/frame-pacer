@@ -14,8 +14,8 @@ unsigned int frame_pacer_test_egl_calls(void);
 void frame_pacer_test_set_egl_context(GLboolean);
 void frame_pacer_test_set_context(uintptr_t, GLboolean);
 unsigned int frame_pacer_test_gl_vertices(void);
-unsigned int frame_pacer_test_hud_width(void);
-unsigned int frame_pacer_test_hud_height(void);
+float frame_pacer_test_hud_width(void);
+float frame_pacer_test_hud_height(void);
 void frame_pacer_test_set_drawable_size(unsigned int, unsigned int);
 unsigned int frame_pacer_test_gl_programs(void);
 unsigned int frame_pacer_test_glx_destroy_calls(void);
@@ -26,7 +26,7 @@ unsigned int frame_pacer_test_gl_state_preserved(void);
 
 static unsigned int glx_calls, egl_calls, vertices, programs;
 static unsigned int drawable_width = 1920, drawable_height = 1200;
-static unsigned int hud_width, hud_height;
+static float hud_width, hud_height;
 static unsigned int glx_destroy_calls, egl_destroy_calls, egl_terminate_calls;
 static GLboolean native_vertex_shader;
 static GLboolean egl_context_active;
@@ -134,8 +134,8 @@ void frame_pacer_test_set_context(uintptr_t context, GLboolean egl)
     egl_context_active = egl;
 }
 unsigned int frame_pacer_test_gl_vertices(void) { return vertices; }
-unsigned int frame_pacer_test_hud_width(void) { return hud_width; }
-unsigned int frame_pacer_test_hud_height(void) { return hud_height; }
+float frame_pacer_test_hud_width(void) { return hud_width; }
+float frame_pacer_test_hud_height(void) { return hud_height; }
 void frame_pacer_test_set_drawable_size(unsigned int width, unsigned int height)
 {
     drawable_width = width;
@@ -254,8 +254,8 @@ void glBufferData(GLenum target, GLsizeiptr size, const void *data, GLenum usage
     (void)usage;
     /* Six vertices with six floats each comprise the leading panel quad. */
     if (values && size >= (GLsizeiptr)(36 * sizeof(*values))) {
-        hud_width = (unsigned int)values[6];
-        hud_height = (unsigned int)values[13];
+        hud_width = values[6];
+        hud_height = values[13];
     }
 }
 void glEnableVertexAttribArray(GLuint index) { (void)index; }

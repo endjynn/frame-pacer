@@ -24,8 +24,8 @@ int main(void)
     EGLBoolean (*egl_destroy)(EGLDisplay, EGLContext);
     EGLBoolean (*egl_terminate)(EGLDisplay);
     unsigned int (*gl_vertices)(void);
-    unsigned int (*hud_width)(void);
-    unsigned int (*hud_height)(void);
+    float (*hud_width)(void);
+    float (*hud_height)(void);
     void (*set_drawable_size)(unsigned int, unsigned int);
     unsigned int (*gl_programs)(void);
     unsigned int (*gl_state_preserved)(void);
@@ -110,7 +110,7 @@ int main(void)
     symbol = dlsym(provider, "frame_pacer_test_set_drawable_size");
     assert(symbol);
     memcpy(&set_drawable_size, &symbol, sizeof(set_drawable_size));
-    assert(hud_width() == 176 && hud_height() == 78);
+    assert(hud_width() == 165.0f && hud_height() == 73.125f);
 
     /* Alternating back to a live context reuses its private HUD resources. */
     set_context(1, GL_FALSE);
@@ -123,7 +123,7 @@ int main(void)
     /* GLX drawable resizing rebuilds the HUD at the new automatic scale. */
     set_drawable_size(2560, 1600);
     glx_swap((Display *)1, 0);
-    assert(hud_width() == 264 && hud_height() == 117);
+    assert(hud_width() == 220.0f && hud_height() == 97.5f);
 
     /* Destroyed handles and terminated EGL displays must never retain stale
      * object names when a provider later reuses the same opaque value. */
