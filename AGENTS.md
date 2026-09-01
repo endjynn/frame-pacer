@@ -36,12 +36,16 @@ repository.
 
 - The public repository is `endjynn/frame-pacer` with
   `https://github.com/endjynn/frame-pacer.git` as `origin`.
-- On the Nomad development host, run repository-scoped GitHub CLI commands
-  from this checkout with `gh-repo`, not plain `gh`. The local wrapper selects
+- Run repository-scoped GitHub CLI commands from this checkout with `gh-repo`,
+  not plain `gh`. The local wrapper selects
   the authenticated `endjynn` account from the `origin` owner without changing
   GitHub CLI's globally active account.
 - Use `/usr/bin/gh auth` directly only for authentication and account
   management. Never print, copy, persist, or commit authentication tokens.
+- Before an authorized Git push, verify that its credential resolves to the
+  `origin` owner. Use a non-persistent, repository-scoped credential when the
+  globally active account differs; never switch accounts globally or store a
+  token to make one repository push work.
 - Pull-request listing, viewing, checks, and diffs are read-only and may be
   performed as normal investigation. Posting a comment or review, changing
   labels or milestones, closing, merging, or otherwise changing GitHub state

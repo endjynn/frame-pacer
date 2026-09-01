@@ -199,27 +199,6 @@ const char *frame_pacer_limit_executable(const struct frame_pacer_limit *limit)
     return limit && limit->initialized ? limit->executable : "";
 }
 
-static struct frame_pacer_limit_stamp stamp_for(const struct stat *status)
-{
-    return (struct frame_pacer_limit_stamp){
-        .present = true,
-        .device = status->st_dev,
-        .inode = status->st_ino,
-        .mtime_seconds = status->st_mtim.tv_sec,
-        .mtime_nanoseconds = status->st_mtim.tv_nsec,
-        .size = status->st_size,
-    };
-}
-
-static bool same_stamp(const struct frame_pacer_limit_stamp *left,
-                       const struct frame_pacer_limit_stamp *right)
-{
-    return left->present == right->present && (!left->present ||
-        (left->device == right->device && left->inode == right->inode &&
-         left->mtime_seconds == right->mtime_seconds &&
-         left->mtime_nanoseconds == right->mtime_nanoseconds && left->size == right->size));
-}
-
 static void trim(const char **begin, const char **end)
 {
     while (*begin < *end && isspace((unsigned char)**begin)) ++*begin;
@@ -500,7 +479,6 @@ static uint32_t read_limit(const struct frame_pacer_limit *limit,
 uint32_t frame_pacer_limit_poll(struct frame_pacer_limit *limit, uint64_t now_ns, bool *changed)
 {
     struct stat status;
-    struct frame_pacer_limit_stamp current = {0};
     uint32_t next;
     bool quota_enabled = false;
     bool hud_enabled = true;
@@ -527,19 +505,15 @@ uint32_t frame_pacer_limit_poll(struct frame_pacer_limit *limit, uint64_t now_ns
         status.st_uid == getuid() && S_ISREG(status.st_mode) &&
         status.st_nlink == 1 &&
         !(status.st_mode & (S_IRWXG | S_IRWXO)))
-        current = stamp_for(&status);
-    if (!same_stamp(&limit->stamp, &current)) {
-        next = current.present ? read_limit(limit, &status, &quota_enabled, &quota, &hud_enabled) :
-                                 FRAME_PACER_FPS_LIMIT_OFF;
-        if (next != atomic_load_explicit(&limit->fps, memory_order_relaxed) &&
-            changed)
-            *changed = true;
-        atomic_store_explicit(&limit->fps, next, memory_order_relaxed);
-        limit->thread_cpu_quota_enabled = quota_enabled;
-        limit->thread_cpu_quota = quota;
-        limit->hud_enabled = hud_enabled;
-        limit->stamp = current;
-    }
+        next = read_limit(limit, &status, &quota_enabled, &quota, &hud_enabled);
+    else
+        next = FRAME_PACER_FPS_LIMIT_OFF;
+    if (next != atomic_load_explicit(&limit->fps, memory_order_relaxed) && changed)
+        *changed = true;
+    atomic_store_explicit(&limit->fps, next, memory_order_relaxed);
+    limit->thread_cpu_quota_enabled = quota_enabled;
+    limit->thread_cpu_quota = quota;
+    limit->hud_enabled = hud_enabled;
     next = atomic_load_explicit(&limit->fps, memory_order_relaxed);
     atomic_store_explicit(&limit->last_check_ns, now_ns, memory_order_release);
     (void)pthread_mutex_unlock(&limit->mutex);

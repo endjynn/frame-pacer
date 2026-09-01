@@ -2,7 +2,7 @@
 
 ## The HUD does not appear
 
-1. Confirm that `make check` and `make install` completed successfully.
+1. Confirm that the release installer completed successfully.
 2. Fully close Steam. Check that no Steam icon remains in the notification
    area, then start it with `ENABLE_FRAME_PACER=1 steam`.
 3. Confirm that you are using the standard Steam client, not Flatpak Steam.
@@ -57,7 +57,7 @@ For a GLX/EGL game, add `FRAME_PACER_LOG=1` before its existing per-game launch
 option:
 
 ```text
-FRAME_PACER_LOG=1 LD_PRELOAD=/absolute/path/to/frame-pacer/build/${LIB}/libframe_pacer_gl_shim.so %command%
+FRAME_PACER_LOG=1 LD_PRELOAD="$HOME/.local/lib/frame-pacer/${LIB}/libframe_pacer_gl_shim.so" %command%
 ```
 
 Logs are written to `~/.local/state/frame-pacer`, or below

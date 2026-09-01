@@ -12,8 +12,9 @@ Before submitting a pull request:
 
 1. Keep the change focused and explain the user-visible result.
 2. Add or update automated tests.
-3. Run `make check`.
-4. Run any additional checks relevant to the change; see
+3. Run `make check`; the same checks will run on GitHub.
+4. Run any additional checks relevant to the change, including
+   `make check-release-package` for installation, packaging, or release work; see
    [Development](docs/development.md).
 5. Update documentation when setup, configuration, or behavior changes.
 6. Describe known limitations and any optional live-game observations.

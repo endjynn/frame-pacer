@@ -3,30 +3,37 @@
 A lightweight FPS limiter and performance HUD for Steam games on Linux.
 Works with Vulkan, Proton, GLX, and EGL games.
 
+[![CI](https://github.com/endjynn/frame-pacer/actions/workflows/ci.yml/badge.svg)](https://github.com/endjynn/frame-pacer/actions/workflows/ci.yml)
+
 > **AI-assisted development:** Frame-pacer is created and maintained by a
 > professional software developer who uses AI tools throughout development.
 > The maintainer reviews the work and remains responsible for every technical
 > decision and release.
 
-![frame-pacer HUD](docs/images/frame-pacer-hud.png)
+![frame-pacer HUD](https://raw.githubusercontent.com/endjynn/frame-pacer/main/docs/images/frame-pacer-hud.png)
 
-## Quick start
+## Install
 
 Frame-pacer supports the standard, non-Flatpak Steam client on x86_64,
-systemd-based Linux systems. It does not require root access.
+systemd-based Linux systems. Installation is per-user and needs no `sudo`.
 
-### Install
+1. Download the `.tar.xz` archive and matching `.sha256` file from
+   [GitHub Releases](https://github.com/endjynn/frame-pacer/releases).
+2. Open a terminal in the download directory and run:
 
-Install the required [build packages](docs/reference/environment.md), then run:
+   ```sh
+   sha256sum -c frame-pacer-*.tar.xz.sha256
+   tar -xf frame-pacer-*.tar.xz
+   cd frame-pacer-*-linux-x86_64-multilib
+   ./install.sh
+   ```
 
-```sh
-git clone https://github.com/endjynn/frame-pacer.git
-cd frame-pacer
-make check
-make install
-```
+See [Installation and updates](https://github.com/endjynn/frame-pacer/blob/main/docs/installation.md)
+for source builds, custom locations, updates, and removal.
 
-### Configure
+## Configure
+
+Create `~/.config/frame-pacer/frame-pacer.conf`:
 
 ```sh
 mkdir -p ~/.config/frame-pacer
@@ -34,25 +41,23 @@ chmod 700 ~/.config/frame-pacer
 nano ~/.config/frame-pacer/frame-pacer.conf
 ```
 
-Add:
+Add any settings you want:
 
 ```ini
 global_fps_limit = 60
 hud = on
 ```
 
-Save the file, then run:
+Then protect the file:
 
 ```sh
 chmod 600 ~/.config/frame-pacer/frame-pacer.conf
 ```
 
-Both settings are optional:
+Both settings are optional. Use `global_fps_limit = off` for no default limit
+and `hud = off` to hide the HUD.
 
-- Omit `global_fps_limit`, or set it to `off`, for no default FPS limit.
-- Omit `hud` to show it, or set it to `off` to hide it.
-
-### Launch
+## Start Steam
 
 Fully close Steam, then run:
 
@@ -60,13 +65,13 @@ Fully close Steam, then run:
 ENABLE_FRAME_PACER=1 steam
 ```
 
-For permanent setup, see [Steam integration](docs/steam-integration.md).
-Start a game; the HUD should appear in the top-left corner. The `FPS` row shows
-the current frame rate followed by the limit.
+Start a game. The HUD should appear in the top-left corner. See
+[Steam integration](https://github.com/endjynn/frame-pacer/blob/main/docs/steam-integration.md)
+to make this permanent.
 
-## Per-game settings
+## Per-game limits
 
-Add a section to give a game its own limit:
+Add a section to the configuration:
 
 ```ini
 [Example game]
@@ -74,37 +79,30 @@ executable = "ExampleGame.exe"
 fps_limit = 45
 ```
 
-`fps_limit` accepts `1` through `999`, or `off`. A matching per-game setting
-always overrides `global_fps_limit`; use `fps_limit = off` to leave one game
-uncapped.
-
-Changes apply while the game is running. See [Configuration](docs/configuration.md)
-for executable matching and the optional CPU thread limit.
+`fps_limit` accepts `1` through `999`, or `off`. A matching game setting always
+overrides `global_fps_limit`. Changes apply while the game is running. See
+[Configuration](https://github.com/endjynn/frame-pacer/blob/main/docs/configuration.md)
+for all options.
 
 ## Native OpenGL games
 
-Native GLX/EGL games need this Steam launch option:
+Add this only to the game's Steam **Launch Options**:
 
 ```text
-LD_PRELOAD=/absolute/path/to/frame-pacer/build/${LIB}/libframe_pacer_gl_shim.so %command%
+LD_PRELOAD="$HOME/.local/lib/frame-pacer/${LIB}/libframe_pacer_gl_shim.so" %command%
 ```
 
-Replace `/absolute/path/to/frame-pacer` with this repository's location. Use
-this only for the individual OpenGL game, never for Steam globally.
+Never add this option globally to Steam. Vulkan and Proton games do not need
+it.
 
-## More help
+## Help and development
 
-- [Installation and updates](docs/installation.md)
-- [Steam integration](docs/steam-integration.md)
-- [Configuration](docs/configuration.md)
-- [Troubleshooting](docs/troubleshooting.md)
-- [Technical details](docs/technical-details.md)
-
-See [Contributing](CONTRIBUTING.md) if you want to help develop frame-pacer.
-
-To disable frame-pacer, remove its Steam environment or per-game launch option
-and fully restart Steam. To uninstall it, run `make uninstall` from the
-repository.
+- [Installation and updates](https://github.com/endjynn/frame-pacer/blob/main/docs/installation.md)
+- [Steam integration](https://github.com/endjynn/frame-pacer/blob/main/docs/steam-integration.md)
+- [Configuration](https://github.com/endjynn/frame-pacer/blob/main/docs/configuration.md)
+- [Troubleshooting](https://github.com/endjynn/frame-pacer/blob/main/docs/troubleshooting.md)
+- [Technical details](https://github.com/endjynn/frame-pacer/blob/main/docs/technical-details.md)
+- [Contributing](https://github.com/endjynn/frame-pacer/blob/main/CONTRIBUTING.md)
 
 ## Acknowledgements
 

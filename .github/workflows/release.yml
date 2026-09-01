@@ -1,0 +1,105 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  build:
+    name: Build tested release
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    container:
+      image: debian:12-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
+    permissions:
+      contents: read
+    steps:
+      - name: Bootstrap checkout dependencies
+        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate release tag
+        run: |
+          test -z "${GITHUB_TOKEN:-}"
+          test -z "$(git config --local --get-regexp '^http\..*\.extraheader$' || true)"
+          version=$(cat VERSION)
+          test "$GITHUB_REF_TYPE" = tag
+          test "$GITHUB_REF_NAME" = "v$version"
+      - name: Install pinned build dependencies
+        run: sh .github/scripts/install-dependencies.sh
+      - name: Build and verify release package
+        run: make check-release-package
+      - name: Verify release transfer
+        run: |
+          version=$(cat VERSION)
+          archive="build/dist/frame-pacer-$version-linux-x86_64-multilib.tar.xz"
+          checksum="$archive.sha256"
+          test -f "$archive" && test ! -L "$archive"
+          test -f "$checksum" && test ! -L "$checksum"
+          test "$(wc -c < "$archive")" -le 52428800
+          test "$(wc -c < "$checksum")" -le 1024
+          test "$(find build/dist -mindepth 1 -maxdepth 1 -type f | wc -l)" -eq 2
+          test "$(find build/dist -mindepth 1 -maxdepth 1 ! -type f | wc -l)" -eq 0
+          (cd "${archive%/*}" && sha256sum -c "${checksum##*/}")
+      - name: Transfer tested release files
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: tested-release
+          path: |
+            build/dist/*.tar.xz
+            build/dist/*.tar.xz.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  publish:
+    name: Publish tested release
+    needs: build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download tested release files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: tested-release
+          path: transfer
+      - name: Validate and publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          version=${GITHUB_REF_NAME#v}
+          archive="transfer/frame-pacer-$version-linux-x86_64-multilib.tar.xz"
+          checksum="$archive.sha256"
+          test "$GITHUB_REF_NAME" = "v$version"
+          test -f "$archive" && test ! -L "$archive"
+          test -f "$checksum" && test ! -L "$checksum"
+          test "$(find transfer -mindepth 1 -maxdepth 1 -type f | wc -l)" -eq 2
+          test "$(find transfer -mindepth 1 -maxdepth 1 ! -type f | wc -l)" -eq 0
+          test "$(wc -c < "$archive")" -le 52428800
+          test "$(wc -c < "$checksum")" -le 1024
+          recorded=$(awk -v file="${archive##*/}" \
+            '$2 == file && length($1) == 64 && $1 !~ /[^0-9a-f]/ { print $1 }' \
+            "$checksum")
+          actual=$(sha256sum "$archive" | cut -d ' ' -f 1)
+          test -n "$recorded" && test "$recorded" = "$actual"
+          notes=$(mktemp)
+          printf '%s\n' \
+            'Compatibility: Debian 12 (glibc 2.36), GCC 12, x86_64 and i386.' \
+            > "$notes"
+          prerelease=
+          case "$version" in *-*) prerelease=--prerelease ;; esac
+          gh release create "$GITHUB_REF_NAME" "$archive" "$checksum" \
+            --verify-tag --generate-notes --notes-file "$notes" \
+            --title "frame-pacer $version" $prerelease

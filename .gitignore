@@ -6,3 +6,4 @@
 *.swo
 *~
 .cache/
+__pycache__/

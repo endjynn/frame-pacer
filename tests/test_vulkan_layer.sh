@@ -17,7 +17,20 @@ case "$arch" in
     *) exit 2 ;;
 esac
 
-cleanup() { rm -rf -- "$state"; }
+cleanup()
+{
+    status=$?
+    trap - EXIT HUP INT TERM
+    if [ "$status" -ne 0 ] && [ -d "$state/frame-pacer" ]; then
+        for log in "$state"/frame-pacer/frame-pacer-[0-9]*.log; do
+            [ -f "$log" ] || continue
+            printf '%s\n' "--- ${log##*/}"
+            tail -n 40 "$log"
+        done
+    fi
+    rm -rf -- "$state"
+    exit "$status"
+}
 trap cleanup EXIT HUP INT TERM
 
 run_probe()
@@ -29,7 +42,9 @@ run_probe()
         "$1"
 }
 
+printf 'Vulkan instance lifecycle probe (%s)\n' "$arch"
 run_probe "$instance_probe"
+printf 'Vulkan device lifecycle probe (%s)\n' "$arch"
 run_probe "$device_probe"
 
 test "$(find "$state/frame-pacer" -type f -name 'frame-pacer-[0-9]*.log' | wc -l)" -eq 2

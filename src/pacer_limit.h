@@ -15,15 +15,6 @@
 #define FRAME_PACER_EXECUTABLE_MAX 512U
 #define FRAME_PACER_EXECUTABLE_CANDIDATES_MAX 16U
 
-struct frame_pacer_limit_stamp {
-    bool present;
-    dev_t device;
-    ino_t inode;
-    int64_t mtime_seconds;
-    long mtime_nanoseconds;
-    off_t size;
-};
-
 struct frame_pacer_limit {
     pthread_mutex_t mutex;
     char path[1200];
@@ -38,7 +29,6 @@ struct frame_pacer_limit {
     unsigned int executable_candidate_count;
     char executable[FRAME_PACER_EXECUTABLE_MAX];
     bool initialized;
-    struct frame_pacer_limit_stamp stamp;
 };
 
 void frame_pacer_limit_init(struct frame_pacer_limit *);

@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <EGL/egl.h>
 #include <GL/glx.h>
 #include <assert.h>
