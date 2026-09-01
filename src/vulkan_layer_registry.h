@@ -16,6 +16,7 @@
 struct frame_pacer_vulkan_instance {
     VkInstance handle;
     PFN_vkGetInstanceProcAddr gipa;
+    PFN_vkDestroyInstance destroy_instance;
     struct frame_pacer_vulkan_instance *next;
 };
 

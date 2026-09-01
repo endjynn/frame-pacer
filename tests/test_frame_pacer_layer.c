@@ -17,6 +17,7 @@ static VkDevice fake_device = (VkDevice)(uintptr_t)3;
 static VkQueue fake_queue = (VkQueue)(uintptr_t)4;
 static unsigned int instance_creates;
 static unsigned int instance_destroys;
+static unsigned int instance_destroy_lookups;
 static unsigned int device_creates;
 static unsigned int device_destroys;
 static const char *missing_gipa;
@@ -138,8 +139,10 @@ static PFN_vkVoidFunction VKAPI_CALL fake_gipa(VkInstance instance,
     if (missing_gipa && !strcmp(name, missing_gipa)) return 0;
     if (!strcmp(name, "vkCreateInstance"))
         return (PFN_vkVoidFunction)fake_create_instance;
-    if (!strcmp(name, "vkDestroyInstance"))
+    if (!strcmp(name, "vkDestroyInstance")) {
+        ++instance_destroy_lookups;
         return (PFN_vkVoidFunction)fake_destroy_instance;
+    }
     assert(instance == fake_instance);
     if (!strcmp(name, "vkEnumeratePhysicalDevices"))
         return (PFN_vkVoidFunction)fake_enumerate_physical_devices;
@@ -234,6 +237,7 @@ int main(void)
     create_instance = instance_info(&instance_loader, &instance_link);
     assert(vkCreateInstance(&create_instance, 0, &instance) == VK_SUCCESS);
     assert(instance == fake_instance);
+    assert(instance_destroy_lookups == 2);
     assert(frame_pacer_layer_test_physical_device_count() == 1);
     assert(frame_pacer_layer_test_queue_family_count(fake_physical) == 1);
     assert(vkGetInstanceProcAddr(instance, "vkFramePacerUnknown") ==
@@ -282,6 +286,7 @@ int main(void)
     assert(frame_pacer_layer_test_queue_count() == 0);
     vkDestroyInstance(instance, 0);
     assert(instance_destroys == 2);
+    assert(instance_destroy_lookups == 2);
     assert(frame_pacer_layer_test_physical_device_count() == 0);
     return 0;
 }

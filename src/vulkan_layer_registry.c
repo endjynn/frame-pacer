@@ -187,13 +187,7 @@ PFN_vkDestroyInstance frame_pacer_vulkan_registry_remove_instance(
         return 0;
     frame_pacer_vulkan_registry_lock(registry);
     item = frame_pacer_vulkan_registry_find_instance(registry, instance);
-    destroy = item && item->gipa
-                  ? (PFN_vkDestroyInstance)item->gipa(instance,
-                                                       "vkDestroyInstance")
-                  : registry->fallback_gipa
-                        ? (PFN_vkDestroyInstance)registry->fallback_gipa(
-                              instance, "vkDestroyInstance")
-                        : 0;
+    destroy = item ? item->destroy_instance : 0;
     if (item) {
         physical_link = &registry->physical_devices;
         while (*physical_link) {

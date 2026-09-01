@@ -249,6 +249,8 @@ vkCreateInstance(const VkInstanceCreateInfo *info,
     }
     item->handle = *instance;
     item->gipa = gipa;
+    item->destroy_instance =
+        (PFN_vkDestroyInstance)gipa(*instance, "vkDestroyInstance");
 
     frame_pacer_vulkan_registry_add_instance(&registry, item);
     logmsg("frame-pacer: create instance\n");
