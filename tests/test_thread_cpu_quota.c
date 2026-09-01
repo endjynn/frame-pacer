@@ -166,6 +166,12 @@ static void helper_lookup_supports_build_and_install_layouts(void)
     assert(frame_pacer_thread_cpu_quota_test_helper_path(
         architecture, resolved, sizeof(resolved)));
     assert(!strcmp(helper, resolved));
+    assert(snprintf(architecture, sizeof(architecture),
+                    "%s/lib/x86_64-linux-gnu/libframe_pacer_gl.so",
+                    installed) > 0);
+    assert(frame_pacer_thread_cpu_quota_test_helper_path(
+        architecture, resolved, sizeof(resolved)));
+    assert(!strcmp(helper, resolved));
     assert(!chmod(helper, 0720));
     assert(!frame_pacer_thread_cpu_quota_test_helper_path(
         architecture, resolved, sizeof(resolved)));

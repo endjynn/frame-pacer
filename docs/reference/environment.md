@@ -14,6 +14,8 @@ Frame-pacer needs:
 - GNU Make, `jq`, `xxd`, and `file`.
 - `glslangValidator` and `spirv-val`.
 - Standard binary tools including `nm`, `readelf`, and `strings`.
+- For release packages, GNU `tar`, `xz`, `sha256sum`, `strip`, Python 3, and
+  PyYAML.
 
 Common Debian/Ubuntu package names include:
 
@@ -56,6 +58,6 @@ Package maintainers can override:
 | Make variable | Purpose |
 | --- | --- |
 | `PREFIX` | Installation prefix; defaults to `~/.local`. |
-| `INSTALL_LIBDIR` | Vulkan libraries and CPU-controller directory. |
-| `INSTALL_LAYERDIR` | Vulkan implicit-layer manifest directory. |
 | `DESTDIR` | Staging root for package builds. |
+| `STRIP` | Binary stripping command used for release packages. |
+| `SOURCE_DATE_EPOCH` | Optional normalized release timestamp; defaults to the release commit time. |

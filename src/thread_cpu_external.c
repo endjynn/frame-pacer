@@ -36,33 +36,38 @@ static bool helper_executable(const char *path)
 static bool helper_path_from_library(const char *library, char *out, size_t size)
 {
     static const char helper[] = "/frame-pacer-thread-cpu-controller";
-    char absolute[PATH_MAX];
-    const char *build = 0, *cursor, *filename, *architecture;
-    size_t prefix;
-    int written;
+    char absolute[PATH_MAX], directory[PATH_MAX];
+    const char *filename;
+    char *slash;
+    unsigned int depth;
 
     if (!library || !*library || !out || !size) return false;
     if (library[0] != '/') {
         if (!realpath(library, absolute)) return false;
         library = absolute;
     }
-    for (cursor = library; (cursor = strstr(cursor, "/build/")); ++cursor)
-        build = cursor;
-    if (build) {
-        prefix = (size_t)(build - library) + strlen("/build");
-    } else {
-        filename = strrchr(library, '/');
-        if (!filename || filename == library) return false;
-        architecture = filename;
-        while (architecture > library && architecture[-1] != '/')
-            --architecture;
-        if (architecture <= library + 1) return false;
-        prefix = (size_t)(architecture - library - 1);
-    }
-    if (prefix > (size_t)INT_MAX || prefix + sizeof(helper) > size)
+    filename = strrchr(library, '/');
+    if (!filename || filename == library ||
+        (size_t)(filename - library) >= sizeof(directory))
         return false;
-    written = snprintf(out, size, "%.*s%s", (int)prefix, library, helper);
-    return written > 0 && (size_t)written < size && helper_executable(out);
+    memcpy(directory, library, (size_t)(filename - library));
+    directory[filename - library] = '\0';
+
+    /*
+     * Installed GL shims can live below ${LIB}, which is either lib, lib32,
+     * or a nested multiarch directory. Search only that bounded runtime tree;
+     * ownership and mode checks still apply to every candidate.
+     */
+    for (depth = 0; depth < 3; ++depth) {
+        int written = snprintf(out, size, "%s%s", directory, helper);
+
+        if (written > 0 && (size_t)written < size && helper_executable(out))
+            return true;
+        slash = strrchr(directory, '/');
+        if (!slash || slash == directory) break;
+        *slash = '\0';
+    }
+    return false;
 }
 
 static bool helper_path(char *out, size_t size)

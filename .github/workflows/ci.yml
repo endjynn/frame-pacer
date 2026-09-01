@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  acceptance:
+    name: Build and acceptance tests
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify credential-free checkout
+        run: |
+          test -z "${GITHUB_TOKEN:-}"
+          test -z "$(git config --local --get-regexp '^http\..*\.extraheader$' || true)"
+      - name: Install build dependencies
+        run: sh .github/scripts/install-dependencies.sh
+      - name: Run acceptance suite
+        run: make check
+
+  i386-unit:
+    name: i386 unit tests
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify credential-free checkout
+        run: |
+          test -z "${GITHUB_TOKEN:-}"
+          test -z "$(git config --local --get-regexp '^http\..*\.extraheader$' || true)"
+      - name: Install build dependencies
+        run: sh .github/scripts/install-dependencies.sh
+      - name: Run i386 unit suite
+        run: make check-unit-i386
+
+  analyzer:
+    name: GCC static analyzer
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify credential-free checkout
+        run: |
+          test -z "${GITHUB_TOKEN:-}"
+          test -z "$(git config --local --get-regexp '^http\..*\.extraheader$' || true)"
+      - name: Install build dependencies
+        run: sh .github/scripts/install-dependencies.sh
+      - name: Run static analyzer
+        run: make check-analyzer
+
+  sanitizers:
+    name: Address and undefined behavior sanitizers
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify credential-free checkout
+        run: |
+          test -z "${GITHUB_TOKEN:-}"
+          test -z "$(git config --local --get-regexp '^http\..*\.extraheader$' || true)"
+      - name: Install build dependencies
+        run: sh .github/scripts/install-dependencies.sh
+      - name: Run sanitizer suite
+        run: make check-sanitize
+
+  thread-sanitizer:
+    name: Thread sanitizer
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify credential-free checkout
+        run: |
+          test -z "${GITHUB_TOKEN:-}"
+          test -z "$(git config --local --get-regexp '^http\..*\.extraheader$' || true)"
+      - name: Install build dependencies
+        run: sh .github/scripts/install-dependencies.sh
+      - name: Run thread sanitizer suite
+        run: make check-tsan
+
+  release-package:
+    name: Release package
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    container:
+      image: debian:12-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
+    steps:
+      - name: Bootstrap checkout dependencies
+        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify credential-free checkout
+        run: |
+          test -z "${GITHUB_TOKEN:-}"
+          test -z "$(git config --local --get-regexp '^http\..*\.extraheader$' || true)"
+      - name: Install build dependencies
+        run: sh .github/scripts/install-dependencies.sh
+      - name: Build and verify release package
+        run: make check-release-package

@@ -19,13 +19,15 @@ game.
 
 ## Installation layout
 
-`make install` places the Vulkan libraries and CPU controller below
-`~/.local/lib/frame-pacer` and the Vulkan manifests below
-`~/.local/share/vulkan/implicit_layer.d`. The GLX/EGL shim remains in the
-repository's `build` directory for explicit per-game use.
+The release and source installers place the Vulkan libraries, GLX/EGL runtime,
+CPU controller, and installed version below `~/.local/lib/frame-pacer`. Vulkan
+manifests are generated below `~/.local/share/vulkan/implicit_layer.d` with
+absolute paths to the selected prefix.
 
-Alternative package builds can set `PREFIX`, `INSTALL_LIBDIR`,
-`INSTALL_LAYERDIR`, and `DESTDIR`.
+The GL runtime is installed in both Debian/Ubuntu multiarch and Arch-family
+`lib`/`lib32` layouts so Steam's `${LIB}` expansion selects the correct binary.
+The preload shim loads its same-directory backend. Alternative package builds
+can set `PREFIX` and `DESTDIR` without changing the runtime contract.
 
 ## Configuration loading
 

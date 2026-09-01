@@ -1,19 +1,16 @@
 CC := gcc
+STRIP ?= strip
 CFLAGS ?= -O2 -g
 WARNINGS := -Wall -Wextra -Werror -Wpedantic -Wformat=2 -Wundef -Wshadow \
 	-Wmissing-prototypes -Wstrict-prototypes -Wold-style-definition
 BUILD_CFLAGS := -std=c17 $(WARNINGS) -fPIC -fdebug-prefix-map=$(abspath .)=. \
+	-ffile-prefix-map=$(abspath .)=. -fmacro-prefix-map=$(abspath .)=. \
 	-Ibuild $(CFLAGS)
-HELPER_CFLAGS := -std=c17 $(WARNINGS) -Os -fPIE -fdebug-prefix-map=$(abspath .)=.
+HELPER_CFLAGS := -std=c17 $(WARNINGS) -Os -fPIE \
+	-fdebug-prefix-map=$(abspath .)=. -ffile-prefix-map=$(abspath .)=. \
+	-fmacro-prefix-map=$(abspath .)=.
 MINGW_CFLAGS := -std=c17 $(WARNINGS)
 PREFIX ?= $(HOME)/.local
-INSTALL_LIBDIR ?= $(PREFIX)/lib/frame-pacer
-INSTALL_LAYERDIR ?= $(PREFIX)/share/vulkan/implicit_layer.d
-INSTALL_X86_64_LIB := $(INSTALL_LIBDIR)/x86_64/libVkLayer_frame_pacer.so
-INSTALL_I386_LIB := $(INSTALL_LIBDIR)/i386/libVkLayer_frame_pacer.so
-INSTALL_CONTROLLER := $(INSTALL_LIBDIR)/frame-pacer-thread-cpu-controller
-INSTALL_X86_64_MANIFEST := $(INSTALL_LAYERDIR)/VkLayer_frame_pacer.x86_64.json
-INSTALL_I386_MANIFEST := $(INSTALL_LAYERDIR)/VkLayer_frame_pacer.i386.json
 
 STATE_DIRECTORY_SRC := src/state_directory.c
 THREAD_CPU_SYSTEMD_SRC := src/thread_cpu_systemd.c
@@ -84,8 +81,9 @@ GL_RUNTIME_ARTIFACTS := \
 	build/lib/libframe_pacer_gl_shim.so \
 	build/lib32/libframe_pacer_gl_shim.so
 
-.PHONY: all check check-unit check-unit-i386 check-shell check-docs check-hud-image check-abi check-analyzer check-sanitize check-tsan check-coverage docs-hud-image \
-	clean install uninstall thread-cpu-quota-probe run-thread-cpu-quota-probe \
+.PHONY: all check check-unit check-unit-i386 check-shell check-docs check-workflows check-hud-image check-abi check-analyzer check-sanitize check-tsan check-coverage docs-hud-image \
+	clean install install-payload uninstall release-package check-release-package \
+	thread-cpu-quota-probe run-thread-cpu-quota-probe \
 	thread-cpu-quota-controller-integration run-thread-cpu-quota-controller-integration \
 	thread-cpu-quota-controller-integration-i386 run-thread-cpu-quota-controller-integration-i386 \
 	dxgi-forward-probe hud-shaders metrics-probe pci-probe research winepath-probe \
@@ -103,29 +101,32 @@ build/generated-frame-pacer-hud.png: build/render-hud-image
 build/render-hud-image: tests/render_hud_image.c src/hud_text.c src/hud_text.h src/hud_metrics.h src/pacer_limit.h src/hud_vertices.c src/hud_vertices.h src/hud_font.c src/hud_font.h
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/render_hud_image.c src/hud_text.c src/hud_vertices.c src/hud_font.c
-install: $(VULKAN_ARTIFACTS) $(CONTROLLER_ARTIFACT)
-	install -d "$(DESTDIR)$(INSTALL_LIBDIR)/x86_64" \
-		"$(DESTDIR)$(INSTALL_LIBDIR)/i386" "$(DESTDIR)$(INSTALL_LAYERDIR)"
+install: install-payload
+	FRAME_PACER_PAYLOAD_DIR="$(abspath build/install-payload)" \
+		PREFIX="$(PREFIX)" DESTDIR="$(DESTDIR)" sh packaging/install.sh
+install-payload: build/install-payload/.ready
+build/install-payload/.ready: $(VULKAN_ARTIFACTS) $(GL_ARTIFACTS) $(CONTROLLER_ARTIFACT) \
+		VkLayer_frame_pacer_implicit.json.in VERSION
+	rm -rf build/install-payload
+	install -d build/install-payload/x86_64 build/install-payload/i386
 	install -m 0755 build/x86_64/libVkLayer_frame_pacer.so \
-		"$(DESTDIR)$(INSTALL_X86_64_LIB)"
+		build/x86_64/libframe_pacer_gl.so \
+		build/x86_64/libframe_pacer_gl_shim.so \
+		build/install-payload/x86_64/
 	install -m 0755 build/i386/libVkLayer_frame_pacer.so \
-		"$(DESTDIR)$(INSTALL_I386_LIB)"
-	install -m 0755 "$(CONTROLLER_ARTIFACT)" \
-		"$(DESTDIR)$(INSTALL_CONTROLLER)"
-	sed -e 's|@LIBRARY_PATH@|$(INSTALL_X86_64_LIB)|' \
-		-e 's|@LAYER_NAME@|VK_LAYER_ENDJYNN_frame_pacer_x86_64|' \
-		VkLayer_frame_pacer_implicit.json.in > "$(DESTDIR)$(INSTALL_X86_64_MANIFEST)"
-	sed -e 's|@LIBRARY_PATH@|$(INSTALL_I386_LIB)|' \
-		-e 's|@LAYER_NAME@|VK_LAYER_ENDJYNN_frame_pacer_i386|' \
-		VkLayer_frame_pacer_implicit.json.in > "$(DESTDIR)$(INSTALL_I386_MANIFEST)"
+		build/i386/libframe_pacer_gl.so \
+		build/i386/libframe_pacer_gl_shim.so \
+		build/install-payload/i386/
+	install -m 0755 $(CONTROLLER_ARTIFACT) build/install-payload/
+	install -m 0644 VkLayer_frame_pacer_implicit.json.in VERSION \
+		build/install-payload/
+	touch $@
 uninstall:
-	rm -f "$(DESTDIR)$(INSTALL_X86_64_MANIFEST)" \
-		"$(DESTDIR)$(INSTALL_I386_MANIFEST)" \
-		"$(DESTDIR)$(INSTALL_X86_64_LIB)" "$(DESTDIR)$(INSTALL_I386_LIB)" \
-		"$(DESTDIR)$(INSTALL_CONTROLLER)"
-	rmdir "$(DESTDIR)$(INSTALL_LIBDIR)/x86_64" \
-		"$(DESTDIR)$(INSTALL_LIBDIR)/i386" "$(DESTDIR)$(INSTALL_LIBDIR)" \
-		"$(DESTDIR)$(INSTALL_LAYERDIR)" 2>/dev/null || true
+	PREFIX="$(PREFIX)" DESTDIR="$(DESTDIR)" sh packaging/uninstall.sh
+release-package: check install-payload
+	STRIP="$(STRIP)" sh packaging/package.sh
+check-release-package: release-package
+	sh tests/test_release_package.sh
 $(CONTROLLER_ARTIFACT): src/thread_cpu_quota_controller.c src/thread_cpu_protocol.c src/thread_cpu_protocol.h $(THREAD_CPU_SYSTEMD_SRC) src/thread_cpu_systemd.h
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ src/thread_cpu_quota_controller.c src/thread_cpu_protocol.c $(THREAD_CPU_SYSTEMD_SRC) -ldl
@@ -465,7 +466,8 @@ UNIT_TESTS := \
 # objects. Rebuild them after any production-header edit so transitive includes
 # cannot leave an apparently current but stale fixture in build/.
 $(UNIT_TESTS): $(HDRS) build/hud_nvml_helper_image.h
-SHELL_TESTS := $(wildcard tests/*.sh)
+SHELL_TESTS := $(wildcard tests/*.sh) $(wildcard packaging/*.sh) \
+	$(wildcard .github/scripts/*.sh)
 
 check-unit: $(UNIT_TESTS)
 	@set -e; for test in $(UNIT_TESTS); do ./$$test; done
@@ -477,6 +479,8 @@ check-shell:
 	@set -e; for test in $(SHELL_TESTS); do sh -n $$test; done
 check-docs:
 	sh ./tests/check_markdown_links.sh
+check-workflows:
+	python3 ./tests/check_workflows.py
 
 check: all hud-shaders $(GL_ARTIFACTS) $(GL_RUNTIME_ARTIFACTS) \
 	build/test-gl-pacer \
@@ -489,7 +493,7 @@ check: all hud-shaders $(GL_ARTIFACTS) $(GL_RUNTIME_ARTIFACTS) \
 	build/test-hud-nvml-client-target-exit-i386 \
 	build/test-hud-metrics-external-i386 \
 	build/hud-nvml-helper-probe-i386 \
-	check-unit check-shell check-docs check-hud-image check-abi
+	check-unit check-shell check-docs check-workflows check-hud-image check-abi
 	./build/test-hud-nvml-client-i386
 	./build/test-hud-nvml-client-retry-i386
 	./build/test-hud-nvml-client-target-exit-i386
