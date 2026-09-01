@@ -4,6 +4,13 @@ Frame-pacer is a Linux frame limiter and compact performance HUD for Steam
 games. It supports Vulkan through an implicit layer and GLX/EGL through an
 opt-in per-game preload shim.
 
+> **AI-assisted development:** Frame-pacer is created and maintained by a
+> professional software developer who uses AI tools extensively throughout
+> development. AI may assist with research, design, implementation,
+> refactoring, testing, documentation, and code review. The maintainer directs
+> the work, reviews and validates changes, and remains responsible for the
+> project's technical decisions and released code.
+
 ![frame-pacer HUD](docs/images/frame-pacer-hud.png)
 
 > **Initial release:** frame-pacer changes graphics presentation and can create a
