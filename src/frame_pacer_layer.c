@@ -369,11 +369,17 @@ vkDestroyInstance(VkInstance instance, const VkAllocationCallbacks *allocator)
     struct frame_pacer_vulkan_instance *item;
     PFN_vkDestroyInstance destroy;
 
+    logmsg("frame-pacer: destroy instance entered instance=%p\n",
+           (void *)instance);
     destroy = frame_pacer_vulkan_registry_remove_instance(
         &registry, instance, &item);
+    logmsg("frame-pacer: destroy instance registry removed=%s downstream=%s\n",
+           item ? "yes" : "no", destroy ? "yes" : "no");
     free(item);
-    if (destroy)
+    if (destroy) {
         destroy(instance, allocator);
+        logmsg("frame-pacer: destroy instance forwarded\n");
+    }
 }
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(VkDevice device,
     const VkSwapchainCreateInfoKHR *info, const VkAllocationCallbacks *allocator,
