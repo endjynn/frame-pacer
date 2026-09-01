@@ -178,7 +178,7 @@ void frame_pacer_limit_init(struct frame_pacer_limit *limit)
     if (!limit) return;
     memset(limit, 0, sizeof(*limit));
     atomic_init(&limit->last_check_ns, 0);
-    atomic_init(&limit->fps, FRAME_PACER_DEFAULT_FPS);
+    atomic_init(&limit->fps, FRAME_PACER_FPS_LIMIT_OFF);
     if (pthread_mutex_init(&limit->mutex, 0)) return;
     limit->hud_enabled = true;
     set_path(limit);
@@ -238,6 +238,15 @@ static bool parse_fps(const char *begin, const char *end, uint32_t *fps)
     if (begin != end || value < FRAME_PACER_MIN_FPS) return false;
     *fps = (uint32_t)value;
     return true;
+}
+
+static bool parse_fps_limit(const char *begin, const char *end, uint32_t *fps)
+{
+    if ((size_t)(end - begin) == 3 && !memcmp(begin, "off", 3)) {
+        *fps = FRAME_PACER_FPS_LIMIT_OFF;
+        return true;
+    }
+    return parse_fps(begin, end, fps);
 }
 
 static bool parse_thread_cpu_quota(const char *begin, const char *end,
@@ -353,7 +362,8 @@ static bool parse_limit(const char *text, const struct frame_pacer_limit *limit,
                  !memcmp(key_begin, "fps_limit", strlen("fps_limit")))) {
                 uint32_t value;
 
-                if (!parse_fps(value_begin, value_end, &value)) return false;
+                if (!parse_fps_limit(value_begin, value_end, &value))
+                    return false;
                 if (in_rule) {
                     if (has_fps) return false;
                     has_fps = true;
@@ -398,9 +408,9 @@ static bool parse_limit(const char *text, const struct frame_pacer_limit *limit,
 next:
         line = end ? end + 1 : line_end;
     }
-    if (!has_global || !apply_rule(in_rule, has_executable, has_fps, rule_priority, rule_fps,
-                                   rule_quota_enabled, rule_quota, &matched_priority, fps,
-                                   quota_enabled, quota)) return false;
+    if (!apply_rule(in_rule, has_executable, has_fps, rule_priority, rule_fps,
+                    rule_quota_enabled, rule_quota, &matched_priority, fps,
+                    quota_enabled, quota)) return false;
     if (matched_priority < 0) {
         *fps = global;
         *quota_enabled = false;
@@ -409,35 +419,57 @@ next:
     return true;
 }
 
+static bool read_complete(int fd, char *text, size_t length)
+{
+    size_t offset = 0;
+
+    while (offset < length) {
+        ssize_t bytes = read(fd, text + offset, length - offset);
+
+        if (bytes < 0) {
+            if (errno == EINTR) continue;
+            return false;
+        }
+        if (!bytes) return false;
+        offset += (size_t)bytes;
+    }
+    return true;
+}
+
 static uint32_t read_limit(const struct frame_pacer_limit *limit,
                            const struct stat *expected, bool *quota_enabled,
                            uint32_t *quota, bool *hud_enabled)
 {
-    char text[4097];
+    char *text;
     struct stat status;
-    ssize_t bytes;
+    size_t length;
     int fd;
-    uint32_t fps = FRAME_PACER_DEFAULT_FPS;
+    uint32_t fps = FRAME_PACER_FPS_LIMIT_OFF, parsed_quota = 0;
+    bool parsed_quota_enabled = false, parsed_hud_enabled = true;
 
     if (!limit->path[0] || !expected || expected->st_uid != getuid() ||
         !S_ISREG(expected->st_mode) || expected->st_nlink != 1 ||
         (expected->st_mode & (S_IRWXG | S_IRWXO)) ||
-        expected->st_size < 1 || expected->st_size >= (off_t)sizeof(text))
-        return FRAME_PACER_DEFAULT_FPS;
+        expected->st_size < 1 ||
+        expected->st_size > (off_t)FRAME_PACER_CONFIG_MAX_BYTES)
+        return FRAME_PACER_FPS_LIMIT_OFF;
     fd = open(limit->path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-    if (fd < 0) return FRAME_PACER_DEFAULT_FPS;
+    if (fd < 0) return FRAME_PACER_FPS_LIMIT_OFF;
     if (fstat(fd, &status) || status.st_uid != expected->st_uid ||
         status.st_dev != expected->st_dev || status.st_ino != expected->st_ino ||
         !S_ISREG(status.st_mode) || status.st_nlink != 1 ||
         (status.st_mode & (S_IRWXG | S_IRWXO)) ||
         status.st_size != expected->st_size) {
         (void)close(fd);
-        return FRAME_PACER_DEFAULT_FPS;
+        return FRAME_PACER_FPS_LIMIT_OFF;
     }
-    do {
-        bytes = read(fd, text, sizeof(text) - 1);
-    } while (bytes < 0 && errno == EINTR);
-    if (bytes < 0 || bytes != expected->st_size || fstat(fd, &status) ||
+    length = (size_t)expected->st_size;
+    text = malloc(length + 1);
+    if (!text) {
+        (void)close(fd);
+        return FRAME_PACER_FPS_LIMIT_OFF;
+    }
+    if (!read_complete(fd, text, length) || fstat(fd, &status) ||
         status.st_uid != expected->st_uid || status.st_dev != expected->st_dev ||
         status.st_ino != expected->st_ino || status.st_nlink != 1 ||
         status.st_mode != expected->st_mode ||
@@ -445,12 +477,24 @@ static uint32_t read_limit(const struct frame_pacer_limit *limit,
         status.st_mtim.tv_nsec != expected->st_mtim.tv_nsec ||
         status.st_size != expected->st_size) {
         (void)close(fd);
-        return FRAME_PACER_DEFAULT_FPS;
+        free(text);
+        return FRAME_PACER_FPS_LIMIT_OFF;
     }
-    if (close(fd)) return FRAME_PACER_DEFAULT_FPS;
-    text[bytes] = '\0';
-    return parse_limit(text, limit, &fps, quota_enabled, quota, hud_enabled) ?
-        fps : FRAME_PACER_DEFAULT_FPS;
+    if (close(fd)) {
+        free(text);
+        return FRAME_PACER_FPS_LIMIT_OFF;
+    }
+    text[length] = '\0';
+    if (parse_limit(text, limit, &fps, &parsed_quota_enabled, &parsed_quota,
+                    &parsed_hud_enabled)) {
+        *quota_enabled = parsed_quota_enabled;
+        *quota = parsed_quota;
+        *hud_enabled = parsed_hud_enabled;
+    } else {
+        fps = FRAME_PACER_FPS_LIMIT_OFF;
+    }
+    free(text);
+    return fps;
 }
 
 uint32_t frame_pacer_limit_poll(struct frame_pacer_limit *limit, uint64_t now_ns, bool *changed)
@@ -464,7 +508,7 @@ uint32_t frame_pacer_limit_poll(struct frame_pacer_limit *limit, uint64_t now_ns
     uint64_t last_check_ns;
 
     if (changed) *changed = false;
-    if (!limit || !limit->initialized) return FRAME_PACER_DEFAULT_FPS;
+    if (!limit || !limit->initialized) return FRAME_PACER_FPS_LIMIT_OFF;
     last_check_ns = atomic_load_explicit(&limit->last_check_ns,
                                          memory_order_acquire);
     if (last_check_ns && now_ns >= last_check_ns &&
@@ -486,7 +530,7 @@ uint32_t frame_pacer_limit_poll(struct frame_pacer_limit *limit, uint64_t now_ns
         current = stamp_for(&status);
     if (!same_stamp(&limit->stamp, &current)) {
         next = current.present ? read_limit(limit, &status, &quota_enabled, &quota, &hud_enabled) :
-                                 FRAME_PACER_DEFAULT_FPS;
+                                 FRAME_PACER_FPS_LIMIT_OFF;
         if (next != atomic_load_explicit(&limit->fps, memory_order_relaxed) &&
             changed)
             *changed = true;

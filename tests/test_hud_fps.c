@@ -1,6 +1,8 @@
 #include "hud_fps.h"
-#include "pacer_clock.h"
 #include <assert.h>
+
+#define TEST_FPS 70U
+#define TEST_INTERVAL_NS (UINT64_C(1000000000) / TEST_FPS)
 
 static void cadence(struct frame_pacer_fps_tracker *tracker, uint64_t *now, unsigned frames, uint64_t interval)
 {
@@ -19,9 +21,9 @@ static void normal_cadence(void)
     frame_pacer_fps_init(&tracker);
     assert(!frame_pacer_fps_snapshot(&tracker, &fps));
     assert(!frame_pacer_fps_record_present(&tracker, now, &fps));
-    cadence(&tracker, &now, 40, FRAME_PACER_INTERVAL_NS);
+    cadence(&tracker, &now, 40, TEST_INTERVAL_NS);
     assert(frame_pacer_fps_snapshot(&tracker, &fps));
-    assert(fps == FRAME_PACER_TARGET_FPS);
+    assert(fps == TEST_FPS);
     frame_pacer_fps_destroy(&tracker);
 }
 
@@ -53,13 +55,13 @@ static void stale_presentation_is_not_fabricated(void)
     uint64_t now = 1;
     frame_pacer_fps_init(&tracker);
     (void)frame_pacer_fps_record_present(&tracker, now, 0);
-    cadence(&tracker, &now, 40, FRAME_PACER_INTERVAL_NS);
-    assert(frame_pacer_fps_snapshot(&tracker, &fps) && fps == FRAME_PACER_TARGET_FPS);
+    cadence(&tracker, &now, 40, TEST_INTERVAL_NS);
+    assert(frame_pacer_fps_snapshot(&tracker, &fps) && fps == TEST_FPS);
     now += FRAME_PACER_FPS_STALE_NS + 1;
     assert(!frame_pacer_fps_record_present(&tracker, now, &fps));
     assert(!frame_pacer_fps_snapshot(&tracker, &fps));
-    cadence(&tracker, &now, 40, FRAME_PACER_INTERVAL_NS);
-    assert(frame_pacer_fps_snapshot(&tracker, &fps) && fps == FRAME_PACER_TARGET_FPS);
+    cadence(&tracker, &now, 40, TEST_INTERVAL_NS);
+    assert(frame_pacer_fps_snapshot(&tracker, &fps) && fps == TEST_FPS);
     frame_pacer_fps_destroy(&tracker);
 }
 

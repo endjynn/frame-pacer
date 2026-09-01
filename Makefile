@@ -261,7 +261,7 @@ build/test_pacer_queue: tests/test_pacer_queue.c src/pacer_queue.c src/pacer_que
 build/test_pacer_compatibility: tests/test_pacer_compatibility.c src/pacer_compatibility.c src/pacer_compatibility.h
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_pacer_compatibility.c src/pacer_compatibility.c
-build/test_hud_fps: tests/test_hud_fps.c src/hud_fps.c src/hud_fps.h src/pacer_clock.h
+build/test_hud_fps: tests/test_hud_fps.c src/hud_fps.c src/hud_fps.h
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_fps.c src/hud_fps.c -pthread
 build/test-nvml.so: tests/nvml_provider.c

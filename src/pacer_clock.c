@@ -3,13 +3,6 @@
 #include <errno.h>
 #include <string.h>
 
-static uint32_t valid_fps(uint32_t fps)
-{
-    return fps >= FRAME_PACER_MIN_FPS && fps <= FRAME_PACER_MAX_FPS
-               ? fps
-               : FRAME_PACER_DEFAULT_FPS;
-}
-
 static uint64_t add_intervals(uint64_t value, uint64_t interval,
                               uint64_t count)
 {
@@ -41,7 +34,14 @@ void frame_pacer_clock_wait(struct frame_pacer_clock *clock, uint32_t fps,
     if (decision) *decision = (struct frame_pacer_decision){0};
     if (!clock || !clock->initialized || !now_fn || !sleep_fn || !decision)
         return;
-    fps = valid_fps(fps);
+    if (fps < FRAME_PACER_MIN_FPS || fps > FRAME_PACER_MAX_FPS) {
+        (void)pthread_mutex_lock(&clock->mutex);
+        clock->started = false;
+        clock->fps = FRAME_PACER_FPS_LIMIT_OFF;
+        clock->next_deadline_ns = 0;
+        (void)pthread_mutex_unlock(&clock->mutex);
+        return;
+    }
     interval_ns = UINT64_C(1000000000) / fps;
 
     (void)pthread_mutex_lock(&clock->mutex);

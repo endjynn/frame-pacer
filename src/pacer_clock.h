@@ -7,9 +7,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define FRAME_PACER_TARGET_FPS FRAME_PACER_DEFAULT_FPS
-#define FRAME_PACER_INTERVAL_NS (UINT64_C(1000000000) / FRAME_PACER_DEFAULT_FPS)
-
 typedef uint64_t (*frame_pacer_now_fn)(void *);
 typedef int (*frame_pacer_sleep_fn)(void *, uint64_t);
 

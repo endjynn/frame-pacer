@@ -42,6 +42,14 @@ static void format_fps_count(int valid, uint32_t value, char output[5])
         format_column(output, value, '\x7e');
 }
 
+static void format_fps_limit(uint32_t value, char output[5])
+{
+    if (value == FRAME_PACER_FPS_LIMIT_OFF)
+        memcpy(output, " OFF", 5);
+    else
+        format_fps_count(1, value, output);
+}
+
 static void format_line(char output[FRAME_PACER_HUD_LINE_CHARACTERS_MAX + 1],
                         const char label[4], const char first[5],
                         const char second[5])
@@ -84,12 +92,12 @@ void frame_pacer_hud_text_format(
         format_line(text->lines[2], "THR ", use, quota);
         text->line_count = 4;
         format_fps_count(fps_valid && fps, fps, fps_column);
-        format_fps_count(1, limit, limit_column);
+        format_fps_limit(limit, limit_column);
         format_line(text->lines[3], "FPS ", fps_column, limit_column);
     } else {
         text->line_count = 3;
         format_fps_count(fps_valid && fps, fps, fps_column);
-        format_fps_count(1, limit, limit_column);
+        format_fps_limit(limit, limit_column);
         format_line(text->lines[2], "FPS ", fps_column, limit_column);
         text->lines[3][0] = '\0';
     }

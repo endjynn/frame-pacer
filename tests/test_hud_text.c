@@ -1,4 +1,5 @@
 #include "hud_text.h"
+#include "pacer_limit.h"
 #include <assert.h>
 #include <string.h>
 
@@ -14,6 +15,9 @@ int main(void)
     assert(text.lines[2][4] == ' ' && text.lines[2][5] == '6');
     assert(!strcmp(text.lines[3], ""));
     assert(text.line_count == 3);
+    frame_pacer_hud_text_format(&text, &metrics, 1, 60,
+                                FRAME_PACER_FPS_LIMIT_OFF, false, false, 0);
+    assert(!strcmp(text.lines[2], "FPS  60\x7e  OFF"));
     frame_pacer_hud_text_format(&text, &metrics, 1, 0, 30, true, true, 75);
     assert(!strcmp(text.lines[2], "THR  34%  75%"));
     assert(!strcmp(text.lines[3], "FPS  N/A  30\x7e"));
