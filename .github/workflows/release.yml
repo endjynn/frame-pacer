@@ -101,5 +101,6 @@ jobs:
           prerelease=
           case "$version" in *-*) prerelease=--prerelease ;; esac
           gh release create "$GITHUB_REF_NAME" "$archive" "$checksum" \
+            --repo "$GITHUB_REPOSITORY" \
             --verify-tag --generate-notes --notes-file "$notes" \
             --title "frame-pacer $version" $prerelease
