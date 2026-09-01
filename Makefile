@@ -78,7 +78,11 @@ GL_RUNTIME_ARTIFACTS := \
 	build/lib/x86_64-linux-gnu/libframe_pacer_gl.so \
 	build/lib/i386-linux-gnu/libframe_pacer_gl.so \
 	build/lib/x86_64-linux-gnu/libframe_pacer_gl_shim.so \
-	build/lib/i386-linux-gnu/libframe_pacer_gl_shim.so
+	build/lib/i386-linux-gnu/libframe_pacer_gl_shim.so \
+	build/lib/libframe_pacer_gl.so \
+	build/lib32/libframe_pacer_gl.so \
+	build/lib/libframe_pacer_gl_shim.so \
+	build/lib32/libframe_pacer_gl_shim.so
 
 .PHONY: all check check-unit check-unit-i386 check-shell check-docs check-hud-image check-abi check-analyzer check-sanitize check-tsan check-coverage docs-hud-image \
 	clean install uninstall thread-cpu-quota-probe run-thread-cpu-quota-probe \
@@ -205,6 +209,12 @@ build/lib/x86_64-linux-gnu/%.so: build/x86_64/%.so
 	mkdir -p $(@D)
 	cp $< $@
 build/lib/i386-linux-gnu/%.so: build/i386/%.so
+	mkdir -p $(@D)
+	cp $< $@
+build/lib/%.so: build/x86_64/%.so
+	mkdir -p $(@D)
+	cp $< $@
+build/lib32/%.so: build/i386/%.so
 	mkdir -p $(@D)
 	cp $< $@
 build/x86_64/libGL.so.1: tests/gl_swap_provider.c
