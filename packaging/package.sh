@@ -34,7 +34,7 @@ done
 
 epoch=${SOURCE_DATE_EPOCH:-}
 if [ -z "$epoch" ]; then
-    epoch=$(git -C "$root" log -1 --format=%ct 2>/dev/null) ||
+    epoch=$(git -c safe.directory="$root" -C "$root" log -1 --format=%ct 2>/dev/null) ||
         fail 'SOURCE_DATE_EPOCH is unset and the release commit is unavailable'
 fi
 case "$epoch" in
