@@ -105,6 +105,10 @@ def validate_release(workflow: dict) -> None:
                for step in jobs["build"].get("steps", [])) == 1
     assert sum(step.get("uses", "").startswith("actions/download-artifact@")
                for step in publish_steps) == 1
+    publish_scripts = [step.get("run", "") for step in publish_steps if step.get("run")]
+    assert any('--repo "$GITHUB_REPOSITORY"' in script for script in publish_scripts), (
+        "Release publication must identify the repository without a checkout"
+    )
 
 
 def main() -> int:
