@@ -1,26 +1,37 @@
 # Contributing
 
-Thanks for helping improve frame-pacer. Please open an issue before proposing
-a large architectural change.
+Thanks for helping improve frame-pacer. Bug reports, compatibility reports,
+documentation improvements, and focused code changes are welcome.
 
-## Before a pull request
+Open an issue before starting a large architectural change so its scope can be
+discussed first.
 
-1. Keep changes narrowly scoped and explain the affected final presentation
-   boundary.
-2. Add or update focused tests.
-3. Run `make check`, plus the applicable analyzer, sanitizer, ABI, coverage,
-   cgroup, or presentation targets described in
+## Pull requests
+
+Before submitting a pull request:
+
+1. Keep the change focused and explain the user-visible result.
+2. Add or update automated tests.
+3. Run `make check`.
+4. Run any additional checks relevant to the change; see
    [Development](docs/development.md).
-4. Document any live-game validation and any known limitation.
-5. Do not add global Steam preloads, wrappers, permanent services, privileged
-   helpers, or title-specific behavior without a reproducible justification.
+5. Update documentation when setup, configuration, or behavior changes.
+6. Describe known limitations and any optional live-game observations.
 
-Do not copy code from another project unless its license permits it and the
-required attribution and notices are included.
+Do not copy code or assets from another project unless their license permits
+it and all required attribution and notices are included.
 
-## Reporting regressions
+## Bug reports
 
-Include distribution, desktop session, GPU/driver, Steam Runtime/Proton
-version, game executable basename, backend, exact configuration, and a short
-reproduction. Attach a `FRAME_PACER_LOG=1` log only after reviewing it for
-private paths or account information.
+Include:
+
+- Linux distribution and desktop session.
+- GPU and driver version.
+- Steam Runtime and Proton version, when applicable.
+- Game executable and graphics backend.
+- Exact frame-pacer configuration.
+- Reproduction steps and the expected result.
+
+Diagnostic logs can contain private paths or account information. Review them
+before attaching them to a public issue. See
+[Troubleshooting](docs/troubleshooting.md) for logging instructions.

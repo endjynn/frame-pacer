@@ -1,47 +1,61 @@
-# Environment and build requirements
+# Build requirements and environment
 
-Frame-pacer is currently built from source on a systemd-based Linux desktop.
-`make check` requires a C17 compiler with x86_64 and i386 support, Vulkan and
-GL/EGL development headers for both architectures, a Vulkan loader, `make`,
-`jq`, `xxd`, `file`, `glslangValidator`, and `spirv-val`.
+This page is the package and environment reference for source builds. Most
+users only need it while installing frame-pacer or diagnosing a failed build.
 
-The optional real presentation probe additionally needs Xlib headers and
-x86_64/i386 X11 runtime libraries. ABI and embedded-helper checks use `nm`,
-`readelf`, `strings`, and `pgrep`; normalized coverage uses GCC's `gcov` and
-`jq`.
+## Build requirements
 
-On Debian/Ubuntu-family systems, the principal package names are commonly:
+Frame-pacer needs:
 
-| Package | Purpose |
+- GCC with x86_64 and i386 (`-m32`) support.
+- C17 standard library development files for both architectures.
+- Vulkan headers and loader development files for both architectures.
+- OpenGL, GLX, and EGL headers and development files for both architectures.
+- GNU Make, `jq`, `xxd`, and `file`.
+- `glslangValidator` and `spirv-val`.
+- Standard binary tools including `nm`, `readelf`, and `strings`.
+
+Common Debian/Ubuntu package names include:
+
+| Package | Provides |
 | --- | --- |
-| `gcc-multilib` | 32-bit x86 compilation |
-| `libvulkan-dev`, `libvulkan-dev:i386` | Vulkan headers and linker files |
-| `libegl1-mesa-dev` | EGL, OpenGL, and GLX headers |
-| `glslang-tools` | GLSL-to-SPIR-V compilation |
-| `spirv-tools` | SPIR-V validation |
+| `build-essential` | Compiler, standard development files, and Make |
+| `gcc-multilib` | 32-bit compiler support |
+| `libvulkan-dev`, `libvulkan-dev:i386` | Vulkan development files |
+| `libegl1-mesa-dev` | OpenGL and EGL development files |
+| `jq`, `xxd`, `file` | Build and validation utilities |
+| `glslang-tools`, `spirv-tools` | Shader compiler and validator |
 
-Package names and multiarch setup vary by distribution. Review package
-transactions before installing anything.
+Package names and multiarch setup differ by distribution. If `make check`
+reports a missing header, library, or command, install the matching package
+for both 64-bit and 32-bit builds where your distribution separates them.
 
-## Runtime inputs and paths
+Live Vulkan, GLX, and EGL presentation probes additionally need X11
+development files and access to a graphical session. They are development
+checks and are not part of normal installation.
 
-| Input | Meaning |
+## Runtime environment
+
+| Variable | Purpose |
 | --- | --- |
-| `XDG_CONFIG_HOME` | Configuration base. If unset, frame-pacer uses `~/.config`. |
-| `XDG_STATE_HOME` | Runtime-state base for logs and the transient external CPU-controller protocol. If unset, frame-pacer uses `~/.local/state`. |
-| `FRAME_PACER_LOG=1` | Enables PID-qualified diagnostic logs for the target process only. |
-| `ENABLE_FRAME_PACER=1` | Enables all functionality in the installed Vulkan implicit layer. |
-| `DISABLE_FRAME_PACER=1` | Vulkan-loader disable control declared by the manifest. |
+| `ENABLE_FRAME_PACER=1` | Activates frame-pacer's installed Vulkan layer. |
+| `DISABLE_FRAME_PACER=1` | Prevents the Vulkan loader from activating frame-pacer. Normal users should leave it unset. |
+| `FRAME_PACER_LOG=1` | Enables diagnostic logging for the current process and its frame-pacer backend. |
+| `XDG_CONFIG_HOME` | Changes the configuration base from `~/.config`. |
+| `XDG_STATE_HOME` | Changes the runtime-state and log base from `~/.local/state`. |
 
-The configuration file is
-`${XDG_CONFIG_HOME}/frame-pacer/frame-pacer.conf`, or
+The configuration path is `$XDG_CONFIG_HOME/frame-pacer/frame-pacer.conf`, or
 `~/.config/frame-pacer/frame-pacer.conf` when `XDG_CONFIG_HOME` is unset.
-Logs are written below `${XDG_STATE_HOME}/frame-pacer`, or
-`~/.local/state/frame-pacer` when `XDG_STATE_HOME` is unset.
-When the Steam Runtime requires the external CPU controller, its private
-command/status files use the same directory and are removed during teardown.
+Runtime logs and temporary controller state use `$XDG_STATE_HOME/frame-pacer`,
+or `~/.local/state/frame-pacer` when `XDG_STATE_HOME` is unset.
 
-For an i386 process on an NVIDIA system, frame-pacer may execute its embedded
-x86_64 NVML telemetry helper from a sealed anonymous file. The helper uses a
-private socket, exits with the owning process, and creates no configuration,
-state, installed executable, service, or other persistent runtime file.
+## Installation variables
+
+Package maintainers can override:
+
+| Make variable | Purpose |
+| --- | --- |
+| `PREFIX` | Installation prefix; defaults to `~/.local`. |
+| `INSTALL_LIBDIR` | Vulkan libraries and CPU-controller directory. |
+| `INSTALL_LAYERDIR` | Vulkan implicit-layer manifest directory. |
+| `DESTDIR` | Staging root for package builds. |

@@ -1,73 +1,92 @@
-# Installation
+# Installation and updates
 
-Frame-pacer is currently distributed as source. It does not install a system
-service, alter a game directory, or require root access.
+Frame-pacer is installed from source into your home directory. It does not
+need `sudo`, install a system service, or modify game files.
 
-## Requirements
+## Before you install
 
-- A systemd-based Linux desktop using cgroup v2.
-- Steam and a working Vulkan loader.
-- Build tools listed in [Build requirements](reference/environment.md).
-- Enough access to create a transient user scope when `thread_cpu_limit` is
-  enabled.
+You need:
 
-## Build
+- An x86_64 Linux desktop using systemd.
+- The standard Steam client supplied by your distribution. Flatpak Steam is
+  not currently supported.
+- A working Vulkan driver.
+- A C compiler, 32-bit compiler support, Vulkan and OpenGL development files,
+  and the small build tools listed in [Build requirements](reference/environment.md).
 
-Clone the repository and run:
+## 1. Download and install
 
 ```sh
+git clone https://github.com/endjynn/frame-pacer.git
+cd frame-pacer
 make check
 make install
 ```
 
-`make install` installs the x86_64 and i386 Vulkan layer libraries under
-`~/.local/lib/frame-pacer` and their manifests under
-`~/.local/share/vulkan/implicit_layer.d`. No root access is required. The
-Vulkan loader discovers those manifests automatically, so Steam only needs
-`ENABLE_FRAME_PACER=1` to activate all frame-pacer Vulkan functionality.
+`make check` builds and tests both 64-bit and 32-bit support. `make install`
+copies frame-pacer into `~/.local` for your user account.
 
-The same private library directory contains
-`frame-pacer-thread-cpu-controller`. It is an executable helper used only when
-an enabled `thread_cpu_limit` must cross a Steam Runtime read-only cgroup mount;
-installation does not start it or create a permanent service.
+## 2. Create the configuration
 
-No NVIDIA telemetry executable is installed. The i386 HUD-capable libraries
-contain a small x86-64 image used only when a 32-bit NVIDIA process cannot load
-NVML directly. It executes anonymously from sealed memory, uses the existing
-host driver library, and disappears with the game. Installing a separate
-32-bit NVIDIA compute package is not required.
-
-Set `PREFIX`, `INSTALL_LIBDIR`, or `INSTALL_LAYERDIR` when using a non-default
-installation. `DESTDIR` is supported for staged package builds. The GLX/EGL
-preload shim is not installed: it remains an explicit per-game launch option.
-
-## Configure a game
-
-Create `${XDG_CONFIG_HOME}/frame-pacer/frame-pacer.conf` when
-`XDG_CONFIG_HOME` is set, or `~/.config/frame-pacer/frame-pacer.conf`
-otherwise. The file must exclude group and other users (for example,
-`chmod 600`):
-
-```ini
-global_fps_limit = 70
-
-[Example game]
-executable = "ExampleGame.exe"
-fps_limit = 60
-thread_cpu_limit = off
+```sh
+mkdir -p ~/.config/frame-pacer
+chmod 700 ~/.config/frame-pacer
+nano ~/.config/frame-pacer/frame-pacer.conf
 ```
 
-Set `thread_cpu_limit` to `1%` through `100%` only after confirming the game
-works normally. It is a per-thread ceiling, not a total-process CPU cap.
+Paste this starting configuration:
 
-Follow [Steam integration](steam-integration.md) to activate the relevant
-backend. Start with one game, confirm the HUD and pacing, then expand slowly.
+```ini
+global_fps_limit = 60
+hud = on
+```
 
-## Uninstall and recovery
+Save the file and run:
 
-Remove frame-pacer's Steam launcher environment and any per-game GL preload
-option, then fully restart Steam. Run `make uninstall` from the same checkout
-to remove the installed Vulkan manifests and libraries. You may then remove
-the configuration file and checkout. The CPU controller and anonymous NVIDIA
-telemetry helper clean up when the game, frame-pacer, or their owning runtime
-connections exit.
+```sh
+chmod 600 ~/.config/frame-pacer/frame-pacer.conf
+```
+
+Frame-pacer deliberately ignores configuration files that other users can
+modify. See [Configuration](configuration.md) when you are ready to add
+per-game limits.
+
+## 3. Enable it in Steam
+
+For a first test, fully close Steam and start it from a terminal:
+
+```sh
+ENABLE_FRAME_PACER=1 steam
+```
+
+Start a Vulkan or Proton game. The HUD should appear in the top-left corner
+and show `60` as the FPS limit. See [Steam integration](steam-integration.md)
+for a permanent launcher setup and for native OpenGL games.
+
+## Updating
+
+Fully close Steam and any running games before replacing frame-pacer. From the
+repository:
+
+```sh
+git pull --ff-only
+make check
+make install
+```
+
+Your configuration is stored separately and is not replaced.
+
+## Uninstalling
+
+1. Remove `ENABLE_FRAME_PACER=1` from your Steam launcher.
+2. Remove any frame-pacer `LD_PRELOAD` options from individual games.
+3. Fully restart Steam.
+4. From the repository, run:
+
+   ```sh
+   make uninstall
+   ```
+
+You may then delete the repository and
+`~/.config/frame-pacer/frame-pacer.conf`. No permanent service or game-file
+change is left behind.

@@ -1,107 +1,59 @@
 # Development
 
-## Workflow
+## Standard workflow
 
-Inspect the working tree, then run the normal acceptance suite:
+Before making changes, inspect the working tree. After making changes, run:
 
 ```sh
-git status --short
 make check
 ```
 
-`make check` builds the x86_64 and i386 Vulkan and GL artifacts, runs unit, GL,
-Vulkan loader, controller CLI, NVML-helper, shell-syntax, install, and ABI
-checks, validates shaders, manifests, and the reproducibly generated HUD image,
-and checks the expected ELF architectures. It does not modify cgroups or
-require a graphical session or a game.
+This builds and tests the x86_64 and i386 Vulkan and GL backends, unit tests,
+shader assets, manifests, installation behavior, ABI, shell scripts, and the
+generated HUD image. It does not start a game or intentionally modify cgroups.
 
-Additional gates are intentionally separate:
+Close games that use frame-pacer before replacing runtime libraries. Fully
+close Steam before changing its launcher environment.
 
-| Target | Purpose and side effects |
+## Additional checks
+
+Use the checks relevant to the change:
+
+| Target | Purpose |
 | --- | --- |
-| `make check-unit-i386` | Cleanly rebuild and execute every isolated unit fixture as i386, then remove its temporary artifacts. |
-| `make check-analyzer` | Clean GCC `-fanalyzer` build of the acceptance graph and presentation probes. |
-| `make check-sanitize` | Clean ASan+UBSan run of isolated unit tests. |
-| `make check-tsan` | Clean ThreadSanitizer run of isolated unit tests. |
-| `make check-coverage` | Clean normalized GCC coverage run; exercises available Vulkan, GLX, and EGL presentation paths and delegated cgroup controller integration. |
-| `make run-vulkan-present-probe` | Real x86_64/i386 X11 swapchain, two-frame HUD presentation, and teardown; requires a graphical Vulkan device. |
-| `make run-glx-present-probe` | Real x86_64/i386 GLX contexts, two HUD swaps, and GL-state restoration; requires a graphical GLX device. |
-| `make run-egl-present-probe` | Real x86_64 X11/EGL context, two HUD swaps, and GL-state restoration; requires a graphical EGL device. |
-| `make run-thread-cpu-quota-probe` | Opt-in delegated cgroup topology probe. |
-| `make run-thread-cpu-quota-controller-integration` | Opt-in live 50%→75%→off→60%→off quota reuse and cleanup test. |
-| `make run-thread-cpu-quota-controller-integration-i386` | The same live reuse/handoff driven by the i386 client, plus test-only active cgroup-write failure, recovery, and controller interruption. |
-| `make run-nvml-helper-probe` | Exercise the production i386 client and anonymous x86_64 telemetry helper against the host NVIDIA driver and Steam Linux Runtime, when available. |
-| `make docs-hud-image` | Regenerate the README's 220x123 reference-size maximum-state HUD image from the production text, font, and vertex code. |
+| `make check-unit-i386` | Run the isolated unit suite as i386. |
+| `make check-analyzer` | Build the acceptance suite with GCC's static analyzer. |
+| `make check-sanitize` | Run unit tests with AddressSanitizer and UndefinedBehaviorSanitizer. |
+| `make check-tsan` | Run unit tests with ThreadSanitizer. |
+| `make check-coverage` | Generate normalized GCC coverage and exercise available live integrations. |
+| `make run-vulkan-present-probe` | Exercise real Vulkan presentation on x86_64 and i386. |
+| `make run-glx-present-probe` | Exercise real GLX presentation on x86_64 and i386. |
+| `make run-egl-present-probe` | Exercise real EGL presentation on x86_64. |
+| `make run-nvml-helper-probe` | Exercise i386 NVIDIA telemetry against the host driver and Steam Runtime. |
+| `make run-thread-cpu-quota-controller-integration` | Exercise live CPU-limit changes and cleanup. |
+| `make run-thread-cpu-quota-controller-integration-i386` | Exercise the same controller lifecycle from an i386 client. |
+| `make docs-hud-image` | Regenerate the documented HUD image. |
 
-The coverage and cgroup targets can change the calling process's transient
-user-scope topology. Run them only in a suitable delegated systemd user
-session. The analyzer, sanitizer, coverage, and TSan targets start and finish
-by removing the ignored `build/` directory so instrumented objects cannot
-contaminate a later normal incremental build.
+`make check-coverage` and the CPU-controller integrations create a transient
+user scope and modify only their delegated test cgroup. Run them only in a
+suitable systemd user session. Analyzer, sanitizer, TSan, and coverage builds
+clean the `build` directory to avoid mixing instrumented and normal objects.
 
-Close any game using frame-pacer before replacing its runtime libraries. Do
-not change Steam launcher settings while Steam is running.
+## Change requirements
 
-## GitHub maintenance
+- Keep one final presentation limiter per graphics API path.
+- Preserve fail-open presentation behavior and automatic cleanup.
+- Keep GLX/EGL preloading per-game; never make it global.
+- Keep CPU control opt-in and isolated from Steam and unrelated processes.
+- Add automated tests for supported behavior, failure paths, and cleanup.
+- Cover both x86_64 and i386 when a change affects both architectures.
+- Update user documentation when configuration or setup changes.
 
-The canonical public repository is
-[`endjynn/frame-pacer`](https://github.com/endjynn/frame-pacer). On the Nomad
-maintainer workstation, use the account-aware `gh-repo` wrapper from inside
-this checkout for GitHub CLI operations. It derives the repository owner from
-`origin`, uses the corresponding locally authenticated account for that
-command, and leaves the globally active GitHub CLI account unchanged.
+See [Technical details](technical-details.md) for the runtime boundaries that
+these requirements protect.
 
-Common read-only pull-request commands are:
+## Diagnostic logs
 
-```sh
-gh-repo pr list --state open
-gh-repo pr view <number> --comments
-gh-repo pr diff <number>
-gh-repo pr checks <number>
-```
-
-Use `/usr/bin/gh auth status` to inspect local authentication. Authentication
-and credentials are workstation state and must never be copied into this
-repository. Contributors without Nomad's local wrapper can use standard `gh`
-with their own GitHub account.
-
-Review a community diff before checking it out or running its code. Commands
-that publish reviews or comments, merge or close requests, or otherwise alter
-GitHub state are separate from read-only inspection.
-
-## Design constraints
-
-Each API family owns at most one final presentation boundary. Do not add a
-second limiter, a game-name backend selector, or a heuristic that races
-backends for ownership.
-
-For GLX/EGL interception, dynamic loading, resolver handling, or Steam Runtime
-behavior, compare the design with current upstream projects such as MangoHud
-and document any deliberate divergence. Do not copy code without preserving
-its license and attribution.
-
-The CPU controller must remain strictly opt-in, private to its transient user
-scope, and fail closed. It must never modify a parent cgroup, Steam, or an
-unrelated process.
-
-The i386 NVIDIA telemetry fallback must remain transient and process-owned.
-Its x86_64 helper is embedded only in i386 rendering libraries, executed from
-a sealed anonymous file, communicates over a private socket, and must never be
-installed as a persistent executable or service.
-
-## Validation
-
-Implementation and completion gates are fully automated. No manual or human
-test is required for completion. Add deterministic fixtures and probes for
-every supported behavior, including enabled and disabled settings, failure
-paths, cleanup, and both ELF architectures where applicable. Optional live
-observations may provide extra diagnostic evidence, but they never replace or
-block the automated acceptance suite.
-
-## Logs
-
-`FRAME_PACER_LOG=1` enables diagnostic logs only for the target process. Logs
-are stored under `${XDG_STATE_HOME}/frame-pacer`, or
-`~/.local/state/frame-pacer` when `XDG_STATE_HOME` is unset. Files are
-PID-qualified; each backend keeps its 10 newest logs and stops writing at
-64 MiB per file without affecting pacing.
+Set `FRAME_PACER_LOG=1` only for the process being investigated. Logs are
+written below `$XDG_STATE_HOME/frame-pacer`, or `~/.local/state/frame-pacer`.
+Review logs for private paths or account information before sharing them.

@@ -1,89 +1,36 @@
-# HUD
+# HUD guide
 
-The HUD appears in the top-left corner. Its compact, fixed-cell layout keeps
-values aligned even when a provider is unavailable. Its geometry scales
-automatically from the current Vulkan swapchain or GLX/EGL drawable extent;
-it does not query the window system, desktop environment, monitor, or physical
-DPI.
+The frame-pacer HUD appears in the top-left corner and scales automatically
+with the game's rendering resolution.
 
-The 2560 by 1600 reference resolution uses 2.5 screen pixels for each
-bitmap-font pixel. At that size, the complete panel is approximately 220 by
-123 pixels with the optional fourth row and the usual three-row panel is 220
-by 98 pixels. A 1920 by 1200 drawable uses a 1.875-pixel scale, making those
-panels approximately 165 by 92 and 165 by 73 pixels respectively. Every value
-occupies four glyph cells, including the supported maximum of 999 FPS.
+![frame-pacer HUD](images/frame-pacer-hud.png)
 
-Scaling uses whichever drawable axis is more constrained. Its continuous
-scale avoids the large size jump that would occur between one- and two-pixel
-font steps at lower resolutions, prevents an ultrawide or tall aspect ratio
-from enlarging the HUD based on only one axis, and updates naturally when a
-drawable or swapchain is recreated at a new resolution. Extremely small
-drawables are additionally constrained so the complete optional panel cannot
-extend outside their bounds. Because rendering APIs do not expose physical DPI
-portably, the policy preserves proportional screen footprint rather than an
-exact physical measurement across unrelated monitors.
+## Reading the HUD
 
-Set `hud = off` at the top level of `frame-pacer.conf` to disable it without
-disabling frame pacing. `hud = on` is the default; valid changes are applied
-to a running game within one second.
+| Row | First value | Second value |
+| --- | --- | --- |
+| `GPU` | GPU use associated with the game | GPU temperature |
+| `CPU` | Total system CPU use | CPU package temperature |
+| `THR` | Busiest game thread | Configured per-thread CPU limit |
+| `FPS` | Current frame rate | Configured FPS limit, or `OFF` |
 
-The FPS value is recalculated every 500 ms from accepted presentation calls.
-GPU, CPU, temperature, and thread metrics are sampled once per second. The HUD
-is still drawn on presentation between samples using the latest coherent
-snapshot; these cadences are independent of the configured FPS limit.
+The `THR` row appears only when `thread_cpu_limit` is enabled for the game.
+Its percentages are measured against one logical CPU core.
 
-| Row | Meaning |
-| --- | --- |
-| `GPU <GPU usage> <GPU temperature>` | Game-associated GPU utilisation and temperature. |
-| `CPU <CPU usage> <CPU temperature>` | System CPU utilisation and CPU package temperature. |
-| `THR <peak thread CPU usage> <configured limit>` | Per-thread CPU activity and configured thread ceiling. Visible only for an active `thread_cpu_limit`. |
-| `FPS <current frame rate> <configured limit>` | Measured frame rate and the active presentation cap. |
+`N/A` means that the value is unavailable or has not yet been confirmed. This
+does not stop frame pacing. GPU and temperature availability depends on the
+driver and hardware.
 
-Available percentages use `%`; temperatures use the small degree glyph; FPS
-uses a matching half-height frame glyph. `N/A` occupies the same value column
-as a number, so it does not shift adjacent metrics.
+## Hide the HUD
 
-## THR
+Set this at the top of `frame-pacer.conf`:
 
-`THR 42% 50%` means the busiest owned game thread used 42% of one logical CPU
-core in the preceding sample window while a 50% per-thread limit is confirmed.
-The first value is real usage, not a synthetic estimate or a clamped display.
-A value near the configured limit means that a thread is actively reaching the
-ceiling.
+```ini
+hud = off
+```
 
-Usage comes from the owned thread cgroups' `cpu.stat` `usage_usec` deltas over
-about one second; 100% is one fully used logical core. Because cgroup CPU
-accounting uses 100-ms quota periods and the sample window is not aligned to
-them, a short sample can modestly exceed the displayed limit at a period
-boundary. That does not by itself mean the ceiling failed. A sustained or large
-excess warrants investigation.
+The HUD disappears within about one second while the FPS limit remains active.
+Set it back to `on` to show the HUD again.
 
-The limit field is `N/A` until every currently discovered thread has been
-verified in an owned child with the exact requested `cpu.max`. Thread usage can
-also briefly be `N/A` while its first sample is collected or after a controller
-hierarchy reset. See [CPU thread limiter](cpu-thread-limiter.md) for controller
-behavior.
-
-## Telemetry sources
-
-CPU use is read from `/proc/stat`; CPU temperature comes from the suitable
-`coretemp` hwmon entry. GPU association starts with the DRM render node opened
-by the game and its PCI identity. NVIDIA utilisation and temperature normally
-come from `libnvidia-ml.so.1` loaded directly in the game process.
-
-When a 32-bit NVIDIA game cannot load 32-bit NVML, frame-pacer starts its
-embedded x86-64 telemetry image from a sealed anonymous `memfd`. The helper
-loads the host's existing 64-bit NVML, selects the exact PCI device, and sends
-one versioned snapshot per second over a private socket. A dedicated client
-thread owns process management and socket I/O; presentation only copies the
-latest validated snapshot. The helper has no separately installed executable,
-named temporary file, service, or persistent state and exits when its socket or
-target process disappears. Startup is bounded to three attempts for the owning
-backend and target process; failure leaves the affected values at `N/A`.
-
-Other DRM drivers can expose render-engine time through `/proc/<pid>/fdinfo`;
-duplicate DRM client IDs are counted once.
-
-Unavailable providers display `N/A` and never affect pacing or HUD rendering.
-Frame-pacer does not bundle NVML, search hard-coded host library paths, invoke
-`nvidia-smi`, or require an i386 NVIDIA compute package.
+For telemetry sources and CPU-limit verification details, see
+[Technical details](technical-details.md).

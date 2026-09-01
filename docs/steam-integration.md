@@ -1,52 +1,79 @@
 # Steam integration
 
-Frame-pacer has two intentionally separate activation paths. Keep them
-separate: Vulkan can be enabled for Steam globally; the GLX/EGL shim is
-per-game only.
+Use the Vulkan setup for most games. Use the GLX/EGL setup only for a native
+OpenGL game that does not use Vulkan.
 
-## Vulkan implicit layer
+## Vulkan and Proton games
 
-After `make install`, set this in Steam's environment:
+Frame-pacer's Vulkan support covers native Vulkan games, DXVK, and
+vkd3d-proton.
 
-```text
-ENABLE_FRAME_PACER=1
+### Test it once
+
+Fully close Steam, then run:
+
+```sh
+ENABLE_FRAME_PACER=1 steam
 ```
 
-The user-local install puts both manifests in the Vulkan loader's standard
-search path, so no layer-path variable is needed. This variable activates the
-entire frame-pacer Vulkan layer, not only its HUD; use the `hud` configuration
-option when only the overlay should be hidden. Use your desktop environment's
-normal Steam launcher configuration to set this variable. Do not add
-`LD_PRELOAD`, `FRAME_PACER_LOG`, a wrapper, or any other frame-pacer variable
-globally. The manifests declare `DISABLE_FRAME_PACER` for Vulkan-loader
-compliance; leave it unset.
+Start a game. If the frame-pacer HUD appears, the integration is working.
 
-Changing a desktop launcher requires Steam to be fully stopped first. GNOME
-caches desktop-launcher state, so after changing Steam's global launcher
-environment, log out of GNOME and back in before validation.
+### Make it permanent
 
-## GLX/EGL shim
+Add `ENABLE_FRAME_PACER=1` to the environment of the Steam desktop launcher.
+The exact editor depends on your desktop, but the change is always the same:
+prefix Steam's existing command with `env ENABLE_FRAME_PACER=1`.
 
-Only add this to the launch options of a game already known to present through
-GLX or EGL:
+For example, change:
+
+```text
+Exec=/usr/games/steam %U
+```
+
+to:
+
+```text
+Exec=env ENABLE_FRAME_PACER=1 /usr/games/steam %U
+```
+
+Keep the Steam path and arguments already used by your distribution. If you
+edit desktop files manually:
+
+1. Fully close Steam.
+2. If `~/.local/share/applications/steam.desktop` already exists, edit that
+   file. Otherwise copy your distribution's `steam.desktop` from
+   `/usr/share/applications` into `~/.local/share/applications` and edit the
+   copy. Do not edit the system file directly.
+3. Add `env ENABLE_FRAME_PACER=1` to every Steam `Exec=` entry you use,
+   including menu shortcuts.
+4. If Steam starts automatically, make the same change in
+   `~/.config/autostart/steam.desktop`.
+5. Log out and back in if your desktop continues to use the old command.
+
+Use `hud = off` in the configuration when you only want to hide the overlay.
+
+## Native OpenGL games
+
+For a GLX or EGL game, open the game's Steam properties and put this in
+**Launch Options**:
 
 ```text
 LD_PRELOAD=/absolute/path/to/frame-pacer/build/${LIB}/libframe_pacer_gl_shim.so %command%
 ```
 
-Steam expands `${LIB}` to the correct architecture directory. Never set this
-preload globally: even a lazy shim would still be mapped into unrelated Steam
-processes. Add `FRAME_PACER_LOG=1` to the same per-game option only while
-collecting diagnostics.
+Replace `/absolute/path/to/frame-pacer` with the full path to the repository.
+Steam expands `${LIB}` for 64-bit and 32-bit games.
 
-Steam caches per-game launch options. Fully exit Steam before changing one,
-then restart it. A desktop-session re-login is not normally required for a
-per-game-only edit.
+This option belongs on one game, not on Steam itself. A Vulkan game does not
+need it.
 
-## Rollback
+## Disable or recover
 
-To disable frame-pacer, remove the Vulkan environment variable from the Steam
-launcher and remove the GL preload option from affected games. Then fully
-restart Steam and run `make uninstall` to remove the installed Vulkan layer.
-Removing `thread_cpu_limit` or setting it to `off` also removes the CPU
-controller live; no permanent systemd service is installed.
+If a game does not start:
+
+1. Remove its frame-pacer `LD_PRELOAD` launch option, if present.
+2. Remove `ENABLE_FRAME_PACER=1` from the Steam launcher.
+3. Fully restart Steam.
+
+This stops frame-pacer from loading. See [Troubleshooting](troubleshooting.md)
+before enabling it again.
