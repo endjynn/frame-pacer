@@ -194,23 +194,24 @@ PFN_vkDestroyInstance frame_pacer_vulkan_registry_remove_instance(
                         ? (PFN_vkDestroyInstance)registry->fallback_gipa(
                               instance, "vkDestroyInstance")
                         : 0;
-    physical_link = &registry->physical_devices;
-    while (*physical_link) {
-        if ((*physical_link)->instance == item) {
-            struct frame_pacer_vulkan_physical_device *found = *physical_link;
+    if (item) {
+        physical_link = &registry->physical_devices;
+        while (*physical_link) {
+            if ((*physical_link)->instance == item) {
+                struct frame_pacer_vulkan_physical_device *found = *physical_link;
 
-            *physical_link = found->next;
-            free(found->queue_families);
-            free(found);
-        } else {
-            physical_link = &(*physical_link)->next;
+                *physical_link = found->next;
+                free(found->queue_families);
+                free(found);
+            } else {
+                physical_link = &(*physical_link)->next;
+            }
         }
-    }
-    instance_link = &registry->instances;
-    while (*instance_link && *instance_link != item)
-        instance_link = &(*instance_link)->next;
-    if (*instance_link)
+        instance_link = &registry->instances;
+        while (*instance_link != item)
+            instance_link = &(*instance_link)->next;
         *instance_link = item->next;
+    }
     registry->fallback_gipa = registry->instances ? registry->instances->gipa : 0;
     frame_pacer_vulkan_registry_unlock(registry);
     if (removed)
@@ -330,11 +331,12 @@ frame_pacer_vulkan_registry_remove_device_locked(
     struct frame_pacer_vulkan_device *item;
 
     item = frame_pacer_vulkan_registry_find_device(registry, device);
+    if (!item)
+        return 0;
     device_link = &registry->devices;
-    while (*device_link && *device_link != item)
+    while (*device_link != item)
         device_link = &(*device_link)->next;
-    if (*device_link)
-        *device_link = item->next;
+    *device_link = item->next;
     queue_link = &registry->queues;
     while (*queue_link) {
         if ((*queue_link)->device == item) {

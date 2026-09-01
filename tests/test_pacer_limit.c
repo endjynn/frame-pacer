@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <utime.h>
 #include <unistd.h>
 
 static void write_limit(const char *path, const char *value)
@@ -84,6 +85,38 @@ static void fps_range_boundaries(void)
     assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS + 2,
                                   &changed) == FRAME_PACER_FPS_LIMIT_OFF &&
            changed);
+    frame_pacer_limit_destroy(&limit);
+    assert(!unlink(path));
+    assert(!rmdir(state));
+    assert(!rmdir(directory));
+}
+
+static void same_timestamp_reload_behavior(void)
+{
+    char directory[] = "/tmp/frame-pacer-limit-timestamp.XXXXXX";
+    char state[1200], path[1200];
+    const struct utimbuf timestamp = {.actime = 1000000000, .modtime = 1000000000};
+    struct frame_pacer_limit limit;
+    bool changed;
+
+    assert(mkdtemp(directory));
+    assert(snprintf(state, sizeof(state), "%s/frame-pacer", directory) > 0);
+    assert(!mkdir(state, 0700));
+    assert(snprintf(path, sizeof(path), "%s/frame-pacer.conf", state) > 0);
+    assert(!setenv("XDG_CONFIG_HOME", directory, 1));
+    frame_pacer_limit_init(&limit);
+
+    write_limit(path, "global_fps_limit = 60\nhud = on \n");
+    assert(!utime(path, &timestamp));
+    assert(frame_pacer_limit_poll(&limit, 1, &changed) == 60 && changed);
+    assert(frame_pacer_limit_hud_enabled(&limit));
+
+    write_limit(path, "global_fps_limit = 45\nhud = off\n");
+    assert(!utime(path, &timestamp));
+    assert(frame_pacer_limit_poll(&limit, FRAME_PACER_CONFIG_POLL_NS + 2,
+                                  &changed) == 45 && changed);
+    assert(!frame_pacer_limit_hud_enabled(&limit));
+
     frame_pacer_limit_destroy(&limit);
     assert(!unlink(path));
     assert(!rmdir(state));
@@ -369,5 +402,6 @@ int main(void)
         free(oversized);
     }
     fps_range_boundaries();
+    same_timestamp_reload_behavior();
     return 0;
 }
