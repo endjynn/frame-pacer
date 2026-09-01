@@ -20,6 +20,8 @@ $elevate apt-get install -y --no-install-recommends \
     libx11-dev \
     libvulkan1 \
     libvulkan1:i386 \
+    mesa-vulkan-drivers \
+    mesa-vulkan-drivers:i386 \
     libegl1 \
     libegl1:i386 \
     libgl1 \
