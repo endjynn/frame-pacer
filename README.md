@@ -62,12 +62,13 @@ one second.
 After installation, start Steam with the layer enabled:
 
 ```sh
-ENABLE_FRAME_PACER_HUD=1 \
+ENABLE_FRAME_PACER=1 \
 steam
 ```
 
-This enables frame-pacer's installed Vulkan implicit layer for that Steam
-session only. Confirm the HUD and pacing in one Vulkan/DXVK/vkd3d-proton game.
+This enables all frame-pacer functionality provided by the installed Vulkan
+implicit layer for that Steam session only. Confirm the HUD and pacing in one
+Vulkan/DXVK/vkd3d-proton game.
 For a permanent desktop-launcher setup, see [Steam integration](docs/steam-integration.md).
 
 ### Enable GLX/EGL games

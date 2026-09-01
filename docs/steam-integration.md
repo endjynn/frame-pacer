@@ -9,15 +9,17 @@ per-game only.
 After `make install`, set this in Steam's environment:
 
 ```text
-ENABLE_FRAME_PACER_HUD=1
+ENABLE_FRAME_PACER=1
 ```
 
 The user-local install puts both manifests in the Vulkan loader's standard
-search path, so no layer-path variable is needed. Use your desktop
-environment's normal Steam launcher configuration to set this variable. Do not
-add `LD_PRELOAD`, `FRAME_PACER_LOG`, a wrapper, or any other frame-pacer
-variable globally. The manifests declare
-`DISABLE_FRAME_PACER_HUD` for Vulkan-loader compliance; leave it unset.
+search path, so no layer-path variable is needed. This variable activates the
+entire frame-pacer Vulkan layer, not only its HUD; use the `hud` configuration
+option when only the overlay should be hidden. Use your desktop environment's
+normal Steam launcher configuration to set this variable. Do not add
+`LD_PRELOAD`, `FRAME_PACER_LOG`, a wrapper, or any other frame-pacer variable
+globally. The manifests declare `DISABLE_FRAME_PACER` for Vulkan-loader
+compliance; leave it unset.
 
 Changing a desktop launcher requires Steam to be fully stopped first. GNOME
 caches desktop-launcher state, so after changing Steam's global launcher

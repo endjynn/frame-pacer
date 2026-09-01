@@ -506,7 +506,7 @@ check: all hud-shaders $(GL_ARTIFACTS) $(GL_RUNTIME_ARTIFACTS) \
 	spirv-val --target-env vulkan1.0 build/shaders/hud.frag.spv
 	file build/x86_64/libVkLayer_frame_pacer.so build/i386/libVkLayer_frame_pacer.so
 	jq -e '.file_format_version == "1.0.0" and .layer.name == "VK_LAYER_ENDJYNN_frame_pacer" and .layer.type == "GLOBAL"' build/x86_64/layer/VkLayer_frame_pacer.json build/i386/layer/VkLayer_frame_pacer.json
-	jq -e '.layer.enable_environment.ENABLE_FRAME_PACER_HUD == "1" and .layer.disable_environment.DISABLE_FRAME_PACER_HUD == "1" and .layer.functions.vkNegotiateLoaderLayerInterfaceVersion' build/x86_64/implicit_layer/VkLayer_frame_pacer.x86_64.json build/i386/implicit_layer/VkLayer_frame_pacer.i386.json
+	jq -e '.layer.enable_environment == {"ENABLE_FRAME_PACER": "1"} and .layer.disable_environment == {"DISABLE_FRAME_PACER": "1"} and .layer.functions.vkNegotiateLoaderLayerInterfaceVersion' build/x86_64/implicit_layer/VkLayer_frame_pacer.x86_64.json build/i386/implicit_layer/VkLayer_frame_pacer.i386.json
 	jq -e '.layer.name == "VK_LAYER_ENDJYNN_frame_pacer_x86_64"' build/x86_64/implicit_layer/VkLayer_frame_pacer.x86_64.json
 	jq -e '.layer.name == "VK_LAYER_ENDJYNN_frame_pacer_i386"' build/i386/implicit_layer/VkLayer_frame_pacer.i386.json
 check-abi: $(VULKAN_ARTIFACTS) $(GL_ARTIFACTS)

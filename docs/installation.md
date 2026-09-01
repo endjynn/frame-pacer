@@ -24,7 +24,7 @@ make install
 `~/.local/lib/frame-pacer` and their manifests under
 `~/.local/share/vulkan/implicit_layer.d`. No root access is required. The
 Vulkan loader discovers those manifests automatically, so Steam only needs
-`ENABLE_FRAME_PACER_HUD=1` to activate frame-pacer.
+`ENABLE_FRAME_PACER=1` to activate all frame-pacer Vulkan functionality.
 
 The same private library directory contains
 `frame-pacer-thread-cpu-controller`. It is an executable helper used only when

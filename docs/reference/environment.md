@@ -30,8 +30,8 @@ transactions before installing anything.
 | `XDG_CONFIG_HOME` | Configuration base. If unset, frame-pacer uses `~/.config`. |
 | `XDG_STATE_HOME` | Runtime-state base for logs and the transient external CPU-controller protocol. If unset, frame-pacer uses `~/.local/state`. |
 | `FRAME_PACER_LOG=1` | Enables PID-qualified diagnostic logs for the target process only. |
-| `ENABLE_FRAME_PACER_HUD=1` | Enables the installed Vulkan implicit layer. |
-| `DISABLE_FRAME_PACER_HUD=1` | Vulkan-loader disable control declared by the manifest. |
+| `ENABLE_FRAME_PACER=1` | Enables all functionality in the installed Vulkan implicit layer. |
+| `DISABLE_FRAME_PACER=1` | Vulkan-loader disable control declared by the manifest. |
 
 The configuration file is
 `${XDG_CONFIG_HOME}/frame-pacer/frame-pacer.conf`, or

@@ -42,6 +42,33 @@ contaminate a later normal incremental build.
 Close any game using frame-pacer before replacing its runtime libraries. Do
 not change Steam launcher settings while Steam is running.
 
+## GitHub maintenance
+
+The canonical public repository is
+[`endjynn/frame-pacer`](https://github.com/endjynn/frame-pacer). On the Nomad
+maintainer workstation, use the account-aware `gh-repo` wrapper from inside
+this checkout for GitHub CLI operations. It derives the repository owner from
+`origin`, uses the corresponding locally authenticated account for that
+command, and leaves the globally active GitHub CLI account unchanged.
+
+Common read-only pull-request commands are:
+
+```sh
+gh-repo pr list --state open
+gh-repo pr view <number> --comments
+gh-repo pr diff <number>
+gh-repo pr checks <number>
+```
+
+Use `/usr/bin/gh auth status` to inspect local authentication. Authentication
+and credentials are workstation state and must never be copied into this
+repository. Contributors without Nomad's local wrapper can use standard `gh`
+with their own GitHub account.
+
+Review a community diff before checking it out or running its code. Commands
+that publish reviews or comments, merge or close requests, or otherwise alter
+GitHub state are separate from read-only inspection.
+
 ## Design constraints
 
 Each API family owns at most one final presentation boundary. Do not add a

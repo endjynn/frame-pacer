@@ -11,10 +11,10 @@
       "vkNegotiateLoaderLayerInterfaceVersion": "vkNegotiateLoaderLayerInterfaceVersion"
     },
     "enable_environment": {
-      "ENABLE_FRAME_PACER_HUD": "1"
+      "ENABLE_FRAME_PACER": "1"
     },
     "disable_environment": {
-      "DISABLE_FRAME_PACER_HUD": "1"
+      "DISABLE_FRAME_PACER": "1"
     }
   }
 }
