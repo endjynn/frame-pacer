@@ -370,9 +370,109 @@ void frame_pacer_metrics_test_set_gpu_identity(
     (void)snprintf(metrics->gpu_pci_bus_id,
                    sizeof(metrics->gpu_pci_bus_id), "%s",
                    pci_bus_id ? pci_bus_id : "");
+    metrics->gpu_temp_path[0] = '\0';
     metrics->gpu_vendor = vendor;
 }
 #endif
+
+static bool read_trimmed_line(const char *path, char *output, size_t size)
+{
+    FILE *file;
+
+    if (!path || !output || size < 2 || !(file = fopen(path, "re")))
+        return false;
+    if (!fgets(output, (int)size, file)) {
+        (void)fclose(file);
+        return false;
+    }
+    (void)fclose(file);
+    if (!strchr(output, '\n') && strlen(output) == size - 1)
+        return false;
+    output[strcspn(output, "\r\n")] = '\0';
+    return true;
+}
+
+static bool store_temperature_path(struct frame_pacer_metrics *metrics,
+                                   const char *path)
+{
+    int written;
+
+    if (access(path, R_OK)) return false;
+    written = snprintf(metrics->gpu_temp_path,
+                       sizeof(metrics->gpu_temp_path), "%s", path);
+    if (written >= 0 && (size_t)written < sizeof(metrics->gpu_temp_path))
+        return true;
+    metrics->gpu_temp_path[0] = '\0';
+    return false;
+}
+
+static bool find_amd_temperature_at(struct frame_pacer_metrics *metrics,
+                                    const char *drm_root)
+{
+    DIR *directory;
+    struct dirent *entry;
+    char directory_path[PATH_MAX], fallback[PATH_MAX] = "";
+    int written;
+
+    if (!metrics || !drm_root || !*drm_root) return false;
+    metrics->gpu_temp_path[0] = '\0';
+    if (metrics->gpu_vendor != 0x1002U || !metrics->gpu_render_node[0])
+        return false;
+    written = snprintf(directory_path, sizeof(directory_path),
+                       "%s/%s/device/hwmon", drm_root,
+                       metrics->gpu_render_node);
+    if (written < 0 || (size_t)written >= sizeof(directory_path) ||
+        !(directory = opendir(directory_path)))
+        return false;
+    while ((entry = readdir(directory))) {
+        char path[PATH_MAX], name[64];
+        unsigned int index;
+
+        if (entry->d_name[0] == '.') continue;
+        written = snprintf(path, sizeof(path), "%s/%s/name",
+                           directory_path, entry->d_name);
+        if (written < 0 || (size_t)written >= sizeof(path) ||
+            !read_trimmed_line(path, name, sizeof(name)) ||
+            (strcmp(name, "amdgpu") && strcmp(name, "radeon")))
+            continue;
+        for (index = 1; index <= 3; ++index) {
+            char input[PATH_MAX], label[64];
+
+            written = snprintf(input, sizeof(input), "%s/%s/temp%u_input",
+                               directory_path, entry->d_name, index);
+            if (written < 0 || (size_t)written >= sizeof(input) ||
+                access(input, R_OK))
+                continue;
+            if (index == 1 && !fallback[0])
+                (void)snprintf(fallback, sizeof(fallback), "%s", input);
+            written = snprintf(path, sizeof(path), "%s/%s/temp%u_label",
+                               directory_path, entry->d_name, index);
+            if (written >= 0 && (size_t)written < sizeof(path) &&
+                read_trimmed_line(path, label, sizeof(label)) &&
+                !strcmp(label, "edge")) {
+                bool selected = store_temperature_path(metrics, input);
+
+                (void)closedir(directory);
+                return selected;
+            }
+        }
+    }
+    (void)closedir(directory);
+    return fallback[0] && store_temperature_path(metrics, fallback);
+}
+
+#ifdef FRAME_PACER_TEST
+bool frame_pacer_metrics_test_find_amd_temperature(
+    struct frame_pacer_metrics *metrics, const char *drm_root)
+{
+    return find_amd_temperature_at(metrics, drm_root);
+}
+#endif
+
+static void find_gpu_temperature(struct frame_pacer_metrics *metrics)
+{
+    (void)find_amd_temperature_at(metrics, "/sys/class/drm");
+}
 
 static void find_process_gpu(struct frame_pacer_metrics *metrics, unsigned int process_id)
 {
@@ -429,6 +529,7 @@ static void find_process_gpu(struct frame_pacer_metrics *metrics, unsigned int p
                        sizeof(metrics->gpu_pci_bus_id), "%s", fallback_pci);
         metrics->gpu_vendor = fallback_vendor;
     }
+    find_gpu_temperature(metrics);
 }
 
 static void find_cpu_temperature(struct frame_pacer_metrics *metrics)
@@ -598,6 +699,14 @@ void frame_pacer_metrics_sample(struct frame_pacer_metrics *metrics,
     if (nvml_sample.available & FRAME_PACER_NVML_GPU_TEMP) {
         snapshot->gpu_temp_celsius = nvml_sample.gpu_temp_celsius;
         snapshot->available |= FRAME_PACER_METRIC_GPU_TEMP;
+    }
+    if (!(snapshot->available & FRAME_PACER_METRIC_GPU_TEMP) &&
+        metrics->gpu_temp_path[0] &&
+        (file = fopen(metrics->gpu_temp_path, "re"))) {
+        if (fgets(line, sizeof(line), file) &&
+            parse_temperature(line, &snapshot->gpu_temp_celsius))
+            snapshot->available |= FRAME_PACER_METRIC_GPU_TEMP;
+        (void)fclose(file);
     }
     if (!(snapshot->available & FRAME_PACER_METRIC_GPU_USE) &&
         metrics->gpu_render_node[0] && now_ns &&

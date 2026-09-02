@@ -2,6 +2,8 @@
 
 ## 0.1.0-beta.2 — unreleased
 
+- AMD GPU activity now includes DRM graphics and compute engines, and AMD
+  temperature uses the selected render device's edge sensor when available.
 - Versioned Vulkan and OpenGL startup logs identify the exact loaded build.
 - Effective-configuration reports explain selected values, sources, executable
   matches, live reloads, and precise safe-default reasons.

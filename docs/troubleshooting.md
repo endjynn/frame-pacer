@@ -33,6 +33,20 @@ ls -l ~/.config/frame-pacer/frame-pacer.conf
 
 If the file is invalid or insecure, frame-pacer applies no FPS limit.
 
+## An AMD GPU value shows `N/A`
+
+GPU telemetry depends on counters and sensors exposed by the kernel driver.
+Frame-pacer uses the render device opened by the game and does not require
+extra packages or permissions. `N/A` is safe and does not affect frame pacing.
+
+When reporting the problem, include the diagnostic log and the output of:
+
+```sh
+grep '^drm-engine-' /proc/GAME_PID/fdinfo/* 2>/dev/null
+```
+
+Replace `GAME_PID` with the rendering process's numeric ID.
+
 ## A game does not start
 
 Remove frame-pacer from the launch path before investigating further:

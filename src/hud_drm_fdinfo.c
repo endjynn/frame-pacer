@@ -12,14 +12,33 @@
 #define FRAME_PACER_DRM_FDINFO_INTERVAL_NS UINT64_C(500000000)
 #define FRAME_PACER_DRM_FDINFO_MAX_CLIENTS 64U
 
+static size_t core_engine_prefix_length(const char *line)
+{
+    static const char *const prefixes[] = {
+        "drm-engine-render:",
+        "drm-engine-gfx:",
+        "drm-engine-compute:",
+    };
+    size_t index;
+
+    if (!line) return 0;
+    for (index = 0; index < sizeof(prefixes) / sizeof(prefixes[0]); ++index) {
+        size_t length = strlen(prefixes[index]);
+
+        if (!strncmp(line, prefixes[index], length)) return length;
+    }
+    return 0;
+}
+
 bool frame_pacer_drm_fdinfo_parse_render_ns(const char *line, uint64_t *value)
 {
     const char *cursor;
     char *end;
     unsigned long long parsed;
-    if (!line || !value || strncmp(line, "drm-engine-render:", 18))
-        return false;
-    cursor = line + 18;
+    size_t prefix_length = core_engine_prefix_length(line);
+
+    if (!prefix_length || !value) return false;
+    cursor = line + prefix_length;
     while (*cursor == ' ' || *cursor == '\t')
         ++cursor;
     if (!isdigit((unsigned char)*cursor))
@@ -37,6 +56,25 @@ bool frame_pacer_drm_fdinfo_parse_render_ns(const char *line, uint64_t *value)
     *value = (uint64_t)parsed;
     return true;
 }
+
+static bool accumulate_core_engine_ns(const char *line, uint64_t *total)
+{
+    uint64_t value;
+
+    if (!total || !frame_pacer_drm_fdinfo_parse_render_ns(line, &value) ||
+        UINT64_MAX - *total < value)
+        return false;
+    *total += value;
+    return true;
+}
+
+#ifdef FRAME_PACER_TEST
+bool frame_pacer_drm_fdinfo_test_accumulate_core_ns(const char *line,
+                                                     uint64_t *total)
+{
+    return accumulate_core_engine_ns(line, total);
+}
+#endif
 
 bool frame_pacer_drm_fdinfo_utilisation(uint64_t previous_render_ns, uint64_t render_ns,
                                         uint64_t elapsed_ns, unsigned int *percent)
@@ -112,12 +150,13 @@ static bool read_fdinfo(const char *directory, const char *fd_name, char *client
 {
     FILE *file;
     char path[112], line[256];
-    bool have_client = false, have_render = false;
+    bool have_client = false, have_render = false, valid = true;
     int written = snprintf(path, sizeof(path), "%sinfo/%s", directory,
                            fd_name);
 
-    if (written < 0 || (size_t)written >= sizeof(path))
+    if (!render_ns || written < 0 || (size_t)written >= sizeof(path))
         return false;
+    *render_ns = 0;
     file = fopen(path, "re");
     if (!file) return false;
     while (fgets(line, sizeof(line), file)) {
@@ -132,23 +171,31 @@ static bool read_fdinfo(const char *directory, const char *fd_name, char *client
             if (*value && client_written >= 0 &&
                 (size_t)client_written < client_size)
                 have_client = true;
-        } else if (frame_pacer_drm_fdinfo_parse_render_ns(line, render_ns)) {
+        } else if (core_engine_prefix_length(line)) {
+            if (!accumulate_core_engine_ns(line, render_ns)) {
+                valid = false;
+                break;
+            }
             have_render = true;
         }
     }
     (void)fclose(file);
-    return have_client && have_render;
+    return valid && have_client && have_render;
 }
 
-bool frame_pacer_drm_fdinfo_sample(struct frame_pacer_drm_fdinfo *state, unsigned int process_id,
-                                   const char *render_node, uint64_t now_ns, unsigned int *percent)
+static bool sample_from_root(struct frame_pacer_drm_fdinfo *state,
+                             unsigned int process_id, const char *render_node,
+                             uint64_t now_ns, unsigned int *percent,
+                             const char *proc_root)
 {
     DIR *directory;
     struct dirent *entry;
-    char directory_path[64], clients[FRAME_PACER_DRM_FDINFO_MAX_CLIENTS][32];
+    char directory_path[PATH_MAX];
+    char clients[FRAME_PACER_DRM_FDINFO_MAX_CLIENTS][32];
     unsigned int client_count = 0;
     uint64_t render_ns = 0;
-    if (!state || !process_id || !render_node || !*render_node || !percent)
+    if (!state || !process_id || !render_node || !*render_node || !percent ||
+        !proc_root || !*proc_root)
         return false;
     if (state->available && now_ns >= state->previous_sample_ns &&
         now_ns - state->previous_sample_ns < FRAME_PACER_DRM_FDINFO_INTERVAL_NS) {
@@ -157,7 +204,7 @@ bool frame_pacer_drm_fdinfo_sample(struct frame_pacer_drm_fdinfo *state, unsigne
     }
     {
         int written = snprintf(directory_path, sizeof(directory_path),
-                               "/proc/%u/fd", process_id);
+                               "%s/%u/fd", proc_root, process_id);
 
         if (written < 0 || (size_t)written >= sizeof(directory_path))
             return false;
@@ -188,3 +235,23 @@ bool frame_pacer_drm_fdinfo_sample(struct frame_pacer_drm_fdinfo *state, unsigne
         return false;
     return update_sample(state, render_ns, now_ns, percent);
 }
+
+bool frame_pacer_drm_fdinfo_sample(struct frame_pacer_drm_fdinfo *state,
+                                   unsigned int process_id,
+                                   const char *render_node, uint64_t now_ns,
+                                   unsigned int *percent)
+{
+    return sample_from_root(state, process_id, render_node, now_ns, percent,
+                            "/proc");
+}
+
+#ifdef FRAME_PACER_TEST
+bool frame_pacer_drm_fdinfo_test_sample_from_root(
+    struct frame_pacer_drm_fdinfo *state, unsigned int process_id,
+    const char *render_node, uint64_t now_ns, unsigned int *percent,
+    const char *proc_root)
+{
+    return sample_from_root(state, process_id, render_node, now_ns, percent,
+                            proc_root);
+}
+#endif

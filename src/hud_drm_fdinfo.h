@@ -13,7 +13,7 @@ struct frame_pacer_drm_fdinfo {
     bool available;
 };
 
-/* Parse the stable Linux DRM fdinfo render-engine counter. */
+/* Parse a stable Linux DRM fdinfo render, graphics, or compute counter. */
 bool frame_pacer_drm_fdinfo_parse_render_ns(const char *line, uint64_t *value);
 /* Convert successive per-process engine-time samples to a bounded percent. */
 bool frame_pacer_drm_fdinfo_utilisation(uint64_t previous_render_ns, uint64_t render_ns,
@@ -27,6 +27,11 @@ bool frame_pacer_drm_fdinfo_sample(struct frame_pacer_drm_fdinfo *, unsigned int
 bool frame_pacer_drm_fdinfo_test_update_sample(
     struct frame_pacer_drm_fdinfo *, uint64_t render_ns, uint64_t now_ns,
     unsigned int *percent);
+bool frame_pacer_drm_fdinfo_test_accumulate_core_ns(const char *, uint64_t *);
+bool frame_pacer_drm_fdinfo_test_sample_from_root(
+    struct frame_pacer_drm_fdinfo *, unsigned int process_id,
+    const char *render_node, uint64_t now_ns, unsigned int *percent,
+    const char *proc_root);
 #endif
 
 #endif

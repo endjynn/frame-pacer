@@ -9,7 +9,7 @@ with the game's rendering resolution.
 
 | Row | First value | Second value |
 | --- | --- | --- |
-| `GPU` | GPU use associated with the game | GPU temperature |
+| `GPU` | Game-associated GPU activity | GPU temperature |
 | `CPU` | Total system CPU use | CPU package temperature |
 | `THR` | Busiest game thread | Configured per-thread CPU limit |
 | `FPS` | Current frame rate | Configured FPS limit, or `OFF` |
@@ -19,7 +19,8 @@ Its percentages are measured against one logical CPU core.
 
 `N/A` means that the value is unavailable or has not yet been confirmed. This
 does not stop frame pacing. GPU and temperature availability depends on the
-driver and hardware.
+driver and hardware. AMD activity uses the game's DRM graphics and compute
+counters; AMD temperature uses that GPU's edge sensor when available.
 
 ## Hide the HUD
 

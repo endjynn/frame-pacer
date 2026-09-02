@@ -97,9 +97,13 @@ by the game.
 NVIDIA telemetry normally uses the host's NVML library. If an i386 game cannot
 load NVML directly, frame-pacer can run an embedded x86_64 helper from sealed,
 anonymous memory. The helper communicates through a private socket, creates no
-installed executable or named temporary file, and exits with the game. Other
-DRM drivers may provide game-associated engine activity through process
-`fdinfo`.
+installed executable or named temporary file, and exits with the game.
+
+DRM process `fdinfo` supplies game-associated render, graphics, and compute
+engine activity when the driver exposes those counters. For an AMD render
+device, frame-pacer reads the `edge` temperature from the hwmon provider linked
+to that device, with `temp1_input` as a compatibility fallback. It does not
+scan unrelated GPUs.
 
 Missing telemetry displays `N/A` and does not affect pacing.
 

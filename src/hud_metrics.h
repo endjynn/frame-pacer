@@ -50,6 +50,7 @@ struct frame_pacer_metrics {
      * identity.  Providers are selected from it, never from user settings. */
     char gpu_render_node[32];
     char gpu_pci_bus_id[16];
+    char gpu_temp_path[256];
     unsigned int gpu_vendor;
     unsigned int process_id;
     uint64_t nvml_retry_ns;
@@ -79,6 +80,8 @@ bool frame_pacer_metrics_test_parse_pci_bus_id(const char *, char *, size_t);
 void frame_pacer_metrics_test_set_gpu_identity(
     struct frame_pacer_metrics *, const char *render_node,
     unsigned int vendor, const char *pci_bus_id);
+bool frame_pacer_metrics_test_find_amd_temperature(
+    struct frame_pacer_metrics *, const char *drm_root);
 #endif
 
 #endif
