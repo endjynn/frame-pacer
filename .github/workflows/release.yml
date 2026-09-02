@@ -50,6 +50,12 @@ jobs:
           test "$(find build/dist -mindepth 1 -maxdepth 1 -type f | wc -l)" -eq 2
           test "$(find build/dist -mindepth 1 -maxdepth 1 ! -type f | wc -l)" -eq 0
           (cd "${archive%/*}" && sha256sum -c "${checksum##*/}")
+      - name: Generate changelog release notes
+        run: |
+          notes=build/dist/release-notes.md
+          sh .github/scripts/generate-release-notes.sh VERSION CHANGELOG.md "$notes"
+          test -f "$notes" && test ! -L "$notes"
+          test "$(wc -c < "$notes")" -le 65536
       - name: Transfer tested release files
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -57,6 +63,7 @@ jobs:
           path: |
             build/dist/*.tar.xz
             build/dist/*.tar.xz.sha256
+            build/dist/release-notes.md
           if-no-files-found: error
           compression-level: 0
           retention-days: 1
@@ -82,10 +89,13 @@ jobs:
           version=${GITHUB_REF_NAME#v}
           archive="transfer/frame-pacer-$version-linux-x86_64-multilib.tar.xz"
           checksum="$archive.sha256"
+          notes=transfer/release-notes.md
           test "$GITHUB_REF_NAME" = "v$version"
           test -f "$archive" && test ! -L "$archive"
           test -f "$checksum" && test ! -L "$checksum"
-          test "$(find transfer -mindepth 1 -maxdepth 1 -type f | wc -l)" -eq 2
+          test -f "$notes" && test ! -L "$notes"
+          test "$(wc -c < "$notes")" -le 65536
+          test "$(find transfer -mindepth 1 -maxdepth 1 -type f | wc -l)" -eq 3
           test "$(find transfer -mindepth 1 -maxdepth 1 ! -type f | wc -l)" -eq 0
           test "$(wc -c < "$archive")" -le 52428800
           test "$(wc -c < "$checksum")" -le 1024
@@ -94,13 +104,25 @@ jobs:
             "$checksum")
           actual=$(sha256sum "$archive" | cut -d ' ' -f 1)
           test -n "$recorded" && test "$recorded" = "$actual"
-          notes=$(mktemp)
-          printf '%s\n' \
-            'Compatibility: Debian 12 (glibc 2.36), GCC 12, x86_64 and i386.' \
-            > "$notes"
+          generated=$(gh api --method POST \
+            "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            -f tag_name="$GITHUB_REF_NAME" \
+            -f target_commitish="$GITHUB_SHA" --jq .body)
+          contributors=$(printf '%s\n' "$generated" | awk '
+            $0 == "## New Contributors" { copy = 1 }
+            copy && /^\*\*Full Changelog\*\*:/ { exit }
+            copy { print }
+          ')
+          full_changelog=$(printf '%s\n' "$generated" | awk \
+            '/^\*\*Full Changelog\*\*:/ { print; exit }')
+          test -n "$full_changelog"
+          if test -n "$contributors"; then
+            printf '\n%s\n' "$contributors" >> "$notes"
+          fi
+          printf '\n%s\n' "$full_changelog" >> "$notes"
+          test "$(wc -c < "$notes")" -le 131072
           prerelease=
           case "$version" in *-*) prerelease=--prerelease ;; esac
           gh release create "$GITHUB_REF_NAME" "$archive" "$checksum" \
-            --repo "$GITHUB_REPOSITORY" \
-            --verify-tag --generate-notes --notes-file "$notes" \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --notes-file "$notes" \
             --title "frame-pacer $version" $prerelease

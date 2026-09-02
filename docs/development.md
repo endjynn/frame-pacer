@@ -70,10 +70,15 @@ pinned container digest, compiler, or glibc baseline as a compatibility change.
    tag using the pseudonymous maintainer identity.
 
 Only a matching upstream tag starts the release workflow. The build job has
-read-only permissions and transfers exactly the tested archive and checksum.
-A separate write-limited job revalidates those two files and publishes them
-without checking out or executing repository code. Prerelease versions are
-marked as prereleases automatically.
+read-only permissions and transfers the tested archive, checksum, and validated
+changelog notes. A separate write-limited job revalidates those files and
+publishes the two package assets without checking out or executing repository
+code. Prerelease versions are marked as prereleases automatically.
+
+The release's `What's Changed` section comes from the matching finalized
+`CHANGELOG.md` section, so direct commits and merged pull requests are both
+covered. GitHub supplies the comparison link and a `New Contributors` section
+only when the release introduces a contributor.
 
 If a build or validation step fails, nothing is published. Correct the defect
 through a normal reviewed change and use a new version; do not replace a

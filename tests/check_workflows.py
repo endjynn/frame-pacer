@@ -88,6 +88,7 @@ def validate_ci(workflow: dict) -> None:
 
 
 def validate_release(workflow: dict) -> None:
+    text = (WORKFLOWS / "release.yml").read_text(encoding="utf-8")
     triggers = workflow.get("on")
     assert isinstance(triggers, dict) and set(triggers) == {"push"}, (
         "Release must trigger only from a tag push"
@@ -108,6 +109,15 @@ def validate_release(workflow: dict) -> None:
     publish_scripts = [step.get("run", "") for step in publish_steps if step.get("run")]
     assert any('--repo "$GITHUB_REPOSITORY"' in script for script in publish_scripts), (
         "Release publication must identify the repository without a checkout"
+    )
+    assert "generate-release-notes.sh VERSION CHANGELOG.md" in text, (
+        "Release notes must come from the finalized changelog"
+    )
+    assert "--generate-notes" not in text, (
+        "GitHub-generated changes omit direct commits"
+    )
+    assert '"## New Contributors"' in text, (
+        "Release publication must preserve GitHub's new-contributor metadata"
     )
 
 

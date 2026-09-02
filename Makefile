@@ -497,6 +497,7 @@ check-docs:
 	sh ./tests/check_markdown_links.sh
 check-workflows:
 	python3 ./tests/check_workflows.py
+	sh ./tests/test_release_notes.sh
 check-hot-path-stack:
 	CC="$(CC)" sh ./tests/check_hot_path_stack.sh
 
