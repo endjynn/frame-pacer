@@ -19,8 +19,10 @@ Its percentages are measured against one logical CPU core.
 
 `N/A` means that the value is unavailable or has not yet been confirmed. This
 does not stop frame pacing. GPU and temperature availability depends on the
-driver and hardware. AMD activity uses the game's DRM graphics and compute
-counters; AMD temperature uses that GPU's edge sensor when available.
+driver and hardware. AMD activity uses the game's DRM render, graphics, and
+compute counters without adding concurrent engine percentages together. AMD
+temperature uses that GPU's edge sensor when available. Telemetry is sampled
+in the background only while the HUD is being rendered.
 
 ## Hide the HUD
 

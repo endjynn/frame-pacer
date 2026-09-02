@@ -616,6 +616,18 @@ void frame_pacer_metrics_destroy(struct frame_pacer_metrics *metrics)
     (void)pthread_mutex_destroy(&metrics->mutex);
 }
 
+void frame_pacer_metrics_reset_utilization(struct frame_pacer_metrics *metrics)
+{
+    if (!metrics || !metrics->initialized) return;
+    (void)pthread_mutex_lock(&metrics->mutex);
+    metrics->cpu_total = 0;
+    metrics->cpu_idle = 0;
+    metrics->cpu_started = false;
+    invalidate_thread_cpu(metrics);
+    memset(&metrics->drm_fdinfo, 0, sizeof(metrics->drm_fdinfo));
+    (void)pthread_mutex_unlock(&metrics->mutex);
+}
+
 static void refresh_gpu_provider(struct frame_pacer_metrics *metrics,
                                  uint64_t now_ns)
 {

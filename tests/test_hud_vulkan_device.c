@@ -76,10 +76,10 @@ int main(void)
                hud.commands.functions[FRAME_PACER_HUD_COMMAND_QUEUE_SUBMIT]);
 
     frame_pacer_hud_vulkan_device_metrics_snapshot(&hud, 100, &snapshot);
-    assert(hud.metrics.sample_ns == 100);
-    /* A discontinuity samples immediately instead of underflowing the cadence. */
+    assert(hud.metrics.request_ns == 100);
+    /* A discontinuity requests a reset instead of underflowing the cadence. */
     frame_pacer_hud_vulkan_device_metrics_snapshot(&hud, 99, &snapshot);
-    assert(hud.metrics.sample_ns == 99);
+    assert(hud.metrics.request_ns == 99);
     frame_pacer_hud_vulkan_device_metrics_snapshot(&hud, 99, 0);
     frame_pacer_hud_vulkan_device_destroy(&hud);
     frame_pacer_hud_vulkan_device_destroy(&hud);

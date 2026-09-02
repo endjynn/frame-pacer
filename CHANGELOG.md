@@ -3,6 +3,8 @@
 ## 0.1.0-beta.2 — 2026-09-02
 
 - Added AMD GPU activity and temperature telemetry.
+- Moved HUD telemetry off presentation threads and improved per-client AMD
+  engine accounting.
 - Made troubleshooting logs clearer and less noisy.
 - Improved per-game detection for Proton collection launchers.
 

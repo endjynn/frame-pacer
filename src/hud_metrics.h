@@ -66,6 +66,8 @@ void frame_pacer_metrics_init(struct frame_pacer_metrics *,
 void frame_pacer_metrics_destroy(struct frame_pacer_metrics *);
 void frame_pacer_metrics_sample(struct frame_pacer_metrics *,
                                 struct frame_pacer_metrics_snapshot *);
+__attribute__((visibility("hidden")))
+void frame_pacer_metrics_reset_utilization(struct frame_pacer_metrics *);
 bool frame_pacer_metrics_parse_cpu(const char *line, uint64_t *total, uint64_t *idle);
 bool frame_pacer_metrics_parse_cpu_stat(const char *line, const char *key,
                                         uint64_t *value);

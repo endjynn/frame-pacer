@@ -16,7 +16,7 @@ void frame_pacer_hud_vulkan_device_init(
     if (!hud)
         return;
     memset(hud, 0, sizeof(*hud));
-    frame_pacer_hud_metrics_cache_init(&hud->metrics, 0, process_id);
+    frame_pacer_hud_metrics_cache_init(&hud->metrics, process_id);
     if (!device || !physical || !gdpa)
         return;
 

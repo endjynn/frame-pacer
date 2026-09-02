@@ -37,7 +37,9 @@ If the file is invalid or insecure, frame-pacer applies no FPS limit.
 
 GPU telemetry depends on counters and sensors exposed by the kernel driver.
 Frame-pacer uses the render device opened by the game and does not require
-extra packages or permissions. `N/A` is safe and does not affect frame pacing.
+extra packages or permissions. The first background sample establishes
+counter baselines, so activity can briefly show `N/A` when the HUD appears or
+returns after a pause. `N/A` is safe and does not affect frame pacing.
 
 When reporting the problem, include the diagnostic log and the output of:
 

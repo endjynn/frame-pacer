@@ -94,16 +94,24 @@ CPU use comes from `/proc/stat`, and CPU temperature uses a suitable hwmon
 sensor when available. GPU selection starts with the DRM render device opened
 by the game.
 
+Telemetry providers and filesystem sampling run on a request-driven worker.
+The worker starts only after the HUD first requests telemetry, samples at most
+once per second, and sleeps when the HUD is not rendering. Presentation threads
+only copy the latest completed snapshot.
+
 NVIDIA telemetry normally uses the host's NVML library. If an i386 game cannot
 load NVML directly, frame-pacer can run an embedded x86_64 helper from sealed,
 anonymous memory. The helper communicates through a private socket, creates no
 installed executable or named temporary file, and exits with the game.
 
 DRM process `fdinfo` supplies game-associated render, graphics, and compute
-engine activity when the driver exposes those counters. For an AMD render
-device, frame-pacer reads the `edge` temperature from the hwmon provider linked
-to that device, with `temp1_input` as a compatibility fallback. It does not
-scan unrelated GPUs.
+engine activity when the driver exposes those counters. Descriptors are
+deduplicated by DRM client ID, and temporary counter regressions retain their
+last valid high-water mark. Each engine class is calculated independently and
+the busiest class is displayed, avoiding double counting concurrent engines.
+For an AMD render device, frame-pacer reads the `edge` temperature from the
+hwmon provider linked to that device, with `temp1_input` as a compatibility
+fallback. It does not scan unrelated GPUs.
 
 Missing telemetry displays `N/A` and does not affect pacing.
 

@@ -271,6 +271,11 @@ build/benchmark-gl-present: tests/benchmark_gl_present.c build/x86_64/libGL.so.1
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -o $@ $< -Lbuild/x86_64 \
 		-Wl,-rpath,$(abspath build/x86_64) -l:libGL.so.1
+build/benchmark-hud-metrics-cache: tests/benchmark_hud_metrics_cache.c src/hud_metrics_cache.c src/hud_metrics_cache.h src/hud_metrics.c src/hud_metrics.h $(NVML_SRC) src/hud_drm_fdinfo.c src/hud_drm_fdinfo.h
+	mkdir -p $(@D)
+	$(CC) $(BUILD_CFLAGS) -DFRAME_PACER_TEST -Isrc -o $@ \
+		tests/benchmark_hud_metrics_cache.c src/hud_metrics_cache.c \
+		src/hud_metrics.c $(NVML_SRC) src/hud_drm_fdinfo.c -ldl -pthread
 build/test_pacer_queue: tests/test_pacer_queue.c src/pacer_queue.c src/pacer_queue.h
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_pacer_queue.c src/pacer_queue.c
@@ -348,7 +353,7 @@ build/test_hud_metrics: tests/test_hud_metrics.c src/hud_metrics.c src/hud_metri
 	$(CC) $(BUILD_CFLAGS) -DFRAME_PACER_TEST -Isrc -o $@ tests/test_hud_metrics.c src/hud_metrics.c $(NVML_SRC) src/hud_drm_fdinfo.c -ldl -pthread
 build/test_hud_metrics_cache: tests/test_hud_metrics_cache.c src/hud_metrics_cache.c src/hud_metrics_cache.h src/hud_metrics.c $(NVML_SRC) src/hud_drm_fdinfo.c
 	mkdir -p $(@D)
-	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_metrics_cache.c src/hud_metrics_cache.c src/hud_metrics.c $(NVML_SRC) src/hud_drm_fdinfo.c -ldl -pthread
+	$(CC) $(BUILD_CFLAGS) -DFRAME_PACER_TEST -Isrc -o $@ tests/test_hud_metrics_cache.c src/hud_metrics_cache.c src/hud_metrics.c $(NVML_SRC) src/hud_drm_fdinfo.c -ldl -pthread
 build/test_hud_text: tests/test_hud_text.c src/hud_text.c src/hud_text.h src/hud_metrics.h src/pacer_limit.h
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_text.c src/hud_text.c
@@ -502,7 +507,7 @@ check-hot-path-stack:
 	CC="$(CC)" sh ./tests/check_hot_path_stack.sh
 
 benchmark-performance: build/benchmark-pacer-limit build/benchmark-gl-present \
-	build/x86_64/libframe_pacer_gl.so
+	build/benchmark-hud-metrics-cache build/x86_64/libframe_pacer_gl.so
 	sh ./tests/benchmark_performance.sh
 
 check: all hud-shaders $(GL_ARTIFACTS) $(GL_RUNTIME_ARTIFACTS) \

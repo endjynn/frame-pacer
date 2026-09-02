@@ -128,7 +128,6 @@ static void temperature_parser(void)
 static void drm_fdinfo_parser(void)
 {
     uint64_t value;
-    uint64_t total;
     unsigned int percent;
     assert(frame_pacer_drm_fdinfo_parse_render_ns("drm-engine-render:\t15514652816 ns\n", &value));
     assert(value == UINT64_C(15514652816));
@@ -148,16 +147,10 @@ static void drm_fdinfo_parser(void)
     assert(!frame_pacer_drm_fdinfo_parse_render_ns("drm-engine-render:\t-1 ns\n", &value));
     assert(!frame_pacer_drm_fdinfo_parse_render_ns(
         "drm-engine-render:\t1 ns\ntrailing", &value));
-    total = 0;
-    assert(frame_pacer_drm_fdinfo_test_accumulate_core_ns(
-        "drm-engine-gfx: 100 ns\n", &total));
-    assert(frame_pacer_drm_fdinfo_test_accumulate_core_ns(
-        "drm-engine-compute: 50 ns\n", &total));
-    assert(total == 150);
-    total = UINT64_MAX - 5;
-    assert(!frame_pacer_drm_fdinfo_test_accumulate_core_ns(
-        "drm-engine-gfx: 6 ns\n", &total));
-    assert(total == UINT64_MAX - 5);
+    assert(!frame_pacer_drm_fdinfo_parse_render_ns(
+        "drm-engine-render:\t+1 ns\n", &value));
+    assert(!frame_pacer_drm_fdinfo_parse_render_ns(
+        "drm-engine-render:\t1 ns\n", 0));
     assert(frame_pacer_drm_fdinfo_utilisation(100, 150, 200, &percent) && percent == 25);
     assert(frame_pacer_drm_fdinfo_utilisation(100, 500, 200, &percent) && percent == 100);
     assert(!frame_pacer_drm_fdinfo_utilisation(500, 100, 200, &percent));
@@ -165,23 +158,12 @@ static void drm_fdinfo_parser(void)
                                                &percent) && percent == 100);
     assert(frame_pacer_drm_fdinfo_utilisation(0, 1, UINT64_MAX, &percent) &&
            percent == 0);
-    {
-        struct frame_pacer_drm_fdinfo state = {0};
-
-        assert(!frame_pacer_drm_fdinfo_test_update_sample(&state, 100, 1000,
-                                                           &percent));
-        assert(frame_pacer_drm_fdinfo_test_update_sample(&state, 150, 1200,
-                                                          &percent));
-        assert(percent == 25 && state.available);
-        assert(!frame_pacer_drm_fdinfo_test_update_sample(&state, 10, 1400,
-                                                           &percent));
-        assert(!state.available && state.cached_use_percent == 0);
-    }
 }
 
 static void drm_fdinfo_amd_fixture(void)
 {
     struct frame_pacer_drm_fdinfo state = {0};
+    struct frame_pacer_drm_client_state committed[FRAME_PACER_DRM_FDINFO_MAX_CLIENTS];
     char root[] = "/tmp/frame-pacer-proc-XXXXXX";
     unsigned int percent;
 
@@ -209,29 +191,170 @@ static void drm_fdinfo_amd_fixture(void)
 
     fixture_file(root, "42/fdinfo/3",
                  "drm-client-id:\t7\n"
-                 "drm-engine-gfx:\t200 ns\n"
-                 "drm-engine-compute:\t100 ns\n");
+                 "drm-engine-gfx:\t500 ns\n"
+                 "drm-engine-compute:\t250 ns\n");
     fixture_file(root, "42/fdinfo/4",
                  "drm-client-id:\t7\n"
-                 "drm-engine-gfx:\t200 ns\n"
-                 "drm-engine-compute:\t100 ns\n");
+                 "drm-engine-gfx:\t450 ns\n"
+                 "drm-engine-compute:\t200 ns\n");
     fixture_file(root, "42/fdinfo/5",
                  "drm-client-id:\t8\n"
-                 "drm-engine-gfx:\t75 ns\n");
+                 "drm-engine-gfx:\t125 ns\n");
     assert(frame_pacer_drm_fdinfo_test_sample_from_root(
-        &state, 42, "renderD128", 1400, &percent, root));
+        &state, 42, "renderD128", 2000, &percent, root));
     assert(percent == 50);
 
+    fixture_file(root, "42/fdinfo/3",
+                 "drm-client-id:\t7\n"
+                 "drm-engine-gfx:\t600 ns\n");
+    fixture_file(root, "42/fdinfo/4",
+                 "drm-client-id:\t7\n"
+                 "drm-engine-gfx:\t590 ns\n");
     fixture_remove(root, "42/fdinfo/5", false);
+    fixture_remove(root, "42/fd/5", false);
+    fixture_symlink(root, "42/fd/6", "/dev/dri/renderD128");
+    fixture_file(root, "42/fdinfo/6",
+                 "drm-client-id:\t9\n"
+                 "drm-engine-gfx:\t10000 ns\n");
+    assert(frame_pacer_drm_fdinfo_test_sample_from_root(
+        &state, 42, "renderD128", 3000, &percent, root));
+    assert(percent == 10);
+
+    fixture_file(root, "42/fdinfo/3",
+                 "drm-client-id:\t7\n"
+                 "drm-engine-gfx:\t700 ns\n"
+                 "drm-engine-compute:\t1000 ns\n");
+    fixture_file(root, "42/fdinfo/4",
+                 "drm-client-id:\t7\n"
+                 "drm-engine-gfx:\t690 ns\n"
+                 "drm-engine-compute:\t900 ns\n");
+    assert(frame_pacer_drm_fdinfo_test_sample_from_root(
+        &state, 42, "renderD128", 4000, &percent, root));
+    assert(percent == 10);
+
+    fixture_remove(root, "42/fdinfo/6", false);
+    fixture_remove(root, "42/fd/6", false);
+    fixture_file(root, "42/fdinfo/3",
+                 "drm-client-id:\t7\n"
+                 "drm-engine-gfx:\t650 ns\n"
+                 "drm-engine-compute:\t1100 ns\n");
+    assert(frame_pacer_drm_fdinfo_test_sample_from_root(
+        &state, 42, "renderD128", 5000, &percent, root));
+    assert(percent == 10);
+
+    fixture_file(root, "42/fdinfo/3",
+                 "drm-client-id:\t7\n"
+                 "drm-engine-gfx:\t750 ns\n"
+                 "drm-engine-compute:\t1200 ns\n");
+    assert(frame_pacer_drm_fdinfo_test_sample_from_root(
+        &state, 42, "renderD128", 6000, &percent, root));
+    assert(percent == 10);
+
+    memcpy(committed, state.clients, sizeof(committed));
+    fixture_file(root, "42/fdinfo/3",
+                 "drm-client-id:\tinvalid\n"
+                 "drm-engine-gfx:\t800 ns\n");
+    assert(!frame_pacer_drm_fdinfo_test_sample_from_root(
+        &state, 42, "renderD128", 7000, &percent, root));
+    assert(state.previous_sample_ns == 6000);
+    assert(!memcmp(committed, state.clients, sizeof(committed)));
+
+    fixture_file(root, "42/fdinfo/3",
+                 "drm-client-id:\t18446744073709551616\n"
+                 "drm-engine-gfx:\t800 ns\n");
+    assert(!frame_pacer_drm_fdinfo_test_sample_from_root(
+        &state, 42, "renderD128", 7500, &percent, root));
+    assert(state.previous_sample_ns == 6000);
+    assert(!memcmp(committed, state.clients, sizeof(committed)));
+
+    fixture_file(root, "42/fdinfo/3",
+                 "drm-client-id:\t7\n"
+                 "drm-engine-gfx:\t850 ns\n"
+                 "drm-engine-compute:\t1400 ns\n");
+    assert(frame_pacer_drm_fdinfo_test_sample_from_root(
+        &state, 42, "renderD128", 8000, &percent, root));
+    assert(percent == 10);
+
     fixture_remove(root, "42/fdinfo/4", false);
     fixture_remove(root, "42/fdinfo/3", false);
-    fixture_remove(root, "42/fd/5", false);
     fixture_remove(root, "42/fd/4", false);
     fixture_remove(root, "42/fd/3", false);
+    assert(!frame_pacer_drm_fdinfo_test_sample_from_root(
+        &state, 42, "renderD128", 9000, &percent, root));
+    assert(state.started && !state.clients[0].used);
     fixture_remove(root, "42/fdinfo", true);
     fixture_remove(root, "42/fd", true);
     fixture_remove(root, "42", true);
     assert(!rmdir(root));
+}
+
+static void drm_fdinfo_limits_are_transactional(void)
+{
+    struct frame_pacer_drm_fdinfo state = {0};
+    char root[] = "/tmp/frame-pacer-proc-limits-XXXXXX";
+    char overflow_root[] = "/tmp/frame-pacer-proc-overflow-XXXXXX";
+    char suffix[64], contents[128];
+    unsigned int index, percent;
+
+    assert(mkdtemp(root));
+    fixture_directory(root, "43");
+    fixture_directory(root, "43/fd");
+    fixture_directory(root, "43/fdinfo");
+    for (index = 0; index <= FRAME_PACER_DRM_FDINFO_MAX_CLIENTS; ++index) {
+        assert(snprintf(suffix, sizeof(suffix), "43/fd/%u", index + 3) > 0);
+        fixture_symlink(root, suffix, "/dev/dri/renderD128");
+        assert(snprintf(suffix, sizeof(suffix), "43/fdinfo/%u", index + 3) > 0);
+        assert(snprintf(contents, sizeof(contents),
+                        "drm-client-id: %u\ndrm-engine-gfx: 0 ns\n",
+                        index + 1) > 0);
+        fixture_file(root, suffix, contents);
+    }
+    assert(!frame_pacer_drm_fdinfo_test_sample_from_root(
+        &state, 43, "renderD128", 1000, &percent, root));
+    assert(!state.started);
+    for (index = 0; index <= FRAME_PACER_DRM_FDINFO_MAX_CLIENTS; ++index) {
+        assert(snprintf(suffix, sizeof(suffix), "43/fdinfo/%u", index + 3) > 0);
+        fixture_remove(root, suffix, false);
+        assert(snprintf(suffix, sizeof(suffix), "43/fd/%u", index + 3) > 0);
+        fixture_remove(root, suffix, false);
+    }
+    fixture_remove(root, "43/fdinfo", true);
+    fixture_remove(root, "43/fd", true);
+    fixture_remove(root, "43", true);
+    assert(!rmdir(root));
+
+    memset(&state, 0, sizeof(state));
+    assert(mkdtemp(overflow_root));
+    fixture_directory(overflow_root, "44");
+    fixture_directory(overflow_root, "44/fd");
+    fixture_directory(overflow_root, "44/fdinfo");
+    fixture_symlink(overflow_root, "44/fd/3", "/dev/dri/renderD128");
+    fixture_symlink(overflow_root, "44/fd/4", "/dev/dri/renderD128");
+    fixture_file(overflow_root, "44/fdinfo/3",
+                 "drm-client-id: 1\ndrm-engine-gfx: 0 ns\n");
+    fixture_file(overflow_root, "44/fdinfo/4",
+                 "drm-client-id: 2\ndrm-engine-gfx: 0 ns\n");
+    assert(!frame_pacer_drm_fdinfo_test_sample_from_root(
+        &state, 44, "renderD128", 1000, &percent, overflow_root));
+    assert(state.started && state.previous_sample_ns == 1000);
+    fixture_file(overflow_root, "44/fdinfo/3",
+                 "drm-client-id: 1\n"
+                 "drm-engine-gfx: 18446744073709551615 ns\n");
+    fixture_file(overflow_root, "44/fdinfo/4",
+                 "drm-client-id: 2\n"
+                 "drm-engine-gfx: 18446744073709551615 ns\n");
+    assert(!frame_pacer_drm_fdinfo_test_sample_from_root(
+        &state, 44, "renderD128", 2000, &percent, overflow_root));
+    assert(state.previous_sample_ns == 1000);
+    assert(state.clients[0].engines[1].high_water_ns == 0);
+    fixture_remove(overflow_root, "44/fdinfo/4", false);
+    fixture_remove(overflow_root, "44/fdinfo/3", false);
+    fixture_remove(overflow_root, "44/fd/4", false);
+    fixture_remove(overflow_root, "44/fd/3", false);
+    fixture_remove(overflow_root, "44/fdinfo", true);
+    fixture_remove(overflow_root, "44/fd", true);
+    fixture_remove(overflow_root, "44", true);
+    assert(!rmdir(overflow_root));
 }
 
 static void amd_temperature_fixture(void)
@@ -326,6 +449,36 @@ static void vanished_thread_slots_are_reusable(void)
     assert(metrics.thread_cpu[1].started && metrics.thread_cpu[1].tid == 11);
 }
 
+static void utilization_reset_preserves_provider_identity(void)
+{
+    struct frame_pacer_metrics metrics;
+
+    frame_pacer_metrics_init(&metrics, 0, 0);
+    metrics.cpu_total = 100;
+    metrics.cpu_idle = 50;
+    metrics.cpu_started = true;
+    metrics.thread_cpu[0] = (struct frame_pacer_thread_cpu_sample){
+        .tid = 10, .usage_usec = 20, .sample_ns = 30, .started = true,
+    };
+    metrics.thread_cpu_sample_ns = 30;
+    metrics.thread_cpu_available = true;
+    metrics.drm_fdinfo.started = true;
+    metrics.drm_fdinfo.clients[0].used = true;
+    assert(snprintf(metrics.gpu_render_node,
+                    sizeof(metrics.gpu_render_node), "renderD128") > 0);
+    assert(snprintf(metrics.gpu_temp_path,
+                    sizeof(metrics.gpu_temp_path), "/sensor/path") > 0);
+
+    frame_pacer_metrics_reset_utilization(&metrics);
+    assert(!metrics.cpu_started && !metrics.cpu_total && !metrics.cpu_idle);
+    assert(!metrics.thread_cpu[0].started &&
+           !metrics.thread_cpu_sample_ns && !metrics.thread_cpu_available);
+    assert(!metrics.drm_fdinfo.started && !metrics.drm_fdinfo.clients[0].used);
+    assert(!strcmp(metrics.gpu_render_node, "renderD128"));
+    assert(!strcmp(metrics.gpu_temp_path, "/sensor/path"));
+    frame_pacer_metrics_destroy(&metrics);
+}
+
 static void nvml_backend(void)
 {
     struct frame_pacer_metrics metrics;
@@ -391,8 +544,10 @@ int main(void)
     temperature_parser();
     drm_fdinfo_parser();
     drm_fdinfo_amd_fixture();
+    drm_fdinfo_limits_are_transactional();
     amd_temperature_fixture();
     vanished_thread_slots_are_reusable();
+    utilization_reset_preserves_provider_identity();
     nvml_backend();
     unavailable_is_safe();
     incomplete_nvml_is_not_shutdown_without_init();

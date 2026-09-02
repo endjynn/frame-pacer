@@ -135,13 +135,12 @@ static void init(void)
     backend_initialized = true;
 }
 
-/* Metrics loading calls dlopen/dlsym.  It must run only after init_once has
- * completed, otherwise this interposer can recurse into dlsym and wait on its
- * own in-progress once-control. */
+/* The cache worker may load metrics providers with dlopen/dlsym. Create it only
+ * after init_once has completed so provider loading cannot recurse into the
+ * interposer's in-progress once-control. */
 static void init_metrics(void)
 {
-    frame_pacer_hud_metrics_cache_init(&metrics_, 0,
-                                       (unsigned int)getpid());
+    frame_pacer_hud_metrics_cache_init(&metrics_, (unsigned int)getpid());
     metrics_initialized = true;
 }
 

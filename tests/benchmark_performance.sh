@@ -13,6 +13,8 @@ chmod 600 "$state/frame-pacer/frame-pacer.conf"
 
 echo 'Configuration hot paths:'
 "$root/build/benchmark-pacer-limit"
+echo 'HUD metrics cache, idle and while telemetry sampling is blocked:'
+"$root/build/benchmark-hud-metrics-cache"
 echo 'GLX presentation path, uncapped with HUD and logging disabled:'
 XDG_CONFIG_HOME="$state" XDG_STATE_HOME="$state" \
     LD_PRELOAD="$root/build/x86_64/libframe_pacer_gl.so" \
