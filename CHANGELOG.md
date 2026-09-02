@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0-beta.2 — unreleased
+## 0.1.0-beta.2 — 2026-09-02
 
 - AMD GPU activity now includes DRM graphics and compute engines, and AMD
   temperature uses the selected render device's edge sensor when available.
