@@ -50,6 +50,7 @@ struct frame_pacer_vulkan_queue {
     uint32_t family;
     VkQueueFlags flags;
     struct frame_pacer_queue_state pacer;
+    bool hud_unavailable_reported;
     struct frame_pacer_vulkan_queue *next;
 };
 

@@ -2,7 +2,7 @@
 set -eu
 
 root=$(pwd -P)
-version=$(cat VERSION)
+version=$(sh packaging/read-version.sh VERSION)
 package="frame-pacer-$version-linux-x86_64-multilib"
 archive="$root/build/dist/$package.tar.xz"
 checksum="$archive.sha256"
@@ -157,10 +157,48 @@ smoke_stage="$test_root/smoke"
 smoke_prefix=/opt/frame-pacer-beta
 smoke_runtime="$smoke_stage$smoke_prefix/lib/frame-pacer"
 DESTDIR="$smoke_stage" PREFIX="$smoke_prefix" "$release/install.sh"
-LD_PRELOAD="$smoke_runtime/lib/libframe_pacer_gl_shim.so" \
-    ./build/test-gl-shim-noop
-LD_PRELOAD="$smoke_runtime/lib32/libframe_pacer_gl_shim.so" \
-    ./build/test-gl-shim-noop-i386
+smoke_config="$test_root/smoke-config/frame-pacer"
+mkdir -p "$smoke_config"
+printf 'global_fps_limit = 999\nhud = on\n' > "$smoke_config/frame-pacer.conf"
+chmod 600 "$smoke_config/frame-pacer.conf"
+for architecture in x86_64 i386
+do
+    case "$architecture" in
+        x86_64)
+            gl_directory=lib
+            gl_probe=./build/test-gl-pacer
+            vulkan_probe=./build/smoke
+            ;;
+        i386)
+            gl_directory=lib32
+            gl_probe=./build/test-gl-pacer-i386
+            vulkan_probe=./build/smoke-i386
+            ;;
+    esac
+    gl_state="$test_root/staged-gl-$architecture"
+    mkdir -p "$gl_state"
+    XDG_CONFIG_HOME="$test_root/smoke-config" XDG_STATE_HOME="$gl_state" \
+        LD_LIBRARY_PATH="$root/build/$architecture" FRAME_PACER_LOG=1 \
+        LD_PRELOAD="$smoke_runtime/$gl_directory/libframe_pacer_gl_shim.so" \
+        "$gl_probe"
+    gl_log=$(find "$gl_state/frame-pacer" -type f \
+        -name 'frame-pacer-gl-[0-9]*.log' -print -quit)
+    grep -q "startup version=$version backend=opengl" "$gl_log" ||
+        fail "$architecture staged OpenGL runtime reports the wrong version"
+
+    layer_directory="$test_root/staged-vulkan-$architecture/layer"
+    vulkan_state="$test_root/staged-vulkan-$architecture/state"
+    mkdir -p "$layer_directory" "$vulkan_state"
+    sed "s|\"../libVkLayer_frame_pacer.so\"|\"$smoke_runtime/$architecture/libVkLayer_frame_pacer.so\"|" \
+        VkLayer_frame_pacer.json.in > "$layer_directory/VkLayer_frame_pacer.json"
+    XDG_CONFIG_HOME="$test_root/smoke-config" XDG_STATE_HOME="$vulkan_state" \
+        FRAME_PACER_LOG=1 VK_LAYER_PATH="$layer_directory" \
+        VK_INSTANCE_LAYERS=VK_LAYER_ENDJYNN_frame_pacer "$vulkan_probe"
+    if find "$vulkan_state" -type f -name 'frame-pacer-[0-9]*.log' \
+        -print -quit | grep -q .; then
+        fail "$architecture staged Vulkan load-only probe created a log"
+    fi
+done
 DESTDIR="$smoke_stage" PREFIX="$smoke_prefix" "$release/uninstall.sh"
 
 printf 'Release package tests passed\n'

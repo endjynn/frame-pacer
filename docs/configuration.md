@@ -98,9 +98,11 @@ Each section needs an `executable` and an `fps_limit`:
 - Games without a matching section use `global_fps_limit`, or remain uncapped
   when it is `off`.
 
-For Proton launchers that hand rendering to another process, frame-pacer can
-also match the configured Windows executable in the game's same-user parent
-process chain.
+For Proton games, frame-pacer identifies the mapped Windows game executable
+even when Wine clears or retains a launcher's command line. If a launcher hands
+off to a different game executable, a rule for that selected game takes
+priority. A launcher rule can still act as a collection-wide fallback through
+the same-user parent process chain.
 
 ## Optional CPU thread limit
 

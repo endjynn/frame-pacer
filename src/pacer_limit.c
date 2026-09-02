@@ -6,11 +6,50 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <stddef.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+struct parsed_rule {
+    char section[FRAME_PACER_EXECUTABLE_MAX];
+    char executable[FRAME_PACER_EXECUTABLE_MAX];
+    size_t header_line;
+    uint32_t fps;
+    uint32_t quota;
+    int priority;
+    bool has_executable;
+    bool has_fps;
+    bool has_quota;
+    bool quota_enabled;
+};
+
+struct parse_state {
+    struct frame_pacer_effective_config result;
+    struct parsed_rule rule;
+    char selected_section[FRAME_PACER_EXECUTABLE_MAX];
+    uint32_t selected_fps;
+    uint32_t selected_quota;
+    unsigned int rule_count;
+    int selected_priority;
+    bool selected_quota_enabled;
+    bool selected_has_quota;
+    bool selected_fps_off;
+    bool global_present;
+    bool global_off;
+    bool hud_present;
+    bool in_rule;
+};
+
+static void set_failure(struct frame_pacer_effective_config *result,
+                        enum frame_pacer_config_status status,
+                        enum frame_pacer_config_reason reason, size_t line)
+{
+    result->status = status;
+    result->reason = reason;
+    result->error_line = line;
+}
 
 static void set_path(struct frame_pacer_limit *limit)
 {
@@ -95,8 +134,7 @@ static ssize_t read_command(pid_t process_id, char command[FRAME_PACER_EXECUTABL
     int fd;
     int written;
 
-    written = snprintf(path, sizeof(path), "/proc/%ld/cmdline",
-                       (long)process_id);
+    written = snprintf(path, sizeof(path), "/proc/%ld/cmdline", (long)process_id);
     if (written < 0 || (size_t)written >= sizeof(path)) return -1;
     fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
     if (fd < 0) return -1;
@@ -113,6 +151,67 @@ static ssize_t read_command(pid_t process_id, char command[FRAME_PACER_EXECUTABL
     }
     (void)close(fd);
     return bytes;
+}
+
+static const char *next_maps_field(const char *cursor, const char *end)
+{
+    while (cursor < end && isspace((unsigned char)*cursor)) ++cursor;
+    while (cursor < end && !isspace((unsigned char)*cursor)) ++cursor;
+    return cursor;
+}
+
+static bool mapped_executable_path(const char *line, size_t length,
+                                   const char **path, size_t *path_length)
+{
+    const char *cursor = line, *end = line + length;
+    const char *offset_begin, *offset_end;
+
+    cursor = next_maps_field(cursor, end); /* address */
+    cursor = next_maps_field(cursor, end); /* permissions */
+    while (cursor < end && isspace((unsigned char)*cursor)) ++cursor;
+    offset_begin = cursor;
+    offset_end = next_maps_field(cursor, end);
+    if (offset_begin == offset_end) return false;
+    for (cursor = offset_begin; cursor < offset_end; ++cursor)
+        if (*cursor != '0') return false;
+    cursor = next_maps_field(offset_end, end); /* device */
+    cursor = next_maps_field(cursor, end); /* inode */
+    while (cursor < end && isspace((unsigned char)*cursor)) ++cursor;
+    while (end > cursor && (end[-1] == '\n' || end[-1] == '\r')) --end;
+    if (cursor == end || *cursor != '/' || (size_t)(end - cursor) < 4U ||
+        strncasecmp(end - 4, ".exe", 4))
+        return false;
+    *path = cursor;
+    *path_length = (size_t)(end - cursor);
+    return true;
+}
+
+static void add_mapped_executable_candidate(struct frame_pacer_limit *limit)
+{
+    const char *maps_path = "/proc/self/maps";
+    char *line = 0;
+    size_t capacity = 0;
+    FILE *maps;
+
+#ifdef FRAME_PACER_TEST
+    {
+        const char *test_path = getenv("FRAME_PACER_TEST_PROC_MAPS");
+        if (test_path && *test_path) maps_path = test_path;
+    }
+#endif
+    maps = fopen(maps_path, "r");
+    if (!maps) return;
+    while (getline(&line, &capacity, maps) >= 0) {
+        const char *path;
+        size_t path_length;
+
+        if (!mapped_executable_path(line, strlen(line), &path, &path_length))
+            continue;
+        add_executable_candidate(limit, path, path_length);
+        break;
+    }
+    free(line);
+    (void)fclose(maps);
 }
 
 static pid_t parent_process_id(pid_t process_id)
@@ -160,6 +259,9 @@ static void set_executable_candidates(struct frame_pacer_limit *limit)
     unsigned int depth;
     ssize_t bytes;
 
+    /* Wine may clear or retain the launcher's command line after creating a
+     * child game process.  Its mapped PE image remains authoritative. */
+    add_mapped_executable_candidate(limit);
     bytes = read_command(process_id, command);
     if (bytes > 0) add_command_candidates(limit, command, (size_t)bytes, true);
     for (depth = 0; depth < 8; ++depth) {
@@ -173,16 +275,34 @@ static void set_executable_candidates(struct frame_pacer_limit *limit)
                        limit->executable_candidates[0]);
 }
 
+static void effective_defaults(const struct frame_pacer_limit *limit,
+                               struct frame_pacer_effective_config *result)
+{
+    memset(result, 0, sizeof(*result));
+    result->status = FRAME_PACER_CONFIG_UNREADABLE;
+    result->reason = FRAME_PACER_REASON_CONFIG_PATH_UNAVAILABLE;
+    result->fps_source = FRAME_PACER_SOURCE_DEFAULT;
+    result->hud_enabled = true;
+    result->hud_source = FRAME_PACER_SOURCE_DEFAULT;
+    result->thread_cpu_source = FRAME_PACER_SOURCE_DEFAULT;
+    if (limit->reporting_enabled)
+        (void)snprintf(result->renderer, sizeof(result->renderer), "%s",
+                       limit->executable);
+}
+
 void frame_pacer_limit_init(struct frame_pacer_limit *limit)
 {
     if (!limit) return;
     memset(limit, 0, sizeof(*limit));
     atomic_init(&limit->last_check_ns, 0);
     atomic_init(&limit->fps, FRAME_PACER_FPS_LIMIT_OFF);
+    atomic_init(&limit->thread_cpu_quota, 0);
+    atomic_init(&limit->hud_enabled, true);
+    atomic_init(&limit->revision, 0);
     if (pthread_mutex_init(&limit->mutex, 0)) return;
-    limit->hud_enabled = true;
     set_path(limit);
     set_executable_candidates(limit);
+    effective_defaults(limit, &limit->effective);
     limit->initialized = true;
 }
 
@@ -190,6 +310,9 @@ void frame_pacer_limit_destroy(struct frame_pacer_limit *limit)
 {
     if (limit && limit->initialized) {
         limit->initialized = false;
+        free(limit->config_buffer);
+        limit->config_buffer = 0;
+        limit->config_buffer_capacity = 0;
         (void)pthread_mutex_destroy(&limit->mutex);
     }
 }
@@ -219,12 +342,15 @@ static bool parse_fps(const char *begin, const char *end, uint32_t *fps)
     return true;
 }
 
-static bool parse_fps_limit(const char *begin, const char *end, uint32_t *fps)
+static bool parse_fps_limit(const char *begin, const char *end, uint32_t *fps,
+                            bool *explicit_off)
 {
     if ((size_t)(end - begin) == 3 && !memcmp(begin, "off", 3)) {
         *fps = FRAME_PACER_FPS_LIMIT_OFF;
+        *explicit_off = true;
         return true;
     }
+    *explicit_off = false;
     return parse_fps(begin, end, fps);
 }
 
@@ -267,135 +393,258 @@ static int executable_match_priority(const struct frame_pacer_limit *limit,
 {
     unsigned int index;
 
-    for (index = 0; limit && index < limit->executable_candidate_count; ++index)
+    for (index = 0; index < limit->executable_candidate_count; ++index)
         if (same_executable(executable, limit->executable_candidates[index])) return (int)index;
     return -1;
 }
 
-static bool finish_rule(bool in_rule, bool has_executable, bool has_fps)
+static bool copy_value(char *destination, size_t capacity,
+                       const char *begin, const char *end)
 {
-    return !in_rule || (has_executable && has_fps);
+    size_t length = (size_t)(end - begin);
+
+    if (!length || length >= capacity) return false;
+    memcpy(destination, begin, length);
+    destination[length] = '\0';
+    return true;
 }
 
-static bool apply_rule(bool in_rule, bool has_executable, bool has_fps,
-                       int rule_priority, uint32_t rule_fps, bool rule_quota_enabled,
-                       uint32_t rule_quota, int *matched_priority, uint32_t *fps,
-                       bool *quota_enabled, uint32_t *quota)
+static bool finish_rule(struct parse_state *state,
+                        const struct frame_pacer_limit *limit)
 {
-    if (!finish_rule(in_rule, has_executable, has_fps)) return false;
-    if (rule_priority < 0) return true;
-    if (*matched_priority == rule_priority) return false;
-    if (*matched_priority < 0 || rule_priority < *matched_priority) {
-        *fps = rule_fps;
-        *quota_enabled = rule_quota_enabled;
-        *quota = rule_quota;
-        *matched_priority = rule_priority;
+    struct parsed_rule *rule = &state->rule;
+
+    if (!state->in_rule) return true;
+    if (!rule->has_executable || !rule->has_fps) {
+        set_failure(&state->result, FRAME_PACER_CONFIG_MALFORMED,
+                    FRAME_PACER_REASON_INCOMPLETE_RULE, rule->header_line);
+        return false;
+    }
+    ++state->rule_count;
+    if (rule->priority < 0) return true;
+    if (state->selected_priority == rule->priority) {
+        set_failure(&state->result, FRAME_PACER_CONFIG_MALFORMED,
+                    FRAME_PACER_REASON_DUPLICATE_MATCHING_RULE, rule->header_line);
+        return false;
+    }
+    if (state->selected_priority < 0 || rule->priority < state->selected_priority) {
+        state->selected_priority = rule->priority;
+        state->selected_fps = rule->fps;
+        state->selected_fps_off = rule->fps == FRAME_PACER_FPS_LIMIT_OFF;
+        state->selected_quota_enabled = rule->quota_enabled;
+        state->selected_quota = rule->quota;
+        state->selected_has_quota = rule->has_quota;
+        if (limit->reporting_enabled)
+            (void)snprintf(state->selected_section,
+                           sizeof(state->selected_section), "%s", rule->section);
     }
     return true;
 }
 
-static bool parse_limit(const char *text, const struct frame_pacer_limit *limit, uint32_t *fps,
-                        bool *quota_enabled, uint32_t *quota, bool *hud_enabled)
+static bool valid_bytes(const char *text, size_t length,
+                        struct frame_pacer_effective_config *result)
 {
-    const char *line = text;
-    bool has_global = false, in_rule = false, has_executable = false, has_fps = false;
-    bool has_hud = false, has_quota = false, rule_quota_enabled = false;
-    int rule_priority = -1, matched_priority = -1;
-    uint32_t global = 0, rule_fps = 0, rule_quota = 0;
+    size_t index, line = 1;
 
-    while (*line) {
-        const char *end = strchr(line, '\n');
-        const char *begin = line;
-        const char *line_end = end ? end : line + strlen(line);
+    for (index = 0; index < length; ++index) {
+        unsigned char byte = (unsigned char)text[index];
+
+        if (byte == '\n') {
+            ++line;
+        } else if (byte != '\r' && byte != '\t' && (byte < 0x20 || byte > 0x7e)) {
+            set_failure(result, FRAME_PACER_CONFIG_MALFORMED,
+                        FRAME_PACER_REASON_INVALID_BYTE, line);
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool parse_limit(const char *text, size_t length,
+                        const struct frame_pacer_limit *limit,
+                        struct frame_pacer_effective_config *result)
+{
+    struct parse_state state;
+    size_t offset = 0, line_number = 1;
+    uint32_t global_fps = FRAME_PACER_FPS_LIMIT_OFF;
+
+    memset(&state, 0, sizeof(state));
+    state.result = *result;
+    state.result.status = FRAME_PACER_CONFIG_VALID;
+    state.result.reason = FRAME_PACER_REASON_NONE;
+    state.selected_priority = -1;
+    if (!valid_bytes(text, length, &state.result)) goto failure;
+
+    while (offset < length) {
+        const char *raw = text + offset;
+        const char *newline = memchr(raw, '\n', length - offset);
+        const char *begin = raw;
+        const char *end = newline ? newline : text + length;
         const char *equals;
 
-        trim(&begin, &line_end);
-        if (begin == line_end || *begin == '#') goto next;
+        trim(&begin, &end);
+        if (begin == end || *begin == '#') goto next;
         if (*begin == '[') {
-            if (line_end - begin < 3 || line_end[-1] != ']' ||
-                !apply_rule(in_rule, has_executable, has_fps, rule_priority, rule_fps,
-                            rule_quota_enabled, rule_quota, &matched_priority, fps,
-                            quota_enabled, quota)) return false;
-            ++begin;
-            --line_end;
-            trim(&begin, &line_end);
-            if (begin == line_end) return false;
-            in_rule = true;
-            has_executable = has_fps = has_quota = rule_quota_enabled = false;
-            rule_quota = 0;
-            rule_priority = -1;
+            const char *name_begin, *name_end;
+
+            if (!finish_rule(&state, limit)) goto failure;
+            if ((size_t)(end - begin) < 3 || end[-1] != ']') {
+                set_failure(&state.result, FRAME_PACER_CONFIG_MALFORMED,
+                            FRAME_PACER_REASON_INVALID_SECTION, line_number);
+                goto failure;
+            }
+            name_begin = begin + 1;
+            name_end = end - 1;
+            trim(&name_begin, &name_end);
+            memset(&state.rule, 0, sizeof(state.rule));
+            if (!copy_value(state.rule.section, sizeof(state.rule.section),
+                            name_begin, name_end)) {
+                set_failure(&state.result, FRAME_PACER_CONFIG_MALFORMED,
+                            FRAME_PACER_REASON_INVALID_SECTION, line_number);
+                goto failure;
+            }
+            state.rule.header_line = line_number;
+            state.rule.priority = -1;
+            state.in_rule = true;
             goto next;
         }
-        equals = memchr(begin, '=', (size_t)(line_end - begin));
-        if (!equals) return false;
+        equals = memchr(begin, '=', (size_t)(end - begin));
+        if (!equals) {
+            set_failure(&state.result, FRAME_PACER_CONFIG_MALFORMED,
+                        FRAME_PACER_REASON_MISSING_EQUALS, line_number);
+            goto failure;
+        }
         {
             const char *key_begin = begin, *key_end = equals;
-            const char *value_begin = equals + 1, *value_end = line_end;
+            const char *value_begin = equals + 1, *value_end = end;
 
             trim(&key_begin, &key_end);
             trim(&value_begin, &value_end);
-            if ((!in_rule && key_end - key_begin ==
-                              (ptrdiff_t)strlen("global_fps_limit") &&
-                 !memcmp(key_begin, "global_fps_limit", strlen("global_fps_limit"))) ||
-                (in_rule && key_end - key_begin == (ptrdiff_t)strlen("fps_limit") &&
-                 !memcmp(key_begin, "fps_limit", strlen("fps_limit")))) {
-                uint32_t value;
+            if (!state.in_rule && (size_t)(key_end - key_begin) ==
+                    strlen("global_fps_limit") &&
+                !memcmp(key_begin, "global_fps_limit", strlen("global_fps_limit"))) {
+                bool explicit_off;
 
-                if (!parse_fps_limit(value_begin, value_end, &value))
-                    return false;
-                if (in_rule) {
-                    if (has_fps) return false;
-                    has_fps = true;
-                    rule_fps = value;
-                } else {
-                    if (has_global) return false;
-                    global = value;
-                    has_global = true;
-                }
-            } else if (!in_rule && key_end - key_begin == (ptrdiff_t)strlen("hud") &&
+                if (state.global_present) goto duplicate_key;
+                if (!parse_fps_limit(value_begin, value_end, &global_fps,
+                                     &explicit_off)) goto invalid_value;
+                state.global_present = true;
+                state.global_off = explicit_off;
+            } else if (!state.in_rule && (size_t)(key_end - key_begin) == strlen("hud") &&
                        !memcmp(key_begin, "hud", strlen("hud"))) {
-                if (has_hud || !parse_hud_enabled(value_begin, value_end, hud_enabled))
-                    return false;
-                has_hud = true;
-            } else if (in_rule && key_end - key_begin == (ptrdiff_t)strlen("executable") &&
-                       !memcmp(key_begin, "executable", strlen("executable"))) {
-                char value[FRAME_PACER_EXECUTABLE_MAX];
-                size_t length;
+                if (state.hud_present) goto duplicate_key;
+                if (!parse_hud_enabled(value_begin, value_end,
+                                       &state.result.hud_enabled)) goto invalid_value;
+                state.hud_present = true;
+                state.result.hud_source = FRAME_PACER_SOURCE_GLOBAL;
+            } else if (state.in_rule && (size_t)(key_end - key_begin) ==
+                           strlen("fps_limit") &&
+                       !memcmp(key_begin, "fps_limit", strlen("fps_limit"))) {
+                bool explicit_off;
 
-                if (has_executable || value_end - value_begin < 3 ||
-                    *value_begin != '"' || value_end[-1] != '"') return false;
+                if (state.rule.has_fps) goto duplicate_key;
+                if (!parse_fps_limit(value_begin, value_end, &state.rule.fps,
+                                     &explicit_off)) goto invalid_value;
+                (void)explicit_off;
+                state.rule.has_fps = true;
+            } else if (state.in_rule && (size_t)(key_end - key_begin) ==
+                           strlen("executable") &&
+                       !memcmp(key_begin, "executable", strlen("executable"))) {
+                size_t value_length;
+
+                if (state.rule.has_executable) goto duplicate_key;
+                if ((size_t)(value_end - value_begin) < 3 || *value_begin != '"' ||
+                    value_end[-1] != '"') goto invalid_executable;
                 ++value_begin;
                 --value_end;
-                length = (size_t)(value_end - value_begin);
-                if (!length || length >= sizeof(value) ||
-                    memchr(value_begin, '"', length) ||
-                    memchr(value_begin, '/', length) ||
-                    memchr(value_begin, '\\', length))
-                    return false;
-                memcpy(value, value_begin, length);
-                value[length] = '\0';
-                has_executable = true;
-                rule_priority = executable_match_priority(limit, value);
-            } else if (in_rule && key_end - key_begin == (ptrdiff_t)strlen("thread_cpu_limit") &&
-                       !memcmp(key_begin, "thread_cpu_limit", strlen("thread_cpu_limit"))) {
-                if (has_quota || !parse_thread_cpu_quota(value_begin, value_end,
-                                                          &rule_quota_enabled, &rule_quota))
-                    return false;
-                has_quota = true;
-            } else return false;
+                value_length = (size_t)(value_end - value_begin);
+                if (!value_length || value_length >= sizeof(state.rule.executable) ||
+                    memchr(value_begin, '"', value_length) ||
+                    memchr(value_begin, '/', value_length) ||
+                    memchr(value_begin, '\\', value_length)) goto invalid_executable;
+                memcpy(state.rule.executable, value_begin, value_length);
+                state.rule.executable[value_length] = '\0';
+                state.rule.has_executable = true;
+                state.rule.priority = executable_match_priority(limit,
+                                                                state.rule.executable);
+            } else if (state.in_rule && (size_t)(key_end - key_begin) ==
+                           strlen("thread_cpu_limit") &&
+                       !memcmp(key_begin, "thread_cpu_limit",
+                               strlen("thread_cpu_limit"))) {
+                if (state.rule.has_quota) goto duplicate_key;
+                if (!parse_thread_cpu_quota(value_begin, value_end,
+                                            &state.rule.quota_enabled,
+                                            &state.rule.quota)) goto invalid_value;
+                state.rule.has_quota = true;
+            } else {
+                set_failure(&state.result, FRAME_PACER_CONFIG_MALFORMED,
+                            FRAME_PACER_REASON_UNKNOWN_KEY, line_number);
+                goto failure;
+            }
         }
 next:
-        line = end ? end + 1 : line_end;
+        if (!newline) break;
+        offset = (size_t)(newline - text) + 1;
+        ++line_number;
+        continue;
+duplicate_key:
+        set_failure(&state.result, FRAME_PACER_CONFIG_MALFORMED,
+                    FRAME_PACER_REASON_DUPLICATE_KEY, line_number);
+        goto failure;
+invalid_value:
+        set_failure(&state.result, FRAME_PACER_CONFIG_MALFORMED,
+                    FRAME_PACER_REASON_INVALID_VALUE, line_number);
+        goto failure;
+invalid_executable:
+        set_failure(&state.result, FRAME_PACER_CONFIG_MALFORMED,
+                    FRAME_PACER_REASON_INVALID_EXECUTABLE, line_number);
+        goto failure;
     }
-    if (!apply_rule(in_rule, has_executable, has_fps, rule_priority, rule_fps,
-                    rule_quota_enabled, rule_quota, &matched_priority, fps,
-                    quota_enabled, quota)) return false;
-    if (matched_priority < 0) {
-        *fps = global;
-        *quota_enabled = false;
-        *quota = 0;
+    if (!finish_rule(&state, limit)) goto failure;
+
+    if (state.selected_priority >= 0) {
+        state.result.fps_limit = state.selected_fps;
+        state.result.fps_source = FRAME_PACER_SOURCE_PER_GAME;
+        state.result.thread_cpu_enabled = state.selected_quota_enabled;
+        state.result.thread_cpu_percent = state.selected_quota;
+        state.result.thread_cpu_source = state.selected_has_quota ?
+            FRAME_PACER_SOURCE_PER_GAME : FRAME_PACER_SOURCE_DEFAULT;
+        if (limit->reporting_enabled) {
+            (void)snprintf(state.result.matched_section,
+                           sizeof(state.result.matched_section), "%s",
+                           state.selected_section);
+            (void)snprintf(state.result.matched_executable,
+                           sizeof(state.result.matched_executable), "%s",
+                           limit->executable_candidates[state.selected_priority]);
+        }
+        state.result.reason = state.selected_fps_off ?
+            FRAME_PACER_REASON_EXPLICITLY_OFF : FRAME_PACER_REASON_NONE;
+    } else {
+        state.result.fps_limit = global_fps;
+        state.result.fps_source = state.global_present ?
+            FRAME_PACER_SOURCE_GLOBAL : FRAME_PACER_SOURCE_DEFAULT;
+        if (state.global_present && state.global_off)
+            state.result.reason = FRAME_PACER_REASON_EXPLICITLY_OFF;
+        else if (state.rule_count)
+            state.result.reason = FRAME_PACER_REASON_NO_EXECUTABLE_MATCH;
+        else
+            state.result.reason = FRAME_PACER_REASON_NO_PER_GAME_RULES;
     }
+    *result = state.result;
     return true;
+
+failure:
+    *result = state.result;
+    result->fps_limit = FRAME_PACER_FPS_LIMIT_OFF;
+    result->fps_source = FRAME_PACER_SOURCE_DEFAULT;
+    result->hud_enabled = true;
+    result->hud_source = FRAME_PACER_SOURCE_DEFAULT;
+    result->thread_cpu_enabled = false;
+    result->thread_cpu_percent = 0;
+    result->thread_cpu_source = FRAME_PACER_SOURCE_DEFAULT;
+    result->matched_section[0] = '\0';
+    result->matched_executable[0] = '\0';
+    return false;
 }
 
 static bool read_complete(int fd, char *text, size_t length)
@@ -415,132 +664,314 @@ static bool read_complete(int fd, char *text, size_t length)
     return true;
 }
 
-static uint32_t read_limit(const struct frame_pacer_limit *limit,
-                           const struct stat *expected, bool *quota_enabled,
-                           uint32_t *quota, bool *hud_enabled)
+static bool same_file(const struct stat *left, const struct stat *right)
 {
-    char *text;
-    struct stat status;
-    size_t length;
-    int fd;
-    uint32_t fps = FRAME_PACER_FPS_LIMIT_OFF, parsed_quota = 0;
-    bool parsed_quota_enabled = false, parsed_hud_enabled = true;
+    return left->st_uid == right->st_uid && left->st_dev == right->st_dev &&
+           left->st_ino == right->st_ino && left->st_nlink == right->st_nlink &&
+           left->st_mode == right->st_mode && left->st_size == right->st_size &&
+           left->st_mtim.tv_sec == right->st_mtim.tv_sec &&
+           left->st_mtim.tv_nsec == right->st_mtim.tv_nsec &&
+           left->st_ctim.tv_sec == right->st_ctim.tv_sec &&
+           left->st_ctim.tv_nsec == right->st_ctim.tv_nsec;
+}
 
-    if (!limit->path[0] || !expected || expected->st_uid != getuid() ||
-        !S_ISREG(expected->st_mode) || expected->st_nlink != 1 ||
-        (expected->st_mode & (S_IRWXG | S_IRWXO)) ||
-        expected->st_size < 1 ||
-        expected->st_size > (off_t)FRAME_PACER_CONFIG_MAX_BYTES)
-        return FRAME_PACER_FPS_LIMIT_OFF;
+static void resolve_limit(struct frame_pacer_limit *limit,
+                          struct frame_pacer_effective_config *result)
+{
+    struct stat expected, status;
+    char *resized, *text;
+    size_t length;
+    int fd, saved_errno;
+
+    effective_defaults(limit, result);
+    if (!limit->path[0]) return;
+#ifdef FRAME_PACER_TEST
+    if (limit->test_failure == FRAME_PACER_TEST_FAILURE_METADATA) {
+        set_failure(result, FRAME_PACER_CONFIG_UNREADABLE,
+                    FRAME_PACER_REASON_METADATA_FAILED, 0);
+        return;
+    }
+#endif
+    if (lstat(limit->path, &expected)) {
+        set_failure(result,
+                    errno == ENOENT || errno == ENOTDIR ? FRAME_PACER_CONFIG_MISSING :
+                                                         FRAME_PACER_CONFIG_UNREADABLE,
+                    errno == ENOENT || errno == ENOTDIR ? FRAME_PACER_REASON_MISSING_FILE :
+                                                         FRAME_PACER_REASON_METADATA_FAILED,
+                    0);
+        return;
+    }
+    if (S_ISLNK(expected.st_mode)) {
+        set_failure(result, FRAME_PACER_CONFIG_INSECURE,
+                    FRAME_PACER_REASON_SYMBOLIC_LINK, 0);
+        return;
+    }
+    if (!S_ISREG(expected.st_mode)) {
+        set_failure(result, FRAME_PACER_CONFIG_INSECURE,
+                    FRAME_PACER_REASON_NOT_REGULAR_FILE, 0);
+        return;
+    }
+#ifdef FRAME_PACER_TEST
+    if (limit->test_failure == FRAME_PACER_TEST_FAILURE_WRONG_OWNER) {
+        set_failure(result, FRAME_PACER_CONFIG_INSECURE,
+                    FRAME_PACER_REASON_WRONG_OWNER, 0);
+        return;
+    }
+#endif
+    if (expected.st_uid != getuid()) {
+        set_failure(result, FRAME_PACER_CONFIG_INSECURE,
+                    FRAME_PACER_REASON_WRONG_OWNER, 0);
+        return;
+    }
+    if (expected.st_nlink != 1) {
+        set_failure(result, FRAME_PACER_CONFIG_INSECURE,
+                    FRAME_PACER_REASON_MULTIPLE_HARD_LINKS, 0);
+        return;
+    }
+    if (expected.st_mode & (S_IRWXG | S_IRWXO)) {
+        set_failure(result, FRAME_PACER_CONFIG_INSECURE,
+                    FRAME_PACER_REASON_INSECURE_PERMISSIONS, 0);
+        return;
+    }
+    if (expected.st_size < 1) {
+        set_failure(result, FRAME_PACER_CONFIG_MALFORMED,
+                    FRAME_PACER_REASON_EMPTY_FILE, 0);
+        return;
+    }
+    if (expected.st_size > (off_t)FRAME_PACER_CONFIG_MAX_BYTES) {
+        set_failure(result, FRAME_PACER_CONFIG_MALFORMED,
+                    FRAME_PACER_REASON_FILE_TOO_LARGE, 0);
+        return;
+    }
+#ifdef FRAME_PACER_TEST
+    if (limit->test_failure == FRAME_PACER_TEST_FAILURE_OPEN) {
+        set_failure(result, FRAME_PACER_CONFIG_UNREADABLE,
+                    FRAME_PACER_REASON_OPEN_FAILED, 0);
+        return;
+    }
+#endif
     fd = open(limit->path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-    if (fd < 0) return FRAME_PACER_FPS_LIMIT_OFF;
-    if (fstat(fd, &status) || status.st_uid != expected->st_uid ||
-        status.st_dev != expected->st_dev || status.st_ino != expected->st_ino ||
-        !S_ISREG(status.st_mode) || status.st_nlink != 1 ||
-        (status.st_mode & (S_IRWXG | S_IRWXO)) ||
-        status.st_size != expected->st_size) {
-        (void)close(fd);
-        return FRAME_PACER_FPS_LIMIT_OFF;
+    if (fd < 0) {
+        saved_errno = errno;
+        set_failure(result, FRAME_PACER_CONFIG_UNREADABLE,
+                    saved_errno == ENOENT || saved_errno == ENOTDIR || saved_errno == ELOOP ?
+                        FRAME_PACER_REASON_CHANGED_DURING_READ :
+                        FRAME_PACER_REASON_OPEN_FAILED, 0);
+        return;
     }
-    length = (size_t)expected->st_size;
-    text = malloc(length + 1);
-    if (!text) {
+#ifdef FRAME_PACER_TEST
+    if (limit->test_failure == FRAME_PACER_TEST_FAILURE_FSTAT) {
         (void)close(fd);
-        return FRAME_PACER_FPS_LIMIT_OFF;
+        set_failure(result, FRAME_PACER_CONFIG_UNREADABLE,
+                    FRAME_PACER_REASON_METADATA_FAILED, 0);
+        return;
     }
-    if (!read_complete(fd, text, length) || fstat(fd, &status) ||
-        status.st_uid != expected->st_uid || status.st_dev != expected->st_dev ||
-        status.st_ino != expected->st_ino || status.st_nlink != 1 ||
-        status.st_mode != expected->st_mode ||
-        status.st_mtim.tv_sec != expected->st_mtim.tv_sec ||
-        status.st_mtim.tv_nsec != expected->st_mtim.tv_nsec ||
-        status.st_size != expected->st_size) {
+#endif
+    if (fstat(fd, &status)) {
         (void)close(fd);
-        free(text);
-        return FRAME_PACER_FPS_LIMIT_OFF;
+        set_failure(result, FRAME_PACER_CONFIG_UNREADABLE,
+                    FRAME_PACER_REASON_METADATA_FAILED, 0);
+        return;
     }
+    if (!same_file(&expected, &status)) {
+        (void)close(fd);
+        set_failure(result, FRAME_PACER_CONFIG_UNREADABLE,
+                    FRAME_PACER_REASON_CHANGED_DURING_READ, 0);
+        return;
+    }
+    length = (size_t)expected.st_size;
+#ifdef FRAME_PACER_TEST
+    if (limit->test_failure == FRAME_PACER_TEST_FAILURE_ALLOC) {
+        (void)close(fd);
+        set_failure(result, FRAME_PACER_CONFIG_UNREADABLE,
+                    FRAME_PACER_REASON_OUT_OF_MEMORY, 0);
+        return;
+    }
+#endif
+    if (length > limit->config_buffer_capacity) {
+        resized = realloc(limit->config_buffer, length);
+        if (!resized) {
+            (void)close(fd);
+            set_failure(result, FRAME_PACER_CONFIG_UNREADABLE,
+                        FRAME_PACER_REASON_OUT_OF_MEMORY, 0);
+            return;
+        }
+        limit->config_buffer = resized;
+        limit->config_buffer_capacity = length;
+    }
+    text = limit->config_buffer;
+#ifdef FRAME_PACER_TEST
+    if (limit->test_failure == FRAME_PACER_TEST_FAILURE_READ ||
+        !read_complete(fd, text, length)) {
+#else
+    if (!read_complete(fd, text, length)) {
+#endif
+        (void)close(fd);
+        set_failure(result, FRAME_PACER_CONFIG_UNREADABLE,
+                    FRAME_PACER_REASON_READ_FAILED, 0);
+        return;
+    }
+#ifdef FRAME_PACER_TEST
+    if (limit->test_failure == FRAME_PACER_TEST_FAILURE_FINAL_FSTAT ||
+        fstat(fd, &status)) {
+#else
+    if (fstat(fd, &status)) {
+#endif
+        (void)close(fd);
+        set_failure(result, FRAME_PACER_CONFIG_UNREADABLE,
+                    FRAME_PACER_REASON_METADATA_FAILED, 0);
+        return;
+    }
+#ifdef FRAME_PACER_TEST
+    if (limit->test_failure == FRAME_PACER_TEST_FAILURE_CHANGED ||
+        !same_file(&expected, &status)) {
+#else
+    if (!same_file(&expected, &status)) {
+#endif
+        (void)close(fd);
+        set_failure(result, FRAME_PACER_CONFIG_UNREADABLE,
+                    FRAME_PACER_REASON_CHANGED_DURING_READ, 0);
+        return;
+    }
+#ifdef FRAME_PACER_TEST
+    if (limit->test_failure == FRAME_PACER_TEST_FAILURE_CLOSE) {
+        (void)close(fd);
+        set_failure(result, FRAME_PACER_CONFIG_UNREADABLE,
+                    FRAME_PACER_REASON_CLOSE_FAILED, 0);
+        return;
+    }
+#endif
     if (close(fd)) {
-        free(text);
-        return FRAME_PACER_FPS_LIMIT_OFF;
+        set_failure(result, FRAME_PACER_CONFIG_UNREADABLE,
+                    FRAME_PACER_REASON_CLOSE_FAILED, 0);
+        return;
     }
-    text[length] = '\0';
-    if (parse_limit(text, limit, &fps, &parsed_quota_enabled, &parsed_quota,
-                    &parsed_hud_enabled)) {
-        *quota_enabled = parsed_quota_enabled;
-        *quota = parsed_quota;
-        *hud_enabled = parsed_hud_enabled;
-    } else {
-        fps = FRAME_PACER_FPS_LIMIT_OFF;
+    (void)parse_limit(text, length, limit, result);
+}
+
+static bool same_effective(const struct frame_pacer_effective_config *left,
+                           const struct frame_pacer_effective_config *right)
+{
+    return left->status == right->status && left->reason == right->reason &&
+           left->error_line == right->error_line && left->fps_limit == right->fps_limit &&
+           left->fps_source == right->fps_source &&
+           left->hud_enabled == right->hud_enabled &&
+           left->hud_source == right->hud_source &&
+           left->thread_cpu_enabled == right->thread_cpu_enabled &&
+           left->thread_cpu_percent == right->thread_cpu_percent &&
+           left->thread_cpu_source == right->thread_cpu_source &&
+           !strcmp(left->renderer, right->renderer) &&
+           !strcmp(left->matched_section, right->matched_section) &&
+           !strcmp(left->matched_executable, right->matched_executable);
+}
+
+#if defined(__GNUC__)
+__attribute__((noinline))
+#endif
+static uint32_t refresh_limit(struct frame_pacer_limit *limit, uint64_t now_ns)
+{
+    struct frame_pacer_effective_config next;
+    uint64_t last_check_ns, revision;
+    uint32_t fps;
+
+    (void)pthread_mutex_lock(&limit->mutex);
+    last_check_ns = atomic_load_explicit(&limit->last_check_ns, memory_order_relaxed);
+    if (last_check_ns && now_ns >= last_check_ns &&
+        now_ns - last_check_ns < FRAME_PACER_CONFIG_POLL_NS) {
+        fps = atomic_load_explicit(&limit->fps, memory_order_relaxed);
+        (void)pthread_mutex_unlock(&limit->mutex);
+        return fps;
     }
-    free(text);
+    resolve_limit(limit, &next);
+    revision = 0;
+    if (limit->reporting_enabled) {
+        revision = atomic_load_explicit(&limit->revision, memory_order_relaxed);
+        if (!revision || !same_effective(&limit->effective, &next)) ++revision;
+        next.revision = revision;
+        limit->effective = next;
+    }
+    atomic_store_explicit(&limit->fps, next.fps_limit, memory_order_relaxed);
+    atomic_store_explicit(&limit->thread_cpu_quota,
+                          next.thread_cpu_enabled ? next.thread_cpu_percent : 0,
+                          memory_order_relaxed);
+    atomic_store_explicit(&limit->hud_enabled, next.hud_enabled,
+                          memory_order_relaxed);
+    if (limit->reporting_enabled)
+        atomic_store_explicit(&limit->revision, revision, memory_order_release);
+    atomic_store_explicit(&limit->last_check_ns, now_ns, memory_order_release);
+    fps = next.fps_limit;
+    (void)pthread_mutex_unlock(&limit->mutex);
     return fps;
 }
 
-uint32_t frame_pacer_limit_poll(struct frame_pacer_limit *limit, uint64_t now_ns, bool *changed)
+uint32_t frame_pacer_limit_poll(struct frame_pacer_limit *limit, uint64_t now_ns)
 {
-    struct stat status;
-    uint32_t next;
-    bool quota_enabled = false;
-    bool hud_enabled = true;
-    uint32_t quota = 0;
     uint64_t last_check_ns;
 
-    if (changed) *changed = false;
     if (!limit || !limit->initialized) return FRAME_PACER_FPS_LIMIT_OFF;
-    last_check_ns = atomic_load_explicit(&limit->last_check_ns,
-                                         memory_order_acquire);
+    last_check_ns = atomic_load_explicit(&limit->last_check_ns, memory_order_acquire);
     if (last_check_ns && now_ns >= last_check_ns &&
         now_ns - last_check_ns < FRAME_PACER_CONFIG_POLL_NS)
         return atomic_load_explicit(&limit->fps, memory_order_relaxed);
+    return refresh_limit(limit, now_ns);
+}
+
+uint64_t frame_pacer_limit_revision(const struct frame_pacer_limit *limit)
+{
+    if (!limit || !limit->initialized) return 0;
+    return atomic_load_explicit(&limit->revision, memory_order_acquire);
+}
+
+bool frame_pacer_limit_snapshot(struct frame_pacer_limit *limit,
+                                struct frame_pacer_effective_config *snapshot)
+{
+    uint64_t revision;
+
+    if (!limit || !limit->initialized || !snapshot) return false;
+    if (!atomic_load_explicit(&limit->revision, memory_order_acquire)) return false;
     (void)pthread_mutex_lock(&limit->mutex);
-    last_check_ns = atomic_load_explicit(&limit->last_check_ns,
-                                         memory_order_relaxed);
-    if (last_check_ns && now_ns >= last_check_ns &&
-        now_ns - last_check_ns < FRAME_PACER_CONFIG_POLL_NS) {
-        next = atomic_load_explicit(&limit->fps, memory_order_relaxed);
-        (void)pthread_mutex_unlock(&limit->mutex);
-        return next;
-    }
-    if (limit->path[0] && !lstat(limit->path, &status) &&
-        status.st_uid == getuid() && S_ISREG(status.st_mode) &&
-        status.st_nlink == 1 &&
-        !(status.st_mode & (S_IRWXG | S_IRWXO)))
-        next = read_limit(limit, &status, &quota_enabled, &quota, &hud_enabled);
-    else
-        next = FRAME_PACER_FPS_LIMIT_OFF;
-    if (next != atomic_load_explicit(&limit->fps, memory_order_relaxed) && changed)
-        *changed = true;
-    atomic_store_explicit(&limit->fps, next, memory_order_relaxed);
-    limit->thread_cpu_quota_enabled = quota_enabled;
-    limit->thread_cpu_quota = quota;
-    limit->hud_enabled = hud_enabled;
-    next = atomic_load_explicit(&limit->fps, memory_order_relaxed);
-    atomic_store_explicit(&limit->last_check_ns, now_ns, memory_order_release);
+    *snapshot = limit->effective;
+    revision = atomic_load_explicit(&limit->revision, memory_order_relaxed);
     (void)pthread_mutex_unlock(&limit->mutex);
-    return next;
+    return snapshot->revision != 0 && snapshot->revision == revision;
+}
+
+void frame_pacer_limit_set_reporting_enabled(struct frame_pacer_limit *limit,
+                                             bool enabled)
+{
+    if (!limit || !limit->initialized) return;
+    (void)pthread_mutex_lock(&limit->mutex);
+    limit->reporting_enabled = enabled;
+    atomic_store_explicit(&limit->revision, 0, memory_order_release);
+    atomic_store_explicit(&limit->last_check_ns, 0, memory_order_release);
+    (void)pthread_mutex_unlock(&limit->mutex);
 }
 
 uint32_t frame_pacer_limit_thread_cpu_quota(struct frame_pacer_limit *limit,
                                             bool *enabled)
 {
-    uint32_t quota = 0;
+    uint32_t quota;
 
     if (enabled) *enabled = false;
     if (!limit || !limit->initialized) return 0;
-    (void)pthread_mutex_lock(&limit->mutex);
-    quota = limit->thread_cpu_quota;
-    if (enabled) *enabled = limit->thread_cpu_quota_enabled;
-    (void)pthread_mutex_unlock(&limit->mutex);
+    quota = atomic_load_explicit(&limit->thread_cpu_quota, memory_order_relaxed);
+    if (enabled) *enabled = quota != 0;
     return quota;
 }
 
 bool frame_pacer_limit_hud_enabled(struct frame_pacer_limit *limit)
 {
-    bool enabled = true;
-
     if (!limit || !limit->initialized) return true;
-    (void)pthread_mutex_lock(&limit->mutex);
-    enabled = limit->hud_enabled;
-    (void)pthread_mutex_unlock(&limit->mutex);
-    return enabled;
+    return atomic_load_explicit(&limit->hud_enabled, memory_order_relaxed);
 }
+
+#ifdef FRAME_PACER_TEST
+void frame_pacer_limit_test_fail_at(struct frame_pacer_limit *limit,
+                                    enum frame_pacer_limit_test_failure failure)
+{
+    if (!limit || !limit->initialized) return;
+    (void)pthread_mutex_lock(&limit->mutex);
+    limit->test_failure = failure;
+    (void)pthread_mutex_unlock(&limit->mutex);
+}
+#endif

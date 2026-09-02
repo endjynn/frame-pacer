@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,9 +47,10 @@ static void runtime_log_lifecycle(void)
     assert(mkdtemp(directory));
     assert(!setenv("XDG_STATE_HOME", directory, 1));
     assert(!setenv("FRAME_PACER_LOG", "1", 1));
-    assert(frame_pacer_runtime_log_open(&log, "frame-pacer-test-"));
-    runtime_log_write(&log, "0123456789abcdef-more\n");
-    assert(frame_pacer_runtime_log_bytes(&log) == 15);
+    assert(frame_pacer_runtime_log_activate(&log, "frame-pacer-test-",
+                                            "s\n"));
+    runtime_log_write(&log, "payload\n");
+    assert(frame_pacer_runtime_log_bytes(&log) == 2 + 8);
     frame_pacer_runtime_log_close(&log);
     assert(snprintf(log_directory, sizeof(log_directory), "%s/frame-pacer",
                     directory) > 0);
@@ -56,9 +58,9 @@ static void runtime_log_lifecycle(void)
                     log_directory, (long)getpid()) > 0);
     file = fopen(path, "re");
     assert(file);
-    assert(fgets(text, sizeof(text), file));
+    assert(fread(text, 1, sizeof(text), file) == 2 + 8);
     assert(!fclose(file));
-    assert(!strcmp(text, "0123456789abcde"));
+    assert(!memcmp(text, "s\npayload\n", 2 + 8));
     assert(!unlink(path));
     assert(snprintf(path, sizeof(path), "%s/.frame-pacer-log-retention.lock",
                     log_directory) > 0);
@@ -82,11 +84,12 @@ static void runtime_log_never_exceeds_cap(void)
     assert(mkdtemp(directory));
     assert(!setenv("XDG_STATE_HOME", directory, 1));
     assert(!setenv("FRAME_PACER_LOG", "1", 1));
-    assert(frame_pacer_runtime_log_open(&log, "frame-pacer-cap-"));
+    assert(frame_pacer_runtime_log_activate(&log, "frame-pacer-cap-",
+                                            "startup\n"));
     runtime_log_write(&log, "0123456789");
     runtime_log_write(&log, "abcdefghij");
     assert(log.capped);
-    assert(frame_pacer_runtime_log_bytes(&log) == 10 + sizeof(cap) - 1);
+    assert(frame_pacer_runtime_log_bytes(&log) == 8 + sizeof(cap) - 1);
     runtime_log_write(&log, "must not be written");
     frame_pacer_runtime_log_close(&log);
     assert(snprintf(log_directory, sizeof(log_directory), "%s/frame-pacer",
@@ -98,8 +101,8 @@ static void runtime_log_never_exceeds_cap(void)
     assert(file);
     assert(fread(text, 1, sizeof(text), file) == (size_t)status.st_size);
     assert(!fclose(file));
-    assert(!memcmp(text, "0123456789", 10));
-    assert(!memcmp(text + 10, cap, sizeof(cap) - 1));
+    assert(!memcmp(text, "startup\n", 8));
+    assert(!memcmp(text + 8, cap, sizeof(cap) - 1));
     assert(!unlink(path));
     assert(snprintf(path, sizeof(path), "%s/.frame-pacer-log-retention.lock",
                     log_directory) > 0);
@@ -135,7 +138,8 @@ static void active_log_is_always_retained(void)
     }
     assert(!setenv("XDG_STATE_HOME", directory, 1));
     assert(!setenv("FRAME_PACER_LOG", "1", 1));
-    assert(frame_pacer_runtime_log_open(&log, "frame-pacer-active-"));
+    assert(frame_pacer_runtime_log_activate(&log, "frame-pacer-active-",
+                                            "startup\n"));
     runtime_log_write(&log, "active\n");
     frame_pacer_runtime_log_close(&log);
     assert(snprintf(path, sizeof(path), "%s/%s", log_directory,
@@ -166,6 +170,79 @@ static void active_log_is_always_retained(void)
     assert(!unsetenv("XDG_STATE_HOME"));
 }
 
+struct activation_context {
+    struct frame_pacer_runtime_log *log;
+};
+
+static void *activate_runtime_log(void *argument)
+{
+    struct activation_context *context = argument;
+
+    assert(frame_pacer_runtime_log_activate(
+        context->log, "frame-pacer-concurrent-", "startup\n"));
+    return 0;
+}
+
+static void concurrent_activation_writes_one_header(void)
+{
+    struct frame_pacer_runtime_log log =
+        FRAME_PACER_RUNTIME_LOG_INITIALIZER(64);
+    struct activation_context context = { .log = &log };
+    char directory[] = "/tmp/frame-pacer-concurrent-log.XXXXXX";
+    char log_directory[1024], path[1024], text[64] = {0};
+    pthread_t threads[16];
+    FILE *file;
+    size_t index;
+
+    assert(mkdtemp(directory));
+    assert(!setenv("XDG_STATE_HOME", directory, 1));
+    assert(!setenv("FRAME_PACER_LOG", "1", 1));
+    for (index = 0; index < sizeof(threads) / sizeof(threads[0]); ++index)
+        assert(!pthread_create(&threads[index], 0, activate_runtime_log,
+                               &context));
+    for (index = 0; index < sizeof(threads) / sizeof(threads[0]); ++index)
+        assert(!pthread_join(threads[index], 0));
+    runtime_log_write(&log, "payload\n");
+    frame_pacer_runtime_log_close(&log);
+
+    assert(snprintf(log_directory, sizeof(log_directory), "%s/frame-pacer",
+                    directory) > 0);
+    assert(snprintf(path, sizeof(path),
+                    "%s/frame-pacer-concurrent-%ld.log", log_directory,
+                    (long)getpid()) > 0);
+    file = fopen(path, "re");
+    assert(file);
+    assert(fread(text, 1, sizeof(text), file) == 16);
+    assert(!fclose(file));
+    assert(!memcmp(text, "startup\npayload\n", 16));
+    assert(!unlink(path));
+    assert(snprintf(path, sizeof(path), "%s/.frame-pacer-log-retention.lock",
+                    log_directory) > 0);
+    assert(!unlink(path));
+    assert(!rmdir(log_directory));
+    assert(!rmdir(directory));
+    assert(!unsetenv("XDG_STATE_HOME"));
+}
+
+static void inactive_log_creates_nothing(void)
+{
+    struct frame_pacer_runtime_log log =
+        FRAME_PACER_RUNTIME_LOG_INITIALIZER(64);
+    char directory[] = "/tmp/frame-pacer-inactive-log.XXXXXX";
+    char path[1024];
+
+    assert(mkdtemp(directory));
+    assert(!setenv("XDG_STATE_HOME", directory, 1));
+    assert(!unsetenv("FRAME_PACER_LOG"));
+    assert(!frame_pacer_runtime_log_activate(&log, "frame-pacer-inactive-",
+                                             "startup\n"));
+    frame_pacer_runtime_log_close(&log);
+    assert(snprintf(path, sizeof(path), "%s/frame-pacer", directory) > 0);
+    assert(access(path, F_OK) == -1);
+    assert(!rmdir(directory));
+    assert(!unsetenv("XDG_STATE_HOME"));
+}
+
 int main(void)
 {
     char directory[] = "/tmp/frame-pacer-log-retention.XXXXXX";
@@ -174,6 +251,16 @@ int main(void)
 
     assert(!unsetenv("FRAME_PACER_LOG"));
     assert(!frame_pacer_log_enabled());
+    {
+        struct frame_pacer_runtime_log inactive =
+            FRAME_PACER_RUNTIME_LOG_INITIALIZER(32);
+
+        assert(!frame_pacer_runtime_log_active(&inactive));
+        atomic_store_explicit(&inactive.fd, 7, memory_order_relaxed);
+        assert(frame_pacer_runtime_log_active(&inactive));
+        atomic_store_explicit(&inactive.fd, -1, memory_order_relaxed);
+        assert(!frame_pacer_runtime_log_active(&inactive));
+    }
     assert(!setenv("FRAME_PACER_LOG", "0", 1));
     assert(!frame_pacer_log_enabled());
     assert(!setenv("FRAME_PACER_LOG", "1", 1));
@@ -229,5 +316,7 @@ int main(void)
     runtime_log_lifecycle();
     runtime_log_never_exceeds_cap();
     active_log_is_always_retained();
+    concurrent_activation_writes_one_header();
+    inactive_log_creates_nothing();
     return 0;
 }

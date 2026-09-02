@@ -2,6 +2,7 @@
 #include <vulkan/vulkan.h>
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -10,6 +11,7 @@ void frame_pacer_layer_test_fail_allocation_after(size_t);
 uint32_t frame_pacer_layer_test_queue_family_count(VkPhysicalDevice);
 uint32_t frame_pacer_layer_test_physical_device_count(void);
 uint32_t frame_pacer_layer_test_queue_count(void);
+bool frame_pacer_layer_test_should_log_present_failure(VkResult);
 
 static VkInstance fake_instance = (VkInstance)(uintptr_t)1;
 static VkPhysicalDevice fake_physical = (VkPhysicalDevice)(uintptr_t)2;
@@ -220,6 +222,23 @@ int main(void)
     VkDeviceCreateInfo create_device;
     VkInstance instance = VK_NULL_HANDLE;
     VkDevice device = VK_NULL_HANDLE;
+
+    assert(frame_pacer_layer_test_should_log_present_failure(
+        VK_ERROR_DEVICE_LOST));
+    assert(!frame_pacer_layer_test_should_log_present_failure(
+        VK_ERROR_DEVICE_LOST));
+    assert(frame_pacer_layer_test_should_log_present_failure(
+        VK_ERROR_OUT_OF_DATE_KHR));
+    assert(!frame_pacer_layer_test_should_log_present_failure(VK_SUCCESS));
+    assert(frame_pacer_layer_test_should_log_present_failure(
+        VK_ERROR_OUT_OF_DATE_KHR));
+    assert(!frame_pacer_layer_test_should_log_present_failure(
+        VK_SUBOPTIMAL_KHR));
+    assert(frame_pacer_layer_test_should_log_present_failure(
+        VK_ERROR_OUT_OF_DATE_KHR));
+
+    assert(vkQueuePresentKHR((VkQueue)(uintptr_t)999, 0) ==
+           VK_ERROR_INITIALIZATION_FAILED);
 
     assert(vkCreateInstance(0, 0, &instance) == VK_ERROR_INITIALIZATION_FAILED);
     create_instance = instance_info(&instance_loader, &instance_link);

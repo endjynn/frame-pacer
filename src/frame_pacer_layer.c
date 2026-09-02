@@ -1,4 +1,6 @@
 #define _GNU_SOURCE
+#include "effective_config_report.h"
+#include "frame_pacer_version.h"
 #include "hud_metrics.h"
 #include "hud_swapchain_policy.h"
 #include "hud_text.h"
@@ -29,12 +31,17 @@ static struct frame_pacer_runtime_log runtime_log =
 static uint64_t presents;
 static struct frame_pacer_clock pacing_clock;
 static struct frame_pacer_limit pacing_limit;
+static struct frame_pacer_effective_reporter effective_reporter =
+    FRAME_PACER_EFFECTIVE_REPORTER_INITIALIZER;
 static struct frame_pacer_thread_cpu_quota thread_cpu_quota;
+static int last_present_failure = VK_SUCCESS;
 static pthread_once_t pacing_clock_once = PTHREAD_ONCE_INIT;
 static pthread_once_t log_once = PTHREAD_ONCE_INIT;
+static pthread_once_t presentation_log_once = PTHREAD_ONCE_INIT;
 static bool pacing_initialized;
 
 static void logmsg(const char *format, ...);
+static void report_write(void *unused, const char *message);
 static uint64_t monotonic(void *unused);
 static void format_hud_text(void *context,
                             struct frame_pacer_vulkan_device *device,
@@ -49,6 +56,12 @@ static struct frame_pacer_vulkan_hud vulkan_hud =
 
 static void thread_cpu_quota_log(const char *message)
 {
+    logmsg("%s", message);
+}
+
+static void report_write(void *unused, const char *message)
+{
+    (void)unused;
     logmsg("%s", message);
 }
 
@@ -82,30 +95,49 @@ static void init_pacing_clock(void)
 
 /* The HUD's private submit path uses the next-layer function pointer directly,
  * so only game presents/submits reach this common pacing clock. */
-static void pace(const char *path)
+static void pace(void)
 {
     struct frame_pacer_decision decision;
-    bool changed;
+    bool logging;
     uint32_t fps;
     (void)pthread_once(&pacing_clock_once, init_pacing_clock);
-    fps = frame_pacer_limit_poll(&pacing_limit, monotonic(0), &changed);
+    logging = frame_pacer_runtime_log_active(&runtime_log);
+    fps = frame_pacer_limit_poll(&pacing_limit, monotonic(0));
+    if (logging)
+        (void)frame_pacer_effective_report_if_due(
+            &effective_reporter, &pacing_limit, FRAME_PACER_REPORT_VULKAN,
+            report_write, 0);
     {
         bool enabled;
         uint32_t percent = frame_pacer_limit_thread_cpu_quota(&pacing_limit, &enabled);
         frame_pacer_thread_cpu_quota_publish(&thread_cpu_quota, enabled, percent);
     }
-    if (changed) logmsg("frame-pacer: Vulkan FPS limit changed to %u\n", fps);
     frame_pacer_clock_wait(&pacing_clock, fps, monotonic, sleep_until, 0, &decision);
-    logmsg("frame-pacer: Vulkan %s first=%d missed=%d now=%" PRIu64
-           " deadline=%" PRIu64 " eintr=%u cap=%u\n", path, decision.first,
-           decision.missed, decision.observed_ns, decision.deadline_ns,
-           decision.interruptions, fps);
 }
+
+static bool should_log_present_failure(VkResult result)
+{
+    int current = result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR
+                      ? VK_SUCCESS
+                      : (int)result;
+    int previous = __atomic_exchange_n(&last_present_failure, current,
+                                       __ATOMIC_RELAXED);
+
+    return current != VK_SUCCESS && current != previous;
+}
+
+#ifdef FRAME_PACER_TEST
+bool frame_pacer_layer_test_should_log_present_failure(VkResult result);
+bool frame_pacer_layer_test_should_log_present_failure(VkResult result)
+{
+    return should_log_present_failure(result);
+}
+#endif
 
 static uint32_t current_limit(uint64_t now)
 {
     (void)pthread_once(&pacing_clock_once, init_pacing_clock);
-    return frame_pacer_limit_poll(&pacing_limit, now, 0);
+    return frame_pacer_limit_poll(&pacing_limit, now);
 }
 
 static bool hud_enabled(uint64_t now)
@@ -150,21 +182,49 @@ static void logmsg(const char *format, ...)
 
 static void init_log_once(void)
 {
+    char startup[256];
+    int length;
+
     /* Wine can load a negotiated layer callback through a second linker
      * namespace in the same process.  Keep the single restrictive PID log so
      * both copies expose their lifecycle; O_APPEND keeps individual writes
      * intact and does not change rendering or pacing. */
-    if (frame_pacer_runtime_log_open(&runtime_log, "frame-pacer-"))
-        logmsg("frame-pacer: layer init pid=%ld architecture=%zu hud=enabled\n",
-               (long)getpid(), sizeof(void *) * 8);
+    length = snprintf(startup, sizeof(startup),
+                      "frame-pacer: startup version=%s backend=vulkan pid=%ld "
+                      "architecture=%zu-bit\n",
+                      FRAME_PACER_VERSION, (long)getpid(), sizeof(void *) * 8);
+    if (length < 0 || (size_t)length >= sizeof(startup)) return;
+    (void)frame_pacer_runtime_log_activate(&runtime_log, "frame-pacer-",
+                                           startup);
 }
 
 static void init_log(void)
 {
-#ifdef FRAME_PACER_TEST
-    frame_pacer_vulkan_registry_set_test_registry(&registry);
-#endif
     (void)pthread_once(&log_once, init_log_once);
+}
+
+static void init_presentation_log(void)
+{
+    bool enabled = frame_pacer_log_enabled();
+
+    (void)pthread_once(&pacing_clock_once, init_pacing_clock);
+    frame_pacer_limit_set_reporting_enabled(&pacing_limit, enabled);
+    init_log();
+}
+
+static void activate_presentation_log(void)
+{
+    (void)pthread_once(&presentation_log_once, init_presentation_log);
+}
+
+static void log_failure(const char *format, ...)
+{
+    va_list arguments;
+
+    init_log();
+    va_start(arguments, format);
+    frame_pacer_runtime_log_vwrite(&runtime_log, format, arguments);
+    va_end(arguments);
 }
 
 static VkLayerInstanceCreateInfo *instance_create_info(const void *next,
@@ -205,34 +265,39 @@ vkCreateInstance(const VkInstanceCreateInfo *info,
     struct frame_pacer_vulkan_instance *item;
     VkResult result;
 
-    init_log();
+#ifdef FRAME_PACER_TEST
+    frame_pacer_vulkan_registry_set_test_registry(&registry);
+#endif
     logmsg("frame-pacer: create instance entered info=%p out=%p\n",
            (const void *)info, (void *)instance);
     if (!info || !instance) {
-        logmsg("frame-pacer: create instance missing create info or output\n");
+        log_failure("frame-pacer: create instance missing create info or output\n");
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     link = instance_create_info(info->pNext, VK_LAYER_LINK_INFO);
     if (!link || !link->u.pLayerInfo) {
-        logmsg("frame-pacer: create instance missing link\n");
+        log_failure("frame-pacer: create instance missing loader link\n");
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
     gipa = link->u.pLayerInfo->pfnNextGetInstanceProcAddr;
     if (!gipa) {
-        logmsg("frame-pacer: create instance missing downstream resolver\n");
+        log_failure("frame-pacer: create instance missing downstream resolver\n");
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     link->u.pLayerInfo = link->u.pLayerInfo->pNext;
     create = (PFN_vkCreateInstance)gipa(0, "vkCreateInstance");
     result = create ? create(info, allocator, instance)
                     : VK_ERROR_INITIALIZATION_FAILED;
-    logmsg("frame-pacer: create instance forwarded result=%d instance=%p\n", result,
-           result == VK_SUCCESS && instance ? (void *)*instance : 0);
-    if (result != VK_SUCCESS)
+    if (result != VK_SUCCESS) {
+        log_failure("frame-pacer: create instance forwarded result=%d\n",
+                    result);
         return result;
+    }
+    logmsg("frame-pacer: create instance forwarded result=%d instance=%p\n", result,
+           instance ? (void *)*instance : 0);
     if (!instance || !*instance) {
-        logmsg("frame-pacer: downstream create instance returned no handle\n");
+        log_failure("frame-pacer: downstream create instance returned no handle\n");
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
@@ -244,7 +309,7 @@ vkCreateInstance(const VkInstanceCreateInfo *info,
         if (destroy)
             destroy(*instance, allocator);
         *instance = VK_NULL_HANDLE;
-        logmsg("frame-pacer: create instance bookkeeping allocation failed\n");
+        log_failure("frame-pacer: create instance bookkeeping allocation failed\n");
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
     item->handle = *instance;
@@ -274,22 +339,22 @@ vkCreateDevice(VkPhysicalDevice physical, const VkDeviceCreateInfo *info,
 
     logmsg("frame-pacer: create device entered\n");
     if (!info || !device) {
-        logmsg("frame-pacer: create device missing create info or output; "
-               "initialization failed\n");
+        log_failure("frame-pacer: create device missing create info or output; "
+                    "initialization failed\n");
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     link = device_create_info(info->pNext, VK_LAYER_LINK_INFO);
     data = device_create_info(info->pNext, VK_LOADER_DATA_CALLBACK);
     if (!link || !link->u.pLayerInfo) {
-        logmsg("frame-pacer: create device missing loader link; "
-               "initialization failed\n");
+        log_failure("frame-pacer: create device missing loader link; "
+                    "initialization failed\n");
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
     gdpa = link->u.pLayerInfo->pfnNextGetDeviceProcAddr;
     if (!gdpa) {
-        logmsg("frame-pacer: create device missing downstream resolver; "
-               "initialization failed\n");
+        log_failure("frame-pacer: create device missing downstream resolver; "
+                    "initialization failed\n");
         return VK_ERROR_INITIALIZATION_FAILED;
     }
     frame_pacer_vulkan_registry_lock(&registry);
@@ -303,10 +368,13 @@ vkCreateDevice(VkPhysicalDevice physical, const VkDeviceCreateInfo *info,
     link->u.pLayerInfo = link->u.pLayerInfo->pNext;
     result = create ? create(physical, info, allocator, device)
                     : VK_ERROR_INITIALIZATION_FAILED;
-    if (result != VK_SUCCESS)
+    if (result != VK_SUCCESS) {
+        log_failure("frame-pacer: create device forwarded result=%d\n",
+                    result);
         return result;
+    }
     if (!device || !*device) {
-        logmsg("frame-pacer: downstream create device returned no handle\n");
+        log_failure("frame-pacer: downstream create device returned no handle\n");
         return VK_ERROR_INITIALIZATION_FAILED;
     }
 
@@ -321,7 +389,7 @@ vkCreateDevice(VkPhysicalDevice physical, const VkDeviceCreateInfo *info,
         if (destroy)
             destroy(*device, allocator);
         *device = VK_NULL_HANDLE;
-        logmsg("frame-pacer: create device bookkeeping allocation failed\n");
+        log_failure("frame-pacer: create device bookkeeping allocation failed\n");
         return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
     item->handle = *device;
@@ -351,7 +419,7 @@ vkCreateDevice(VkPhysicalDevice physical, const VkDeviceCreateInfo *info,
             item->destroy_device(*device, allocator);
         free(item);
         *device = VK_NULL_HANDLE;
-        logmsg("frame-pacer: create device queue registration failed\n");
+        log_failure("frame-pacer: create device queue registration failed\n");
         return queue_result == FRAME_PACER_VULKAN_QUEUES_OUT_OF_MEMORY
                    ? VK_ERROR_OUT_OF_HOST_MEMORY
                    : VK_ERROR_INITIALIZATION_FAILED;
@@ -394,13 +462,21 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(VkDevice device,
     item = frame_pacer_vulkan_registry_find_device(&registry, device);
     create = item ? item->create_swapchain : 0;
     frame_pacer_vulkan_registry_unlock(&registry);
-    if (!create) return VK_ERROR_INITIALIZATION_FAILED;
+    if (!create) {
+        log_failure("frame-pacer: create swapchain has no downstream target\n");
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
     outcome = frame_pacer_hud_create_swapchain(item->hud.get_surface_capabilities,
         create, item->physical_device, device, info, allocator, out);
     if (outcome.retried_original)
         logmsg("frame-pacer: HUD augmented swapchain request failed; original request retried\n");
     if (outcome.result == VK_SUCCESS && out && *out) {
         VkSwapchainCreateInfoKHR effective = *info;
+
+        /* A successfully created swapchain is authoritative rendering intent.
+         * Activate before recording its HUD resources so the retained log has
+         * a complete rendering lifecycle without logging instance-only helpers. */
+        activate_presentation_log();
         if (outcome.color_attachment_enabled)
             effective.imageUsage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
         frame_pacer_vulkan_hud_create_swapchain_resources(
@@ -446,8 +522,7 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyDevice(VkDevice device,
     if (destroy)
         destroy(device, allocator);
 }
-static void pace_submit_fallback(VkQueue queue, uint32_t submit_count,
-                                 const char *path)
+static void pace_submit_fallback(VkQueue queue)
 {
     struct frame_pacer_vulkan_queue *item;
     bool entered = false, needed = false;
@@ -469,11 +544,11 @@ static void pace_submit_fallback(VkQueue queue, uint32_t submit_count,
     if (!needed)
         return;
 
-    pace(path);
-    if (entered)
+    if (entered) {
+        activate_presentation_log();
         logmsg("frame-pacer: Vulkan submit fallback entered; presentation quiet\n");
-    logmsg("frame-pacer: Vulkan %s fallback count=%u queue_submits=%" PRIu64 "\n",
-           path, submit_count, queue_submits);
+    }
+    pace();
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
@@ -484,29 +559,42 @@ vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *info)
     VkPresentInfoKHR replacement;
     const VkPresentInfoKHR *forward = info;
     VkResult result;
+    bool report_hud_unavailable = false;
     bool resumed = false;
+    uint32_t hud_unavailable_family = 0;
 
     frame_pacer_vulkan_registry_lock(&registry);
     item = frame_pacer_vulkan_registry_find_queue(&registry, queue);
     device = item ? item->device : 0;
-    if (item && !(item->flags & VK_QUEUE_GRAPHICS_BIT))
+    if (item && !(item->flags & VK_QUEUE_GRAPHICS_BIT) &&
+        !item->hud_unavailable_reported) {
+        item->hud_unavailable_reported = true;
+        report_hud_unavailable = true;
+        hud_unavailable_family = item->family;
+    }
+    frame_pacer_vulkan_registry_unlock(&registry);
+    if (!device || !device->present) {
+        log_failure("frame-pacer: queue present has no downstream target\n");
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+
+    if (!__atomic_load_n(&presents, __ATOMIC_RELAXED)) {
+        activate_presentation_log();
+        logmsg("frame-pacer: HUD observed present\n");
+    }
+    if (report_hud_unavailable)
         logmsg("frame-pacer: HUD unavailable present queue family=%u lacks "
                "graphics capability; fail-open\n",
-               item->family);
-    frame_pacer_vulkan_registry_unlock(&registry);
-    if (!device || !device->present)
-        return VK_ERROR_INITIALIZATION_FAILED;
+               hud_unavailable_family);
 
     if (hud_enabled(monotonic(0)))
         frame_pacer_vulkan_hud_create_draw_resources(&vulkan_hud, queue, info);
-    if (!__atomic_load_n(&presents, __ATOMIC_RELAXED))
-        logmsg("frame-pacer: HUD observed present\n");
     if (hud_enabled(monotonic(0)))
         forward = frame_pacer_vulkan_hud_prepare_present(
             &vulkan_hud, queue, info, &replacement);
     /* Pace immediately before the game's real present.  The optional HUD
      * submission above is deliberately not an additional pacing decision. */
-    pace("present");
+    pace();
     result = device->present(queue, forward);
     if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR) {
         uint64_t accepted_ns = monotonic(0);
@@ -523,7 +611,9 @@ vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *info)
             logmsg("frame-pacer: submit fallback ended; present resumed\n");
     }
     (void)__atomic_add_fetch(&presents, 1, __ATOMIC_RELAXED);
-    logmsg("frame-pacer: present result=%d\n", result);
+    if (frame_pacer_runtime_log_active(&runtime_log) &&
+        should_log_present_failure(result))
+        logmsg("frame-pacer: present failed result=%d\n", result);
     return result;
 }
 
@@ -534,13 +624,16 @@ vkQueueSubmit(VkQueue queue, uint32_t count, const VkSubmitInfo *infos,
     struct frame_pacer_vulkan_queue *item;
     PFN_vkQueueSubmit submit;
 
-    pace_submit_fallback(queue, count, "submit");
+    pace_submit_fallback(queue);
     frame_pacer_vulkan_registry_lock(&registry);
     item = frame_pacer_vulkan_registry_find_queue(&registry, queue);
     submit = item ? item->device->submit : 0;
     frame_pacer_vulkan_registry_unlock(&registry);
-    return submit ? submit(queue, count, infos, fence)
-                  : VK_ERROR_INITIALIZATION_FAILED;
+    if (!submit) {
+        log_failure("frame-pacer: queue submit has no downstream target\n");
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    return submit(queue, count, infos, fence);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
@@ -550,13 +643,16 @@ vkQueueSubmit2(VkQueue queue, uint32_t count, const VkSubmitInfo2 *infos,
     struct frame_pacer_vulkan_queue *item;
     PFN_vkQueueSubmit2 submit;
 
-    pace_submit_fallback(queue, count, "submit2");
+    pace_submit_fallback(queue);
     frame_pacer_vulkan_registry_lock(&registry);
     item = frame_pacer_vulkan_registry_find_queue(&registry, queue);
     submit = item ? item->device->submit2 : 0;
     frame_pacer_vulkan_registry_unlock(&registry);
-    return submit ? submit(queue, count, infos, fence)
-                  : VK_ERROR_INITIALIZATION_FAILED;
+    if (!submit) {
+        log_failure("frame-pacer: queue submit2 has no downstream target\n");
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    return submit(queue, count, infos, fence);
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL
@@ -566,13 +662,16 @@ vkQueueSubmit2KHR(VkQueue queue, uint32_t count, const VkSubmitInfo2 *infos,
     struct frame_pacer_vulkan_queue *item;
     PFN_vkQueueSubmit2KHR submit;
 
-    pace_submit_fallback(queue, count, "submit2KHR");
+    pace_submit_fallback(queue);
     frame_pacer_vulkan_registry_lock(&registry);
     item = frame_pacer_vulkan_registry_find_queue(&registry, queue);
     submit = item ? item->device->submit2_khr : 0;
     frame_pacer_vulkan_registry_unlock(&registry);
-    return submit ? submit(queue, count, infos, fence)
-                  : VK_ERROR_INITIALIZATION_FAILED;
+    if (!submit) {
+        log_failure("frame-pacer: queue submit2 KHR has no downstream target\n");
+        return VK_ERROR_INITIALIZATION_FAILED;
+    }
+    return submit(queue, count, infos, fence);
 }
 
 VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL
@@ -661,10 +760,12 @@ vkGetInstanceProcAddr(VkInstance instance, const char *name)
 VKAPI_ATTR VkResult VKAPI_CALL
 vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface *version)
 {
-    init_log();
     if (!version || version->sType != LAYER_NEGOTIATE_INTERFACE_STRUCT ||
-        version->loaderLayerInterfaceVersion < 2)
+        version->loaderLayerInterfaceVersion < 2) {
+        log_failure("frame-pacer: layer negotiation received an unsupported "
+                    "loader interface\n");
         return VK_ERROR_INITIALIZATION_FAILED;
+    }
     if (version->loaderLayerInterfaceVersion > 2)
         version->loaderLayerInterfaceVersion = 2;
     version->pfnGetInstanceProcAddr = vkGetInstanceProcAddr;
@@ -677,9 +778,11 @@ vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface *version)
 
 static void __attribute__((destructor)) frame_pacer_shutdown(void)
 {
-    logmsg("frame-pacer: shutdown presents=%" PRIu64 " log_bytes=%" PRIu64 "\n",
-           __atomic_load_n(&presents, __ATOMIC_RELAXED),
-           frame_pacer_runtime_log_bytes(&runtime_log));
+    if (frame_pacer_runtime_log_active(&runtime_log))
+        logmsg("frame-pacer: shutdown presents=%" PRIu64
+               " log_bytes=%" PRIu64 "\n",
+               __atomic_load_n(&presents, __ATOMIC_RELAXED),
+               frame_pacer_runtime_log_bytes(&runtime_log));
     frame_pacer_runtime_log_close(&runtime_log);
     if (pacing_initialized) {
         frame_pacer_thread_cpu_quota_destroy(&thread_cpu_quota);

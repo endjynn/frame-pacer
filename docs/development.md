@@ -11,6 +11,9 @@ make check
 This covers x86_64 and i386 Vulkan and GL builds, unit tests, shader assets,
 manifests, installation, ABI, workflows, shell scripts, documentation, and the
 generated HUD image. It does not start a game or intentionally modify cgroups.
+Resolver tests exercise effective-configuration statuses, stable reasons,
+semantic revisions, bounded formatting, concurrent report deduplication,
+lock-free runtime settings, and bounded per-frame stack use.
 
 Additional checks are available when relevant:
 
@@ -22,6 +25,7 @@ Additional checks are available when relevant:
 | `make check-tsan` | Run ThreadSanitizer. |
 | `make check-coverage` | Generate normalized GCC coverage and exercise available live integrations. |
 | `make check-release-package` | Build and fully validate the reproducible release archive. |
+| `make benchmark-performance` | Run CPU-pinned configuration and GLX hot-path microbenchmarks with optional features disabled. |
 | `make run-vulkan-present-probe` | Exercise real Vulkan presentation on x86_64 and i386. |
 | `make run-glx-present-probe` | Exercise real GLX presentation on x86_64 and i386. |
 | `make run-egl-present-probe` | Exercise real EGL presentation on x86_64. |
@@ -75,6 +79,12 @@ If a build or validation step fails, nothing is published. Correct the defect
 through a normal reviewed change and use a new version; do not replace a
 published tag or asset.
 
+`VERSION` is the only human-edited version source. A shared POSIX-shell
+validator is used by builds, packaging, tests, and release validation. Builds
+generate the private `build/frame_pacer_version.h` header and compile that
+identity into both graphics runtimes. Release-package tests load every stripped
+x86_64 and i386 runtime and compare its startup log with the packaged version.
+
 ## Change requirements
 
 - Keep one final presentation limiter per graphics API path.
@@ -83,6 +93,7 @@ published tag or asset.
 - Keep CPU control opt-in and isolated from Steam and unrelated processes.
 - Add automated tests for supported behavior, failure paths, and cleanup.
 - Cover both x86_64 and i386 when a change affects both architectures.
+- Keep diagnostic logs event-oriented; never add routine per-frame messages.
 - Update user documentation when configuration or setup changes.
 
 See [Technical details](technical-details.md) for the protected runtime

@@ -2,6 +2,7 @@
 set -eu
 
 root=$(pwd)
+version=$(sh packaging/read-version.sh VERSION)
 arch=${1:-x86_64}
 state=$(mktemp -d)
 
@@ -47,7 +48,18 @@ run_probe "$instance_probe"
 printf 'Vulkan device lifecycle probe (%s)\n' "$arch"
 run_probe "$device_probe"
 
-test "$(find "$state/frame-pacer" -type f -name 'frame-pacer-[0-9]*.log' | wc -l)" -eq 2
-for log in "$state"/frame-pacer/frame-pacer-[0-9]*.log; do
-    grep -q 'layer init.*hud=enabled' "$log"
-done
+test "$(find "$state" -type f -name 'frame-pacer-[0-9]*.log' | wc -l)" -eq 0
+
+if [ "$arch" = x86_64 ]; then
+    failure_state="$state/failure"
+
+    mkdir -p "$failure_state"
+    XDG_STATE_HOME="$failure_state" FRAME_PACER_LOG=1 \
+        "$root/build/test_frame_pacer_layer"
+    failure_log=$(find "$failure_state/frame-pacer" -type f \
+        -name 'frame-pacer-[0-9]*.log' -print -quit)
+    test -n "$failure_log"
+    sed -n '1p' "$failure_log" | grep -q \
+        "startup version=$version backend=vulkan.*architecture=64-bit"
+    grep -q 'queue present has no downstream target' "$failure_log"
+fi

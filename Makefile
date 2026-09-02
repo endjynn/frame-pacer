@@ -16,6 +16,7 @@ STATE_DIRECTORY_SRC := src/state_directory.c
 THREAD_CPU_SYSTEMD_SRC := src/thread_cpu_systemd.c
 THREAD_CPU_EXTERNAL_SRC := src/thread_cpu_external.c
 PACER_SRC := \
+	src/effective_config_report.c \
 	src/pacer_clock.c \
 	src/pacer_limit.c \
 	src/thread_cpu_quota.c \
@@ -37,6 +38,7 @@ HUD_SRC := \
 	$(NVML_SRC) \
 	src/hud_text.c \
 	src/hud_vertices.c
+VERSION_HEADER := build/frame_pacer_version.h
 VULKAN_SRC := \
 	src/frame_pacer_layer.c \
 	src/vulkan_layer_registry.c \
@@ -81,7 +83,7 @@ GL_RUNTIME_ARTIFACTS := \
 	build/lib/libframe_pacer_gl_shim.so \
 	build/lib32/libframe_pacer_gl_shim.so
 
-.PHONY: all check check-unit check-unit-i386 check-shell check-docs check-workflows check-hud-image check-abi check-analyzer check-sanitize check-tsan check-coverage docs-hud-image \
+.PHONY: all check check-unit check-unit-i386 check-shell check-docs check-workflows check-hud-image check-hot-path-stack check-abi check-analyzer check-sanitize check-tsan check-coverage benchmark-performance docs-hud-image \
 	clean install install-payload uninstall release-package check-release-package \
 	thread-cpu-quota-probe run-thread-cpu-quota-probe \
 	thread-cpu-quota-controller-integration run-thread-cpu-quota-controller-integration \
@@ -175,16 +177,19 @@ build/windows/dxgi-proxy-client/dxgi_proxy_probe.exe: tests/dxgi_proxy_client.c
 	x86_64-w64-mingw32-gcc $(MINGW_CFLAGS) -municode -o $@ $<
 dxgi-forward-probe: build/windows/x86_64/dxgi.dll build/windows/dxgi-proxy-client/dxgi_proxy_probe.exe
 	./tests/test_dxgi_forward.sh
-build/x86_64/libVkLayer_frame_pacer.so: $(VULKAN_SRC) $(HDRS) build/hud_spv.h
+$(VERSION_HEADER): VERSION packaging/read-version.sh packaging/generate-version-header.sh
+	mkdir -p $(@D)
+	sh packaging/generate-version-header.sh VERSION $@
+build/x86_64/libVkLayer_frame_pacer.so: $(VULKAN_SRC) $(HDRS) build/hud_spv.h $(VERSION_HEADER)
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -shared -Wl,-Bsymbolic -o $@ $(VULKAN_SRC) -ldl -pthread
-build/i386/libVkLayer_frame_pacer.so: $(VULKAN_SRC) $(HDRS) build/hud_spv.h build/hud_nvml_helper_image.h
+build/i386/libVkLayer_frame_pacer.so: $(VULKAN_SRC) $(HDRS) build/hud_spv.h build/hud_nvml_helper_image.h $(VERSION_HEADER)
 	mkdir -p $(@D)
 	$(CC) -m32 $(BUILD_CFLAGS) -shared -Wl,-Bsymbolic -o $@ $(VULKAN_SRC) -ldl -pthread
-build/x86_64/libframe_pacer_gl.so: $(GL_SRC) $(HDRS)
+build/x86_64/libframe_pacer_gl.so: $(GL_SRC) $(HDRS) $(VERSION_HEADER)
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -shared -Wl,-Bsymbolic -o $@ $(GL_SRC) -ldl -pthread
-build/i386/libframe_pacer_gl.so: $(GL_SRC) $(HDRS) build/hud_nvml_helper_image.h
+build/i386/libframe_pacer_gl.so: $(GL_SRC) $(HDRS) build/hud_nvml_helper_image.h $(VERSION_HEADER)
 	mkdir -p $(@D)
 	$(CC) -m32 $(BUILD_CFLAGS) -shared -Wl,-Bsymbolic -o $@ $(GL_SRC) -ldl -pthread
 build/x86_64/libframe_pacer_gl_shim.so: src/gl_pacer_shim.c
@@ -252,10 +257,20 @@ build/test_pacer_clock: tests/test_pacer_clock.c src/pacer_clock.c src/pacer_lim
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_pacer_clock.c src/pacer_clock.c src/pacer_limit.c -pthread
 build/test_pacer_limit: tests/test_pacer_limit.c src/pacer_limit.c src/pacer_limit.h
 	mkdir -p $(@D)
-	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_pacer_limit.c src/pacer_limit.c -pthread
+	$(CC) $(BUILD_CFLAGS) -DFRAME_PACER_TEST -Isrc -o $@ tests/test_pacer_limit.c src/pacer_limit.c -pthread
+build/test_effective_config_report: tests/test_effective_config_report.c src/effective_config_report.c src/effective_config_report.h src/pacer_limit.c src/pacer_limit.h
+	mkdir -p $(@D)
+	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_effective_config_report.c src/effective_config_report.c src/pacer_limit.c -pthread
 build/test_log_retention: tests/test_log_retention.c $(LOG_RETENTION_SRC) src/log_retention.h $(STATE_DIRECTORY_SRC) src/state_directory.h
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -DFRAME_PACER_LOG_LIMIT=64U -Isrc -o $@ tests/test_log_retention.c $(LOG_RETENTION_SRC) $(STATE_DIRECTORY_SRC) -pthread
+build/benchmark-pacer-limit: tests/benchmark_pacer_limit.c src/pacer_limit.c src/pacer_limit.h $(LOG_RETENTION_SRC) src/log_retention.h $(STATE_DIRECTORY_SRC) src/state_directory.h
+	mkdir -p $(@D)
+	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/benchmark_pacer_limit.c src/pacer_limit.c $(LOG_RETENTION_SRC) $(STATE_DIRECTORY_SRC) -pthread
+build/benchmark-gl-present: tests/benchmark_gl_present.c build/x86_64/libGL.so.1
+	mkdir -p $(@D)
+	$(CC) $(BUILD_CFLAGS) -o $@ $< -Lbuild/x86_64 \
+		-Wl,-rpath,$(abspath build/x86_64) -l:libGL.so.1
 build/test_pacer_queue: tests/test_pacer_queue.c src/pacer_queue.c src/pacer_queue.h
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_pacer_queue.c src/pacer_queue.c
@@ -379,7 +394,7 @@ build/test_hud_vulkan_record: tests/test_hud_vulkan_record.c src/hud_vulkan_reco
 build/test_hud_vulkan_present: tests/test_hud_vulkan_present.c src/hud_vulkan_present.c src/hud_vulkan_present.h
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_vulkan_present.c src/hud_vulkan_present.c
-build/test_frame_pacer_layer: tests/test_frame_pacer_layer.c $(VULKAN_SRC) $(HDRS) build/hud_spv.h
+build/test_frame_pacer_layer: tests/test_frame_pacer_layer.c $(VULKAN_SRC) $(HDRS) build/hud_spv.h $(VERSION_HEADER)
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -DFRAME_PACER_TEST -Isrc -o $@ tests/test_frame_pacer_layer.c $(VULKAN_SRC) -ldl -pthread
 metrics-probe: build/hud-metrics-probe
@@ -439,6 +454,7 @@ run-egl-present-probe: egl-present-probe $(GL_ARTIFACTS) $(GL_RUNTIME_ARTIFACTS)
 UNIT_TESTS := \
 	build/test_pacer_clock \
 	build/test_pacer_limit \
+	build/test_effective_config_report \
 	build/test_thread_cpu_quota \
 	build/test_thread_cpu_protocol \
 	build/test_state_directory \
@@ -465,7 +481,7 @@ UNIT_TESTS := \
 # Unit recipes compile source files directly instead of through dependency
 # objects. Rebuild them after any production-header edit so transitive includes
 # cannot leave an apparently current but stale fixture in build/.
-$(UNIT_TESTS): $(HDRS) build/hud_nvml_helper_image.h
+$(UNIT_TESTS): $(HDRS) build/hud_nvml_helper_image.h $(VERSION_HEADER)
 SHELL_TESTS := $(wildcard tests/*.sh) $(wildcard packaging/*.sh) \
 	$(wildcard .github/scripts/*.sh)
 
@@ -481,6 +497,12 @@ check-docs:
 	sh ./tests/check_markdown_links.sh
 check-workflows:
 	python3 ./tests/check_workflows.py
+check-hot-path-stack:
+	CC="$(CC)" sh ./tests/check_hot_path_stack.sh
+
+benchmark-performance: build/benchmark-pacer-limit build/benchmark-gl-present \
+	build/x86_64/libframe_pacer_gl.so
+	sh ./tests/benchmark_performance.sh
 
 check: all hud-shaders $(GL_ARTIFACTS) $(GL_RUNTIME_ARTIFACTS) \
 	build/test-gl-pacer \
@@ -493,7 +515,8 @@ check: all hud-shaders $(GL_ARTIFACTS) $(GL_RUNTIME_ARTIFACTS) \
 	build/test-hud-nvml-client-target-exit-i386 \
 	build/test-hud-metrics-external-i386 \
 	build/hud-nvml-helper-probe-i386 \
-	check-unit check-shell check-docs check-workflows check-hud-image check-abi
+	check-unit check-shell check-docs check-workflows check-hud-image \
+	check-hot-path-stack check-abi
 	./build/test-hud-nvml-client-i386
 	./build/test-hud-nvml-client-retry-i386
 	./build/test-hud-nvml-client-target-exit-i386
@@ -501,6 +524,7 @@ check: all hud-shaders $(GL_ARTIFACTS) $(GL_RUNTIME_ARTIFACTS) \
 	sh ./tests/test_hud_nvml_helper.sh
 	sh ./tests/test_nvml_helper_embedding.sh
 	sh ./tests/test_install.sh
+	sh ./tests/test_version.sh
 	sh ./tests/test_gl_pacer.sh
 	sh ./tests/test_gl_pacer.sh i386
 	sh ./tests/test_vulkan_layer.sh

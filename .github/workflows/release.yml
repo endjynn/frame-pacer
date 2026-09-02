@@ -31,7 +31,7 @@ jobs:
         run: |
           test -z "${GITHUB_TOKEN:-}"
           test -z "$(git config --local --get-regexp '^http\..*\.extraheader$' || true)"
-          version=$(cat VERSION)
+          version=$(sh packaging/read-version.sh VERSION)
           test "$GITHUB_REF_TYPE" = tag
           test "$GITHUB_REF_NAME" = "v$version"
       - name: Install pinned build dependencies
@@ -40,7 +40,7 @@ jobs:
         run: make check-release-package
       - name: Verify release transfer
         run: |
-          version=$(cat VERSION)
+          version=$(sh packaging/read-version.sh VERSION)
           archive="build/dist/frame-pacer-$version-linux-x86_64-multilib.tar.xz"
           checksum="$archive.sha256"
           test -f "$archive" && test ! -L "$archive"

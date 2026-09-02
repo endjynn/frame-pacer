@@ -3,8 +3,12 @@
 #include <GL/glx.h>
 #include <assert.h>
 #include <dlfcn.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <time.h>
 
 int main(void)
 {
@@ -34,6 +38,7 @@ int main(void)
     unsigned int (*glx_destroy_calls)(void);
     unsigned int (*egl_destroy_calls)(void);
     unsigned int (*egl_terminate_calls)(void);
+    const char *reload_path = getenv("FRAME_PACER_TEST_RELOAD_PATH");
 
     symbol = dlsym(RTLD_DEFAULT, "glXSwapBuffers");
     assert(symbol);
@@ -92,6 +97,7 @@ int main(void)
         memcpy(&egl_swap_damage, &egl_proc, sizeof(egl_swap_damage));
         assert(egl_swap_damage((EGLDisplay)1, (EGLSurface)1, 0, 0) == EGL_TRUE);
     }
+
     symbol = dlsym(provider, "frame_pacer_test_glx_calls");
     assert(symbol);
     memcpy(&glx_calls, &symbol, sizeof(glx_calls));
@@ -149,6 +155,19 @@ int main(void)
     assert(egl_swap((EGLDisplay)1, (EGLSurface)1) == EGL_TRUE);
     assert(gl_programs() == 5);
 
+    if (reload_path && *reload_path) {
+        const struct timespec delay = { .tv_sec = 1, .tv_nsec = 100000000L };
+        FILE *reload = fopen(reload_path, "w");
+
+        assert(reload);
+        assert(fputs("global_fps_limit = 71\nhud = off\n", reload) >= 0);
+        assert(!fclose(reload));
+        assert(!chmod(reload_path, 0600));
+        assert(!nanosleep(&delay, 0));
+        glx_swap((Display *)1, 0);
+        assert(egl_swap((EGLDisplay)1, (EGLSurface)1) == EGL_TRUE);
+    }
+
     symbol = dlsym(provider, "frame_pacer_test_glx_destroy_calls");
     assert(symbol);
     memcpy(&glx_destroy_calls, &symbol, sizeof(glx_destroy_calls));
@@ -161,8 +180,8 @@ int main(void)
     assert(glx_destroy_calls() == 1);
     assert(egl_destroy_calls() == 1);
     assert(egl_terminate_calls() == 1);
-    assert(glx_calls() == 6);
-    assert(egl_calls() == 8);
+    assert(glx_calls() == (reload_path && *reload_path ? 7U : 6U));
+    assert(egl_calls() == (reload_path && *reload_path ? 9U : 8U));
     symbol = dlsym(provider, "frame_pacer_test_gl_vertices");
     assert(symbol);
     memcpy(&gl_vertices, &symbol, sizeof(gl_vertices));

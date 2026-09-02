@@ -2,6 +2,8 @@
 #include <EGL/egl.h>
 #include <GL/gl.h>
 #include <GL/glx.h>
+#include "effective_config_report.h"
+#include "frame_pacer_version.h"
 #include "gl_hud_renderer.h"
 #include "gl_pacer_dispatch.h"
 #include "hud_fps.h"
@@ -25,12 +27,20 @@
 
 static pthread_once_t init_once = PTHREAD_ONCE_INIT;
 static pthread_once_t metrics_once = PTHREAD_ONCE_INIT;
+static pthread_once_t presentation_log_once = PTHREAD_ONCE_INIT;
 static void logmsg(const char *format, ...);
 static void hud_log(const char *message) { logmsg("%s", message); }
 static struct frame_pacer_clock clock_;
 static struct frame_pacer_limit limit_;
+static struct frame_pacer_effective_reporter effective_reporter =
+    FRAME_PACER_EFFECTIVE_REPORTER_INITIALIZER;
 static struct frame_pacer_thread_cpu_quota thread_cpu_quota_;
 static void thread_cpu_quota_log(const char *message) { logmsg("%s", message); }
+static void report_write(void *unused, const char *message)
+{
+    (void)unused;
+    logmsg("%s", message);
+}
 static struct frame_pacer_fps_tracker fps_;
 static struct frame_pacer_hud_metrics_cache metrics_;
 static struct frame_pacer_gl_dispatch dispatch_;
@@ -82,9 +92,35 @@ static void logmsg(const char *format, ...)
     va_end(arguments);
 }
 
-static void init_log(void)
+static void init_presentation_log(void)
 {
-    (void)frame_pacer_runtime_log_open(&runtime_log, "frame-pacer-gl-");
+    char startup[512];
+    bool enabled = frame_pacer_log_enabled();
+    int length;
+
+    frame_pacer_limit_set_reporting_enabled(&limit_, enabled);
+    if (!enabled) return;
+    length = snprintf(
+        startup, sizeof(startup),
+        "frame-pacer: startup version=%s backend=opengl pid=%ld "
+        "architecture=%zu-bit dlsym=%d glx=%d egl=%d hud=%d\n",
+        FRAME_PACER_VERSION, (long)getpid(), sizeof(void *) * 8,
+        real_dlsym != 0, next_glx_swap != 0, next_egl_swap != 0,
+        hud_available);
+    if (length < 0 || (size_t)length >= sizeof(startup)) return;
+    (void)frame_pacer_runtime_log_activate(
+        &runtime_log, "frame-pacer-gl-", startup);
+}
+
+static void activate_presentation_log(void)
+{
+    (void)pthread_once(&presentation_log_once, init_presentation_log);
+}
+
+static void begin_presentation(void)
+{
+    if (__atomic_add_fetch(&swaps, 1, __ATOMIC_RELAXED) == 1)
+        activate_presentation_log();
 }
 
 static void init(void)
@@ -94,12 +130,8 @@ static void init(void)
     frame_pacer_thread_cpu_quota_init(&thread_cpu_quota_);
     frame_pacer_thread_cpu_quota_set_logger(&thread_cpu_quota_, thread_cpu_quota_log);
     frame_pacer_fps_init(&fps_);
-    init_log();
     (void)frame_pacer_gl_dispatch_init(&dispatch_);
     hud_available = dispatch_.hud_available;
-    logmsg("frame-pacer: GL interposer init pid=%ld arch=%zu dlsym=%d glx=%d egl=%d hud=%d\n",
-           (long)getpid(), sizeof(void *) * 8, real_dlsym != 0, next_glx_swap != 0,
-           next_egl_swap != 0, hud_available);
     backend_initialized = true;
 }
 
@@ -174,19 +206,16 @@ static void *interposed_symbol(const char *name)
     return address;
 }
 
-static void pace(const char *api)
+static void pace(enum frame_pacer_report_backend backend)
 {
     struct frame_pacer_decision decision;
-    bool changed;
-    uint32_t fps = frame_pacer_limit_poll(&limit_, now_ns(0), &changed);
+    bool logging = frame_pacer_runtime_log_active(&runtime_log);
+    uint32_t fps = frame_pacer_limit_poll(&limit_, now_ns(0));
 
-    if (changed) logmsg("frame-pacer: GL FPS limit changed to %u\n", fps);
+    if (logging)
+        (void)frame_pacer_effective_report_if_due(
+            &effective_reporter, &limit_, backend, report_write, 0);
     frame_pacer_clock_wait(&clock_, fps, now_ns, sleep_until, 0, &decision);
-    (void)__atomic_add_fetch(&swaps, 1, __ATOMIC_RELAXED);
-    logmsg("frame-pacer: %s first=%d missed=%d now=%" PRIu64
-           " deadline=%" PRIu64 " eintr=%u cap=%u\n", api, decision.first,
-           decision.missed, decision.observed_ns, decision.deadline_ns,
-           decision.interruptions, fps);
 }
 
 static void render_hud(EGLDisplay egl_display, EGLSurface egl_surface,
@@ -199,7 +228,7 @@ static void render_hud(EGLDisplay egl_display, EGLSurface egl_surface,
     bool fps_valid, thread_cpu_quota_configured;
 
     if (!hud_available) return;
-    (void)frame_pacer_limit_poll(&limit_, now_ns(0), 0);
+    (void)frame_pacer_limit_poll(&limit_, now_ns(0));
     if (!frame_pacer_limit_hud_enabled(&limit_)) return;
     if ((glx_display && (!dispatch_.next_glx_current_context ||
                          !dispatch_.next_glx_current_context())) ||
@@ -209,7 +238,7 @@ static void render_hud(EGLDisplay egl_display, EGLSurface egl_surface,
     dispatch_.gl_get_integer(GL_VIEWPORT, viewport);
     if (viewport[2] <= 0 || viewport[3] <= 0) return;
     (void)pthread_once(&metrics_once, init_metrics);
-    limit = frame_pacer_limit_poll(&limit_, now_ns(0), 0);
+    limit = frame_pacer_limit_poll(&limit_, now_ns(0));
     thread_cpu_quota = frame_pacer_limit_thread_cpu_quota(
         &limit_, &thread_cpu_quota_configured);
     frame_pacer_thread_cpu_quota_publish(&thread_cpu_quota_,
@@ -230,9 +259,14 @@ void glXSwapBuffers(Display *display, GLXDrawable drawable)
     uint64_t accepted;
 
     (void)pthread_once(&init_once, init);
-    if (!next_glx_swap) return;
+    if (!next_glx_swap) {
+        activate_presentation_log();
+        logmsg("frame-pacer: glXSwapBuffers has no downstream target\n");
+        return;
+    }
+    begin_presentation();
     render_hud(EGL_NO_DISPLAY, EGL_NO_SURFACE, display, drawable);
-    pace("glXSwapBuffers");
+    pace(FRAME_PACER_REPORT_GLX);
     next_glx_swap(display, drawable);
     accepted = now_ns(0);
     if (accepted) (void)frame_pacer_fps_record_present(&fps_, accepted, 0);
@@ -244,9 +278,14 @@ EGLBoolean eglSwapBuffers(EGLDisplay display, EGLSurface surface)
     uint64_t accepted;
 
     (void)pthread_once(&init_once, init);
-    if (!next_egl_swap) return EGL_FALSE;
+    if (!next_egl_swap) {
+        activate_presentation_log();
+        logmsg("frame-pacer: eglSwapBuffers has no downstream target\n");
+        return EGL_FALSE;
+    }
+    begin_presentation();
     render_hud(display, surface, 0, 0);
-    pace("eglSwapBuffers");
+    pace(FRAME_PACER_REPORT_EGL);
     result = next_egl_swap(display, surface);
     if (result == EGL_TRUE) {
         accepted = now_ns(0);
@@ -255,7 +294,7 @@ EGLBoolean eglSwapBuffers(EGLDisplay display, EGLSurface surface)
     return result;
 }
 
-static EGLBoolean swap_damage(const char *api, frame_pacer_egl_swap_damage_fn next,
+static EGLBoolean swap_damage(frame_pacer_egl_swap_damage_fn next,
                               EGLDisplay display, EGLSurface surface,
                               const EGLint *rects, EGLint count)
 {
@@ -263,9 +302,14 @@ static EGLBoolean swap_damage(const char *api, frame_pacer_egl_swap_damage_fn ne
     uint64_t accepted;
 
     (void)pthread_once(&init_once, init);
-    if (!next) return EGL_FALSE;
+    if (!next) {
+        activate_presentation_log();
+        logmsg("frame-pacer: EGL damage swap has no downstream target\n");
+        return EGL_FALSE;
+    }
+    begin_presentation();
     render_hud(display, surface, 0, 0);
-    pace(api);
+    pace(FRAME_PACER_REPORT_EGL);
     result = next(display, surface, rects, count);
     if (result == EGL_TRUE) {
         accepted = now_ns(0);
@@ -277,15 +321,13 @@ static EGLBoolean swap_damage(const char *api, frame_pacer_egl_swap_damage_fn ne
 EGLBoolean eglSwapBuffersWithDamageKHR(EGLDisplay display, EGLSurface surface,
                                        const EGLint *rects, EGLint count)
 {
-    return swap_damage("eglSwapBuffersWithDamageKHR", next_egl_swap_damage_khr,
-                       display, surface, rects, count);
+    return swap_damage(next_egl_swap_damage_khr, display, surface, rects, count);
 }
 
 EGLBoolean eglSwapBuffersWithDamageEXT(EGLDisplay display, EGLSurface surface,
                                        const EGLint *rects, EGLint count)
 {
-    return swap_damage("eglSwapBuffersWithDamageEXT", next_egl_swap_damage_ext,
-                       display, surface, rects, count);
+    return swap_damage(next_egl_swap_damage_ext, display, surface, rects, count);
 }
 
 void glXDestroyContext(Display *display, GLXContext context)
@@ -383,10 +425,11 @@ __eglMustCastToProperFunctionPointerType eglGetProcAddress(const char *name)
 
 static void __attribute__((destructor)) done(void)
 {
-
-    logmsg("frame-pacer: GL shutdown swaps=%" PRIu64 " log_bytes=%" PRIu64 "\n",
-           __atomic_load_n(&swaps, __ATOMIC_RELAXED),
-           frame_pacer_runtime_log_bytes(&runtime_log));
+    if (frame_pacer_runtime_log_active(&runtime_log))
+        logmsg("frame-pacer: GL shutdown swaps=%" PRIu64
+               " log_bytes=%" PRIu64 "\n",
+               __atomic_load_n(&swaps, __ATOMIC_RELAXED),
+               frame_pacer_runtime_log_bytes(&runtime_log));
     frame_pacer_runtime_log_close(&runtime_log);
     frame_pacer_gl_hud_renderer_destroy(&hud_renderer_);
     if (metrics_initialized)

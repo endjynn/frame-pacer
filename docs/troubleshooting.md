@@ -47,6 +47,10 @@ If the game works again, re-enable only the integration required by that game.
 
 Enable logging only while reproducing a problem.
 
+When logging is disabled, frame-pacer bypasses effective-report collection and
+diagnostic formatting. The report machinery does not take locks or format
+messages on the presentation path.
+
 For Vulkan and Proton games, fully close Steam and run:
 
 ```sh
@@ -64,7 +68,33 @@ Logs are written to `~/.local/state/frame-pacer`, or below
 `$XDG_STATE_HOME/frame-pacer` when `XDG_STATE_HOME` is set. Remove
 `FRAME_PACER_LOG=1` after collecting the log.
 
-Before sharing a log, review it for private paths or account information.
-Include your distribution, desktop session, GPU and driver, Steam
-Runtime/Proton version, game executable, configuration, and reproduction steps
-in the issue report.
+A PID log is created only when that process creates Vulkan presentation
+resources, attempts frame presentation or pacing, or encounters an actionable
+frame-pacer initialization failure. Wine/Proton helpers that merely load the
+Vulkan layer do not create routine logs. A launcher and its child game can
+still have separate logs when both genuinely render frames.
+
+The first `startup` line identifies the loaded frame-pacer version and graphics
+backend. An `effective-config` line then shows the effective FPS, HUD, and
+thread CPU settings. Its `*_source` fields say whether each value came from a
+global setting, a per-game rule, or the safe default. `rule` and `match` show
+which per-game rule was selected.
+
+The `config` and `reason` fields explain rejected or deliberately disabled
+settings. For example, `config=insecure reason=insecure-permissions` means the
+configuration is not mode `600`, while `config=malformed`,
+`reason=invalid-value`, and `line=17` identify the exact bad line.
+`trigger=reload` means a live edit
+changed the effective configuration.
+
+Logs record important state changes and failures, not every successful frame.
+Vulkan submit fallback is reported when it starts and ends, while repeated
+identical presentation failures are reported once until the result changes.
+The final shutdown line reports the number of presentations or swaps.
+
+Effective-configuration reports deliberately omit configuration paths, home
+directories, command lines, and process ancestry. Other diagnostic messages
+may still contain environment-specific details. Before sharing a log, review
+it for private paths or account information. Include your distribution,
+desktop session, GPU and driver, Steam Runtime/Proton version, game executable,
+configuration, and reproduction steps in the issue report.

@@ -34,12 +34,42 @@ can set `PREFIX` and `DESTDIR` without changing the runtime contract.
 The rendering process reads the configuration directly and checks for changes
 at most once per second. Executable matching is performed inside that process;
 there is no game database, window-title matching, or desktop-environment
-integration.
+integration. For Wine processes, the mapped PE executable is authoritative and
+takes priority over command-line and same-user ancestor candidates. This keeps
+individual games distinguishable when a collection launcher starts a child and
+Wine clears or preserves the launcher's command line.
 
 Configuration loading rejects symbolic links, oversized files, files with
 group or other permissions, ownership changes, malformed values, and partial
 replacement. Missing or invalid input applies no FPS limit and disables thread
 CPU control.
+
+Each completed poll publishes one immutable effective snapshot under the
+configuration mutex, then release-publishes its semantic revision. The revision
+changes only when a value, source, match, status, or diagnostic changes—not for
+comments, whitespace, or timestamp-only edits. Vulkan, GLX, and EGL use a
+shared bounded formatter and separate atomic report slots, so an opted-in log
+contains at most one complete effective report per revision and active backend.
+The report is a single write of at most 511 bytes.
+
+Opting into logging makes a process eligible for a log but does not create one
+during routine layer or interposer initialization. The logger activates when a
+Vulkan swapchain establishes rendering intent, on the first presentation or
+pacing attempt, or on a directly diagnosable initialization failure. Its
+startup header is written before the descriptor is published, so concurrent
+activation cannot place another event before that header.
+
+The presentation hot paths check the activated log descriptor. When logging is
+disabled, they bypass report revision checks, snapshot locking, formatting,
+varargs setup, and writes. First-presentation detection reuses existing Vulkan
+presentation and OpenGL swap counters, adding no steady-state logging work.
+HUD and thread CPU settings remain lock-free atomic reads regardless of
+logging state.
+
+Enabled logs are event-oriented. They record startup, effective configuration,
+important state changes, failures, and shutdown totals, but not routine
+successful presentations or swaps. Consecutive identical Vulkan presentation
+failures produce one record until the result changes.
 
 ## CPU thread control
 
@@ -79,4 +109,5 @@ Diagnostic logs and temporary CPU-controller communication use
 `$XDG_STATE_HOME/frame-pacer`, or `~/.local/state/frame-pacer` when
 `XDG_STATE_HOME` is unset. Protocol files and transient helpers are removed
 during teardown. Each backend retains at most ten PID-qualified logs, with a
-64 MiB maximum per file.
+64 MiB maximum per file. Launchers and child games retain separate PID logs
+when each renders, while non-rendering helper processes create none.

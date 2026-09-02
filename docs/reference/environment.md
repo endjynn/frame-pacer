@@ -42,7 +42,7 @@ checks and are not part of normal installation.
 | --- | --- |
 | `ENABLE_FRAME_PACER=1` | Activates frame-pacer's installed Vulkan layer. |
 | `DISABLE_FRAME_PACER=1` | Prevents the Vulkan loader from activating frame-pacer. Normal users should leave it unset. |
-| `FRAME_PACER_LOG=1` | Enables diagnostic logging for the current process and its frame-pacer backend. |
+| `FRAME_PACER_LOG=1` | Enables diagnostic logging when the process creates/presents rendering work or hits an actionable initialization failure. |
 | `XDG_CONFIG_HOME` | Changes the configuration base from `~/.config`. |
 | `XDG_STATE_HOME` | Changes the runtime-state and log base from `~/.local/state`. |
 

@@ -8,13 +8,7 @@ fail()
 }
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
-version=$(sed -n '1p' "$root/VERSION")
-version_lines=$(awk 'END { print NR }' "$root/VERSION")
-semver='(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?'
-
-[ "$version_lines" -eq 1 ] || fail 'VERSION must contain exactly one line'
-printf '%s\n' "$version" | grep -Eq "^$semver$" ||
-    fail 'VERSION is not a Semantic Version 2.0.0 value'
+version=$(sh "$root/packaging/read-version.sh" "$root/VERSION")
 
 payload="$root/build/install-payload"
 for required in \
