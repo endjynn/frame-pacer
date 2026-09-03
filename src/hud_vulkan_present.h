@@ -13,9 +13,10 @@ struct frame_pacer_hud_present_provider {
 
 /* On success, `replacement` is a stack-safe copy whose only changed field is
  * its wait list. On failure, it leaves `replacement` untouched. */
-bool frame_pacer_hud_prepare_present(const struct frame_pacer_hud_present_provider *,
-    VkDevice, VkQueue, const VkPresentInfoKHR *, VkFence, const VkSemaphore *, VkCommandBuffer,
-    uint32_t image_index, uint32_t image_count, frame_pacer_hud_record_fn, void *,
-    VkPresentInfoKHR *replacement);
+bool frame_pacer_hud_prepare_present(
+    const struct frame_pacer_hud_present_provider *, VkDevice, VkQueue,
+    const VkPresentInfoKHR *, VkFence, const VkSemaphore *, VkCommandBuffer,
+    uint32_t image_index, uint32_t image_count, frame_pacer_hud_record_fn,
+    void *, VkPresentInfoKHR *replacement);
 
 #endif

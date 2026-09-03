@@ -64,8 +64,8 @@ struct frame_pacer_vulkan_registry {
     void (*log)(const char *, ...);
 };
 
-#define FRAME_PACER_VULKAN_REGISTRY_INITIALIZER(logger) \
-    { .lock = PTHREAD_MUTEX_INITIALIZER, .log = (logger) }
+#define FRAME_PACER_VULKAN_REGISTRY_INITIALIZER(logger)                        \
+    {.lock = PTHREAD_MUTEX_INITIALIZER, .log = (logger)}
 
 enum frame_pacer_vulkan_queue_collection_result {
     FRAME_PACER_VULKAN_QUEUES_READY,
@@ -75,12 +75,12 @@ enum frame_pacer_vulkan_queue_collection_result {
 
 /* find_* and remove_device_locked require registry->lock.  The remaining
  * mutating operations acquire it internally unless their name says locked. */
-FRAME_PACER_VULKAN_INTERNAL void frame_pacer_vulkan_registry_lock(
-    struct frame_pacer_vulkan_registry *registry);
+FRAME_PACER_VULKAN_INTERNAL void
+frame_pacer_vulkan_registry_lock(struct frame_pacer_vulkan_registry *registry);
 FRAME_PACER_VULKAN_INTERNAL void frame_pacer_vulkan_registry_unlock(
     struct frame_pacer_vulkan_registry *registry);
-FRAME_PACER_VULKAN_INTERNAL void *frame_pacer_vulkan_registry_allocate_zero(
-    size_t count, size_t size);
+FRAME_PACER_VULKAN_INTERNAL void *
+frame_pacer_vulkan_registry_allocate_zero(size_t count, size_t size);
 FRAME_PACER_VULKAN_INTERNAL struct frame_pacer_vulkan_instance *
 frame_pacer_vulkan_registry_find_instance(
     struct frame_pacer_vulkan_registry *registry, VkInstance instance);
@@ -105,8 +105,7 @@ frame_pacer_vulkan_registry_collect_queues(
     struct frame_pacer_vulkan_registry *registry,
     struct frame_pacer_vulkan_device *device,
     const struct frame_pacer_vulkan_physical_device *physical,
-    const VkDeviceCreateInfo *info,
-    struct frame_pacer_vulkan_queue **result);
+    const VkDeviceCreateInfo *info, struct frame_pacer_vulkan_queue **result);
 FRAME_PACER_VULKAN_INTERNAL void frame_pacer_vulkan_registry_add_device(
     struct frame_pacer_vulkan_registry *registry,
     struct frame_pacer_vulkan_device *device,
@@ -119,8 +118,8 @@ FRAME_PACER_VULKAN_INTERNAL void frame_pacer_vulkan_registry_set_test_registry(
     struct frame_pacer_vulkan_registry *registry);
 FRAME_PACER_VULKAN_INTERNAL void
 frame_pacer_layer_test_fail_next_allocation(void);
-FRAME_PACER_VULKAN_INTERNAL void frame_pacer_layer_test_fail_allocation_after(
-    size_t successes);
+FRAME_PACER_VULKAN_INTERNAL void
+frame_pacer_layer_test_fail_allocation_after(size_t successes);
 FRAME_PACER_VULKAN_INTERNAL uint32_t
 frame_pacer_layer_test_queue_family_count(VkPhysicalDevice physical);
 FRAME_PACER_VULKAN_INTERNAL uint32_t

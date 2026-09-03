@@ -12,16 +12,18 @@ static uint64_t monotonic_ns(void)
 {
     struct timespec value;
 
-    if (clock_gettime(CLOCK_MONOTONIC, &value)) return 0;
+    if (clock_gettime(CLOCK_MONOTONIC, &value))
+        return 0;
     return (uint64_t)value.tv_sec * UINT64_C(1000000000) +
            (uint64_t)value.tv_nsec;
 }
 
 static void wait_briefly(void)
 {
-    struct timespec remaining = { .tv_nsec = 10000000L };
+    struct timespec remaining = {.tv_nsec = 10000000L};
 
-    while (nanosleep(&remaining, &remaining) && errno == EINTR) {}
+    while (nanosleep(&remaining, &remaining) && errno == EINTR) {
+    }
 }
 
 int main(int argc, char **argv)
@@ -31,7 +33,8 @@ int main(int argc, char **argv)
     unsigned int iteration;
     int result = 1;
 
-    if (argc != 2 || strlen(argv[1]) != 12) return 2;
+    if (argc != 2 || strlen(argv[1]) != 12)
+        return 2;
     if (!frame_pacer_nvml_client_acquire((unsigned int)getpid(), argv[1]))
         return 3;
     for (iteration = 0; iteration < 500; ++iteration) {
@@ -41,7 +44,8 @@ int main(int argc, char **argv)
             break;
         wait_briefly();
     }
-    if (iteration == 500) goto done;
+    if (iteration == 500)
+        goto done;
     first_ns = monotonic_ns();
     for (iteration = 0; iteration < 300; ++iteration) {
         if (frame_pacer_nvml_client_snapshot(&next) &&

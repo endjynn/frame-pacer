@@ -37,7 +37,7 @@ static const uint8_t glyphs[128][FRAME_PACER_FONT_HEIGHT] = {
     ['m'] = {0, 0, 26, 21, 21, 21, 21},
     ['p'] = {0, 0, 30, 17, 17, 30, 16},
     ['r'] = {0, 0, 22, 25, 16, 16, 16},
-    [126] = {15, 8, 14, 8, 0, 0, 0}, /* Internal compact frame glyph. */
+    [126] = {15, 8, 14, 8, 0, 0, 0},   /* Internal compact frame glyph. */
     [127] = {14, 17, 17, 14, 0, 0, 0}, /* Internal degree glyph. */
 };
 
@@ -49,7 +49,8 @@ uint8_t frame_pacer_font_row(unsigned char character, unsigned int y)
     return glyphs[character][y];
 }
 
-bool frame_pacer_font_pixel(unsigned char character, unsigned int x, unsigned int y)
+bool frame_pacer_font_pixel(unsigned char character, unsigned int x,
+                            unsigned int y)
 {
     return x < FRAME_PACER_FONT_WIDTH &&
            (frame_pacer_font_row(character, y) &
@@ -80,9 +81,10 @@ void frame_pacer_font_rasterize(const char *text, uint8_t *pixels,
                     unsigned int sx;
 
                     for (sx = 0; sx < scale; ++sx) {
-                        size_t offset = (y * scale + sy) * stride +
-                                        glyph * (FRAME_PACER_FONT_WIDTH + 1U) * scale +
-                                        x * scale + sx;
+                        size_t offset =
+                            (y * scale + sy) * stride +
+                            glyph * (FRAME_PACER_FONT_WIDTH + 1U) * scale +
+                            x * scale + sx;
 
                         pixels[offset] = 255;
                     }

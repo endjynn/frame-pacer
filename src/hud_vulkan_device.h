@@ -34,16 +34,14 @@ struct frame_pacer_hud_vulkan_device {
     struct frame_pacer_hud_metrics_cache metrics;
 };
 
-__attribute__((visibility("hidden")))
-void frame_pacer_hud_vulkan_device_init(
+__attribute__((visibility("hidden"))) void frame_pacer_hud_vulkan_device_init(
     struct frame_pacer_hud_vulkan_device *, VkDevice, VkPhysicalDevice,
     PFN_vkGetDeviceProcAddr, VkInstance, PFN_vkGetInstanceProcAddr,
     unsigned int process_id);
-__attribute__((visibility("hidden")))
-void frame_pacer_hud_vulkan_device_destroy(
-    struct frame_pacer_hud_vulkan_device *);
-__attribute__((visibility("hidden")))
-void frame_pacer_hud_vulkan_device_metrics_snapshot(
+__attribute__((visibility("hidden"))) void
+frame_pacer_hud_vulkan_device_destroy(struct frame_pacer_hud_vulkan_device *);
+__attribute__((visibility("hidden"))) void
+frame_pacer_hud_vulkan_device_metrics_snapshot(
     struct frame_pacer_hud_vulkan_device *, uint64_t now_ns,
     struct frame_pacer_metrics_snapshot *);
 

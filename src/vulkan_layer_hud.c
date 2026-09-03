@@ -34,8 +34,8 @@ struct frame_pacer_vulkan_hud_swapchain {
     struct frame_pacer_vulkan_hud_swapchain *next;
 };
 
-static struct frame_pacer_vulkan_hud_swapchain *find_swapchain(
-    struct frame_pacer_vulkan_hud *hud, VkSwapchainKHR swapchain)
+static struct frame_pacer_vulkan_hud_swapchain *
+find_swapchain(struct frame_pacer_vulkan_hud *hud, VkSwapchainKHR swapchain)
 {
     struct frame_pacer_vulkan_hud_swapchain *item;
 
@@ -45,8 +45,8 @@ static struct frame_pacer_vulkan_hud_swapchain *find_swapchain(
     return 0;
 }
 
-static struct frame_pacer_vulkan_hud_swapchain *take_swapchain(
-    struct frame_pacer_vulkan_hud *hud, VkSwapchainKHR swapchain)
+static struct frame_pacer_vulkan_hud_swapchain *
+take_swapchain(struct frame_pacer_vulkan_hud *hud, VkSwapchainKHR swapchain)
 {
     struct frame_pacer_vulkan_hud_swapchain **link = &hud->swapchains;
 
@@ -62,9 +62,9 @@ static struct frame_pacer_vulkan_hud_swapchain *take_swapchain(
     return 0;
 }
 
-static struct frame_pacer_vulkan_hud_swapchain *take_device_swapchains(
-    struct frame_pacer_vulkan_hud *hud,
-    struct frame_pacer_vulkan_device *device)
+static struct frame_pacer_vulkan_hud_swapchain *
+take_device_swapchains(struct frame_pacer_vulkan_hud *hud,
+                       struct frame_pacer_vulkan_device *device)
 {
     struct frame_pacer_vulkan_hud_swapchain **link = &hud->swapchains;
     struct frame_pacer_vulkan_hud_swapchain *result = 0;
@@ -87,21 +87,23 @@ static void destroy_swapchain(struct frame_pacer_vulkan_hud_swapchain *item)
 {
     if (!item)
         return;
-    frame_pacer_hud_destroy_pipeline(&item->pipeline,
-                                     &item->device->hud.pipeline,
-                                     item->device->handle, 0);
+    frame_pacer_hud_destroy_pipeline(
+        &item->pipeline, &item->device->hud.pipeline, item->device->handle, 0);
     frame_pacer_hud_destroy_vertex_buffer(&item->vertex_buffer,
-        &item->device->hud.vertex_buffer, item->device->handle, 0);
+                                          &item->device->hud.vertex_buffer,
+                                          item->device->handle, 0);
     frame_pacer_hud_destroy_draw_resources(&item->draw_resources,
-        &item->device->hud.draw, item->device->handle, 0);
+                                           &item->device->hud.draw,
+                                           item->device->handle, 0);
     frame_pacer_hud_destroy_image_views(&item->image_views,
-        &item->device->hud.resources, item->device->handle, 0);
+                                        &item->device->hud.resources,
+                                        item->device->handle, 0);
     frame_pacer_fps_destroy(&item->fps);
     free(item);
 }
 
-static void destroy_swapchain_list(
-    struct frame_pacer_vulkan_hud_swapchain *items)
+static void
+destroy_swapchain_list(struct frame_pacer_vulkan_hud_swapchain *items)
 {
     while (items) {
         struct frame_pacer_vulkan_hud_swapchain *next = items->next;
@@ -187,9 +189,10 @@ void frame_pacer_vulkan_hud_create_draw_resources(
             &item->draw_resources, &item->device->hud.draw,
             item->device->handle, &item->image_views, item->format,
             item->extent, queue_state->family)) {
-        hud->log("frame-pacer: HUD draw resources unavailable swapchain=%"
-                 PRIx64 "; fail-open\n",
-                 (uint64_t)item->handle);
+        hud->log(
+            "frame-pacer: HUD draw resources unavailable swapchain=%" PRIx64
+            "; fail-open\n",
+            (uint64_t)item->handle);
     } else if (!frame_pacer_hud_create_pipeline(
                    &item->pipeline, &item->device->hud.pipeline,
                    item->device->handle, item->draw_resources.render_pass,
@@ -203,11 +206,10 @@ void frame_pacer_vulkan_hud_create_draw_resources(
     } else if (!item->device->hud.has_memory_properties ||
                !frame_pacer_hud_create_vertex_buffer(
                    &item->vertex_buffer, &item->device->hud.vertex_buffer,
-                   item->device->handle,
-                   &item->device->hud.memory_properties,
+                   item->device->handle, &item->device->hud.memory_properties,
                    sizeof(struct frame_pacer_hud_vertices))) {
-        hud->log("frame-pacer: HUD vertex buffer unavailable swapchain=%"
-                 PRIx64 "; fail-open\n",
+        hud->log("frame-pacer: HUD vertex buffer unavailable swapchain=%" PRIx64
+                 "; fail-open\n",
                  (uint64_t)item->handle);
     } else {
         hud->log("frame-pacer: HUD command resources ready swapchain=%" PRIx64
@@ -246,8 +248,8 @@ static bool record_overlay(void *context, uint32_t image_index)
         item->draw_resources.command_buffers[image_index],
         item->image_views.images[image_index],
         item->draw_resources.framebuffers[image_index],
-        item->draw_resources.render_pass, &item->pipeline,
-        &item->vertex_buffer, item->extent, item->vertices.count);
+        item->draw_resources.render_pass, &item->pipeline, &item->vertex_buffer,
+        item->extent, item->vertices.count);
 }
 
 const VkPresentInfoKHR *frame_pacer_vulkan_hud_prepare_present(
@@ -284,9 +286,10 @@ const VkPresentInfoKHR *frame_pacer_vulkan_hud_prepare_present(
             item->draw_resources.command_buffers[image_index], image_index,
             item->draw_resources.count, record_overlay, item, replacement)) {
         item->disabled = true;
-        hud->log("frame-pacer: HUD overlay submission unavailable swapchain=%"
-                 PRIx64 "; fail-open\n",
-                 (uint64_t)item->handle);
+        hud->log(
+            "frame-pacer: HUD overlay submission unavailable swapchain=%" PRIx64
+            "; fail-open\n",
+            (uint64_t)item->handle);
         return info;
     }
     if (!item->submitted) {
@@ -298,9 +301,9 @@ const VkPresentInfoKHR *frame_pacer_vulkan_hud_prepare_present(
     return replacement;
 }
 
-void frame_pacer_vulkan_hud_note_present(
-    struct frame_pacer_vulkan_hud *hud, const VkPresentInfoKHR *info,
-    uint64_t accepted_ns)
+void frame_pacer_vulkan_hud_note_present(struct frame_pacer_vulkan_hud *hud,
+                                         const VkPresentInfoKHR *info,
+                                         uint64_t accepted_ns)
 {
     uint32_t index;
 
@@ -316,8 +319,8 @@ void frame_pacer_vulkan_hud_note_present(
 }
 
 struct frame_pacer_vulkan_hud_swapchain *
-frame_pacer_vulkan_hud_take_swapchain_locked(
-    struct frame_pacer_vulkan_hud *hud, VkSwapchainKHR swapchain)
+frame_pacer_vulkan_hud_take_swapchain_locked(struct frame_pacer_vulkan_hud *hud,
+                                             VkSwapchainKHR swapchain)
 {
     return take_swapchain(hud, swapchain);
 }

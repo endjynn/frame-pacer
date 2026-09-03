@@ -12,9 +12,10 @@ static VkResult next_result(void)
     return ++calls == fail_at ? VK_ERROR_OUT_OF_HOST_MEMORY : VK_SUCCESS;
 }
 
-static VkResult VKAPI_CALL create_shader(
-    VkDevice device, const VkShaderModuleCreateInfo *info,
-    const VkAllocationCallbacks *allocator, VkShaderModule *shader)
+static VkResult VKAPI_CALL create_shader(VkDevice device,
+                                         const VkShaderModuleCreateInfo *info,
+                                         const VkAllocationCallbacks *allocator,
+                                         VkShaderModule *shader)
 {
     (void)device;
     (void)allocator;
@@ -23,9 +24,10 @@ static VkResult VKAPI_CALL create_shader(
     return next_result();
 }
 
-static VkResult VKAPI_CALL create_layout(
-    VkDevice device, const VkPipelineLayoutCreateInfo *info,
-    const VkAllocationCallbacks *allocator, VkPipelineLayout *layout)
+static VkResult VKAPI_CALL create_layout(VkDevice device,
+                                         const VkPipelineLayoutCreateInfo *info,
+                                         const VkAllocationCallbacks *allocator,
+                                         VkPipelineLayout *layout)
 {
     (void)device;
     (void)allocator;
@@ -34,10 +36,10 @@ static VkResult VKAPI_CALL create_layout(
     return next_result();
 }
 
-static VkResult VKAPI_CALL create_pipeline(
-    VkDevice device, VkPipelineCache cache, uint32_t count,
-    const VkGraphicsPipelineCreateInfo *info,
-    const VkAllocationCallbacks *allocator, VkPipeline *pipeline)
+static VkResult VKAPI_CALL
+create_pipeline(VkDevice device, VkPipelineCache cache, uint32_t count,
+                const VkGraphicsPipelineCreateInfo *info,
+                const VkAllocationCallbacks *allocator, VkPipeline *pipeline)
 {
     (void)device;
     (void)cache;
@@ -92,17 +94,17 @@ int main(void)
     uint32_t spv = 0;
 
     calls = destroys = fail_at = 0;
-    assert(frame_pacer_hud_create_pipeline(
-        &pipeline, &provider, device, render_pass, &spv, sizeof(spv), &spv,
-        sizeof(spv)));
+    assert(frame_pacer_hud_create_pipeline(&pipeline, &provider, device,
+                                           render_pass, &spv, sizeof(spv), &spv,
+                                           sizeof(spv)));
     frame_pacer_hud_destroy_pipeline(&pipeline, &provider, device, 0);
     assert(destroys == 4);
 
     calls = destroys = 0;
     fail_at = 3;
-    assert(!frame_pacer_hud_create_pipeline(
-        &pipeline, &provider, device, render_pass, &spv, sizeof(spv), &spv,
-        sizeof(spv)));
+    assert(!frame_pacer_hud_create_pipeline(&pipeline, &provider, device,
+                                            render_pass, &spv, sizeof(spv),
+                                            &spv, sizeof(spv)));
     assert(destroys == 3);
     return 0;
 }

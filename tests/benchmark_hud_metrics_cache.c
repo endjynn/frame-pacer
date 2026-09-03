@@ -36,7 +36,8 @@ static void pin_current_cpu(void)
     cpu_set_t set;
     int cpu = sched_getcpu();
 
-    if (cpu < 0) return;
+    if (cpu < 0)
+        return;
     CPU_ZERO(&set);
     CPU_SET(cpu, &set);
     (void)sched_setaffinity(0, sizeof(set), &set);
@@ -57,8 +58,7 @@ static void sample(void *argument,
     snapshot->cpu_use_percent = 50;
 }
 
-static void wait_for_sample(struct sampler_context *context,
-                            unsigned int count)
+static void wait_for_sample(struct sampler_context *context, unsigned int count)
 {
     assert(!pthread_mutex_lock(&context->mutex));
     while (context->samples < count)
@@ -66,8 +66,8 @@ static void wait_for_sample(struct sampler_context *context,
     assert(!pthread_mutex_unlock(&context->mutex));
 }
 
-static double benchmark_snapshots(
-    struct frame_pacer_hud_metrics_cache *cache, uint64_t now_ns)
+static double benchmark_snapshots(struct frame_pacer_hud_metrics_cache *cache,
+                                  uint64_t now_ns)
 {
     struct frame_pacer_metrics_snapshot snapshot;
     uint64_t begin, index, total = 0;
@@ -92,8 +92,7 @@ int main(void)
     assert(!pthread_cond_init(&context.condition, 0));
     pin_current_cpu();
     frame_pacer_hud_metrics_cache_init(&cache, 0);
-    frame_pacer_hud_metrics_cache_test_set_sampler(
-        &cache, sample, 0, &context);
+    frame_pacer_hud_metrics_cache_test_set_sampler(&cache, sample, 0, &context);
     frame_pacer_hud_metrics_cache_snapshot(&cache, 0, &snapshot);
     wait_for_sample(&context, 1);
 

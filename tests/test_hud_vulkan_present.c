@@ -102,9 +102,9 @@ int main(void)
         image_index, 3, record, 0, &replacement));
     assert(replacement.sType == VK_STRUCTURE_TYPE_APPLICATION_INFO);
 
-    assert(!frame_pacer_hud_prepare_present(
-        &provider, device, queue, &original, fence, &hud_semaphore, command, 3,
-        3, record, 0, &replacement));
+    assert(!frame_pacer_hud_prepare_present(&provider, device, queue, &original,
+                                            fence, &hud_semaphore, command, 3,
+                                            3, record, 0, &replacement));
 
     {
         VkSemaphore many_waits[FRAME_PACER_HUD_MAX_SWAPCHAIN_IMAGES + 1] = {0};

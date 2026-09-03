@@ -1,8 +1,7 @@
 #!/bin/sh
 set -eu
 
-fail()
-{
+fail() {
     printf 'frame-pacer version: %s\n' "$1" >&2
     exit 1
 }

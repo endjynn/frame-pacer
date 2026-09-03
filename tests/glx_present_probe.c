@@ -37,14 +37,14 @@ int main(void)
             .event_mask = StructureNotifyMask,
         };
 
-        window = XCreateWindow(display, RootWindow(display, visual->screen),
-                               0, 0, FRAME_PACER_HUD_REFERENCE_WIDTH + 32U,
+        window = XCreateWindow(display, RootWindow(display, visual->screen), 0,
+                               0, FRAME_PACER_HUD_REFERENCE_WIDTH + 32U,
                                FRAME_PACER_HUD_REFERENCE_HEIGHT + 32U, 0,
-                               visual->depth, InputOutput,
-                               visual->visual, CWColormap | CWEventMask,
-                               &window_attributes);
+                               visual->depth, InputOutput, visual->visual,
+                               CWColormap | CWEventMask, &window_attributes);
     }
-    if (!window) goto cleanup;
+    if (!window)
+        goto cleanup;
     XMapWindow(display, window);
     XSync(display, False);
     context = glXCreateContext(display, visual, 0, True);
@@ -81,9 +81,13 @@ cleanup:
         (void)glXMakeCurrent(display, None, 0);
         glXDestroyContext(display, context);
     }
-    if (display && window) XDestroyWindow(display, window);
-    if (display && colormap) XFreeColormap(display, colormap);
-    if (visual) XFree(visual);
-    if (display) XCloseDisplay(display);
+    if (display && window)
+        XDestroyWindow(display, window);
+    if (display && colormap)
+        XFreeColormap(display, colormap);
+    if (visual)
+        XFree(visual);
+    if (display)
+        XCloseDisplay(display);
     return exit_code;
 }

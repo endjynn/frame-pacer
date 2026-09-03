@@ -4,7 +4,8 @@
 #define TEST_FPS 70U
 #define TEST_INTERVAL_NS (UINT64_C(1000000000) / TEST_FPS)
 
-static void cadence(struct frame_pacer_fps_tracker *tracker, uint64_t *now, unsigned frames, uint64_t interval)
+static void cadence(struct frame_pacer_fps_tracker *tracker, uint64_t *now,
+                    unsigned frames, uint64_t interval)
 {
     unsigned i;
     for (i = 0; i < frames; ++i) {

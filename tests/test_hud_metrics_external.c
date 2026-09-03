@@ -9,9 +9,10 @@
 
 static void wait_briefly(void)
 {
-    struct timespec remaining = { .tv_nsec = 10000000L };
+    struct timespec remaining = {.tv_nsec = 10000000L};
 
-    while (nanosleep(&remaining, &remaining) && errno == EINTR) {}
+    while (nanosleep(&remaining, &remaining) && errno == EINTR) {
+    }
 }
 
 int main(void)
@@ -22,14 +23,14 @@ int main(void)
 
     frame_pacer_metrics_init(&metrics, "/frame-pacer/missing-i386-nvml.so",
                              (unsigned int)getpid());
-    frame_pacer_metrics_test_set_gpu_identity(
-        &metrics, "renderD128", 0x8086U, "0000:00:02.0");
+    frame_pacer_metrics_test_set_gpu_identity(&metrics, "renderD128", 0x8086U,
+                                              "0000:00:02.0");
     frame_pacer_metrics_sample(&metrics, &snapshot);
     wait_briefly();
     assert(frame_pacer_nvml_client_test_attempts() == 0);
 
-    frame_pacer_metrics_test_set_gpu_identity(
-        &metrics, "renderD129", 0x10deU, "0000:01:00.0");
+    frame_pacer_metrics_test_set_gpu_identity(&metrics, "renderD129", 0x10deU,
+                                              "0000:01:00.0");
     for (iteration = 0; iteration < 300; ++iteration) {
         frame_pacer_metrics_sample(&metrics, &snapshot);
         if ((snapshot.available &

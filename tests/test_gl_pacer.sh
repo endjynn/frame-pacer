@@ -20,7 +20,7 @@ cleanup() { rm -rf -- "$state"; }
 trap cleanup EXIT HUP INT TERM
 mkdir -p "$state/frame-pacer"
 chmod 700 "$state/frame-pacer"
-printf '%s\n' 'global_fps_limit = 70' > "$state/frame-pacer/frame-pacer.conf"
+printf '%s\n' 'global_fps_limit = 70' >"$state/frame-pacer/frame-pacer.conf"
 chmod 600 "$state/frame-pacer/frame-pacer.conf"
 
 XDG_CONFIG_HOME="$state" XDG_STATE_HOME="$state" \
@@ -104,7 +104,7 @@ fi
 
 # A launcher may stage only a symlink to the shim. dladdr then names the staged
 # path while /proc/self/maps identifies the adjacent backend's canonical path.
-printf '%s\n' 'global_fps_limit = 70' > "$state/frame-pacer/frame-pacer.conf"
+printf '%s\n' 'global_fps_limit = 70' >"$state/frame-pacer/frame-pacer.conf"
 chmod 600 "$state/frame-pacer/frame-pacer.conf"
 mkdir -p "$state/staged" "$state/mapped"
 ln -s "$root/build/$arch/libframe_pacer_gl_shim.so" "$state/staged/preload.so"

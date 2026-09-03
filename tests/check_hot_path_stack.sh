@@ -9,8 +9,7 @@ mkdir -p "$output"
 "$compiler" -m32 -std=c17 -O2 -Isrc -fstack-usage -c src/pacer_limit.c \
     -o "$output/pacer_limit-i386.o"
 
-check_stack()
-{
+check_stack() {
     usage_file=$1
     function_name=$2
     maximum=$3

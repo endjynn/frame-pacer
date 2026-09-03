@@ -13,7 +13,7 @@ for library in $libraries; do
     for architecture in $architectures; do
         actual="$temporary_directory/$library.$architecture.symbols"
         nm -D --defined-only "build/$architecture/$library" |
-            awk '$3 !~ /^__gcov_/ && $3 != "mangle_path" { print $2, $3 }' > "$actual"
+            awk '$3 !~ /^__gcov_/ && $3 != "mangle_path" { print $2, $3 }' >"$actual"
 
         if ! diff -u "$baseline" "$actual"; then
             echo "ABI mismatch: build/$architecture/$library" >&2

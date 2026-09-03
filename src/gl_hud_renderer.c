@@ -60,7 +60,8 @@ static void log_message(struct frame_pacer_gl_hud_renderer *renderer,
     char message[512];
     va_list arguments;
 
-    if (!renderer || !renderer->log) return;
+    if (!renderer || !renderer->log)
+        return;
     va_start(arguments, format);
     (void)vsnprintf(message, sizeof(message), format, arguments);
     va_end(arguments);
@@ -75,12 +76,18 @@ static bool process_uses_wined3d(void)
     int maps = open("/proc/self/maps", O_RDONLY | O_CLOEXEC);
     ssize_t read_bytes;
 
-    if (maps < 0) return false;
+    if (maps < 0)
+        return false;
+    // Context setup holds the renderer lock across shared vertices/resources.
+    // Unlocking only this read lets concurrent rendering replace the vertices.
+    // Detection runs on resource creation, never on an ordinary cached draw.
+    // NOLINTNEXTLINE(clang-analyzer-unix.BlockInCriticalSection)
     while ((read_bytes = read(maps, buffer + retained, 4096)) != 0) {
         size_t bytes;
 
         if (read_bytes < 0) {
-            if (errno == EINTR) continue;
+            if (errno == EINTR)
+                continue;
             break;
         }
         bytes = retained + (size_t)read_bytes;
@@ -104,22 +111,25 @@ static bool compile_shader(struct frame_pacer_gl_hud_renderer *renderer,
     GLchar info[256] = {0};
 
     *shader = gl->gl_create_shader(type);
-    if (!*shader) return false;
+    if (!*shader)
+        return false;
     gl->gl_shader_source(*shader, 1, (const GLchar *const *)&source, 0);
     gl->gl_compile_shader(*shader);
     gl->gl_get_shader_iv(*shader, GL_COMPILE_STATUS_, &ok);
-    if (ok) return true;
+    if (ok)
+        return true;
     gl->gl_get_shader_info_log(*shader, (GLsizei)sizeof(info) - 1, 0, info);
-    log_message(renderer, "frame-pacer: GL shader compile failed type=0x%x info=%s\n",
+    log_message(renderer,
+                "frame-pacer: GL shader compile failed type=0x%x info=%s\n",
                 type, info);
     gl->gl_delete_shader(*shader);
     *shader = 0;
     return false;
 }
 
-static struct frame_pacer_gl_hud_resource *find_resource(
-    struct frame_pacer_gl_hud_renderer *renderer,
-    enum frame_pacer_gl_context_api api, void *display, void *context)
+static struct frame_pacer_gl_hud_resource *
+find_resource(struct frame_pacer_gl_hud_renderer *renderer,
+              enum frame_pacer_gl_context_api api, void *display, void *context)
 {
     struct frame_pacer_gl_hud_resource *resource;
 
@@ -132,23 +142,25 @@ static struct frame_pacer_gl_hud_resource *find_resource(
 
 static bool create_resources(struct frame_pacer_gl_hud_renderer *renderer,
                              const struct frame_pacer_gl_dispatch *gl,
-                             enum frame_pacer_gl_context_api api,
-                             void *display, void *context,
+                             enum frame_pacer_gl_context_api api, void *display,
+                             void *context,
                              struct frame_pacer_gl_hud_resource **out)
 {
     static const char native_vertex[] =
         "#version 130\n"
-        "in vec2 position; in vec4 color; out vec4 pass_color; uniform vec2 viewport;\n"
+        "in vec2 position; in vec4 color; out vec4 pass_color; uniform vec2 "
+        "viewport;\n"
         "void main(){ gl_Position=vec4(position.x/viewport.x*2.0-1.0,"
         "position.y/viewport.y*-2.0+1.0,0.0,1.0); pass_color=color; }\n";
     static const char wined3d_vertex[] =
         "#version 130\n"
-        "in vec2 position; in vec4 color; out vec4 pass_color; uniform vec2 viewport;\n"
+        "in vec2 position; in vec4 color; out vec4 pass_color; uniform vec2 "
+        "viewport;\n"
         "void main(){ gl_Position=vec4(position.x/viewport.x*2.0-1.0,"
         "position.y/viewport.y*2.0-1.0,0.0,1.0); pass_color=color; }\n";
-    static const char fragment[] =
-        "#version 130\n"
-        "in vec4 pass_color; out vec4 output_color; void main(){ output_color=pass_color; }\n";
+    static const char fragment[] = "#version 130\n"
+                                   "in vec4 pass_color; out vec4 output_color; "
+                                   "void main(){ output_color=pass_color; }\n";
     struct frame_pacer_gl_hud_resource *resource;
     GLuint vertex = 0, fragment_shader = 0;
     GLint ok = 0;
@@ -156,7 +168,8 @@ static bool create_resources(struct frame_pacer_gl_hud_renderer *renderer,
     const GLubyte *version;
     bool wined3d;
 
-    if (!out) return false;
+    if (!out)
+        return false;
     *out = 0;
     resource = find_resource(renderer, api, display, context);
     if (resource) {
@@ -164,7 +177,8 @@ static bool create_resources(struct frame_pacer_gl_hud_renderer *renderer,
         return resource->available;
     }
     resource = calloc(1, sizeof(*resource));
-    if (!resource) return false;
+    if (!resource)
+        return false;
     resource->api = api;
     resource->display = display;
     resource->context = context;
@@ -180,7 +194,8 @@ static bool create_resources(struct frame_pacer_gl_hud_renderer *renderer,
                         &fragment_shader))
         goto fail;
     resource->program = gl->gl_create_program();
-    if (!resource->program) goto fail;
+    if (!resource->program)
+        goto fail;
     gl->gl_attach_shader(resource->program, vertex);
     gl->gl_attach_shader(resource->program, fragment_shader);
     gl->gl_bind_attrib_location(resource->program, 0, "position");
@@ -199,10 +214,12 @@ static bool create_resources(struct frame_pacer_gl_hud_renderer *renderer,
     }
     resource->viewport_uniform =
         gl->gl_get_uniform_location(resource->program, "viewport");
-    if (resource->viewport_uniform < 0) goto fail;
+    if (resource->viewport_uniform < 0)
+        goto fail;
     gl->gl_gen_vertex_arrays(1, &resource->vao);
     gl->gl_gen_buffers(1, &resource->vbo);
-    if (!resource->vao || !resource->vbo) goto fail;
+    if (!resource->vao || !resource->vbo)
+        goto fail;
     gl->gl_bind_vertex_array(resource->vao);
     gl->gl_bind_buffer(GL_ARRAY_BUFFER_, resource->vbo);
     gl->gl_enable_vertex_attrib_array(0);
@@ -220,11 +237,16 @@ static bool create_resources(struct frame_pacer_gl_hud_renderer *renderer,
     return true;
 fail:
     log_message(renderer, "frame-pacer: GL HUD resources unavailable\n");
-    if (vertex) gl->gl_delete_shader(vertex);
-    if (fragment_shader) gl->gl_delete_shader(fragment_shader);
-    if (resource->vbo) gl->gl_delete_buffers(1, &resource->vbo);
-    if (resource->vao) gl->gl_delete_vertex_arrays(1, &resource->vao);
-    if (resource->program) gl->gl_delete_program(resource->program);
+    if (vertex)
+        gl->gl_delete_shader(vertex);
+    if (fragment_shader)
+        gl->gl_delete_shader(fragment_shader);
+    if (resource->vbo)
+        gl->gl_delete_buffers(1, &resource->vbo);
+    if (resource->vao)
+        gl->gl_delete_vertex_arrays(1, &resource->vao);
+    if (resource->program)
+        gl->gl_delete_program(resource->program);
     resource->program = resource->vao = resource->vbo = 0;
     resource->next = renderer->resources;
     renderer->resources = resource;
@@ -272,12 +294,16 @@ static void restore_state(const struct frame_pacer_gl_dispatch *gl,
     gl->gl_bind_buffer(GL_ARRAY_BUFFER_, (GLuint)state->array_buffer);
     gl->gl_blend_equation_separate((GLenum)state->blend_equation_rgb,
                                    (GLenum)state->blend_equation_alpha);
-    gl->gl_blend_func_separate((GLenum)state->blend_src_rgb,
-                               (GLenum)state->blend_dst_rgb,
-                               (GLenum)state->blend_src_alpha,
-                               (GLenum)state->blend_dst_alpha);
-#define RESTORE_CAP(field_, cap_) \
-    do { if (state->field_) gl->gl_enable(cap_); else gl->gl_disable(cap_); } while (0)
+    gl->gl_blend_func_separate(
+        (GLenum)state->blend_src_rgb, (GLenum)state->blend_dst_rgb,
+        (GLenum)state->blend_src_alpha, (GLenum)state->blend_dst_alpha);
+#define RESTORE_CAP(field_, cap_)                                              \
+    do {                                                                       \
+        if (state->field_)                                                     \
+            gl->gl_enable(cap_);                                               \
+        else                                                                   \
+            gl->gl_disable(cap_);                                              \
+    } while (0)
     RESTORE_CAP(blend, GL_BLEND);
     RESTORE_CAP(cull, GL_CULL_FACE);
     RESTORE_CAP(depth, GL_DEPTH_TEST);
@@ -285,14 +311,13 @@ static void restore_state(const struct frame_pacer_gl_dispatch *gl,
     RESTORE_CAP(scissor, GL_SCISSOR_TEST);
     RESTORE_CAP(srgb, GL_FRAMEBUFFER_SRGB_);
 #undef RESTORE_CAP
-    gl->gl_viewport(state->viewport[0], state->viewport[1],
-                    state->viewport[2], state->viewport[3]);
+    gl->gl_viewport(state->viewport[0], state->viewport[1], state->viewport[2],
+                    state->viewport[3]);
     gl->gl_scissor(state->scissor_box[0], state->scissor_box[1],
                    state->scissor_box[2], state->scissor_box[3]);
-    gl->gl_color_mask((GLboolean)state->color_mask[0],
-                      (GLboolean)state->color_mask[1],
-                      (GLboolean)state->color_mask[2],
-                      (GLboolean)state->color_mask[3]);
+    gl->gl_color_mask(
+        (GLboolean)state->color_mask[0], (GLboolean)state->color_mask[1],
+        (GLboolean)state->color_mask[2], (GLboolean)state->color_mask[3]);
     gl->gl_bind_framebuffer(GL_DRAW_FRAMEBUFFER_, (GLuint)state->framebuffer);
 }
 
@@ -309,22 +334,27 @@ void frame_pacer_gl_hud_render(struct frame_pacer_gl_hud_renderer *renderer,
     GLint viewport[4];
     unsigned int width = 0, height = 0;
 
-    if (!renderer || !renderer->vertices || !gl || !text) return;
+    if (!renderer || !renderer->vertices || !gl || !text)
+        return;
     (void)pthread_mutex_lock(&renderer->mutex);
     if (glx_display) {
         api = FRAME_PACER_GL_CONTEXT_GLX;
         display = glx_display;
-        context = gl->next_glx_current_context ?
-            (void *)gl->next_glx_current_context() : 0;
+        context = gl->next_glx_current_context
+                      ? (void *)gl->next_glx_current_context()
+                      : 0;
     } else {
         api = FRAME_PACER_GL_CONTEXT_EGL;
         display = egl_display;
-        context = gl->next_egl_current_context ?
-            (void *)gl->next_egl_current_context() : 0;
+        context = gl->next_egl_current_context
+                      ? (void *)gl->next_egl_current_context()
+                      : 0;
     }
-    if (!context) goto out;
+    if (!context)
+        goto out;
     gl->gl_get_integer(GL_VIEWPORT, viewport);
-    if (viewport[2] <= 0 || viewport[3] <= 0) goto out;
+    if (viewport[2] <= 0 || viewport[3] <= 0)
+        goto out;
     if (glx_display && gl->next_glx_query_drawable) {
         gl->next_glx_query_drawable(glx_display, glx_drawable, GLX_WIDTH,
                                     &width);
@@ -335,10 +365,12 @@ void frame_pacer_gl_hud_render(struct frame_pacer_gl_hud_renderer *renderer,
         EGLint egl_width = 0, egl_height = 0;
 
         if (gl->next_egl_query_surface(egl_display, egl_surface, EGL_WIDTH,
-                                       &egl_width) && egl_width > 0)
+                                       &egl_width) &&
+            egl_width > 0)
             width = (unsigned int)egl_width;
         if (gl->next_egl_query_surface(egl_display, egl_surface, EGL_HEIGHT,
-                                       &egl_height) && egl_height > 0)
+                                       &egl_height) &&
+            egl_height > 0)
             height = (unsigned int)egl_height;
     }
     if (!width || !height) {
@@ -347,7 +379,7 @@ void frame_pacer_gl_hud_render(struct frame_pacer_gl_hud_renderer *renderer,
     }
     save_state(gl, &state);
     if (!frame_pacer_hud_vertices_build_for_extent(renderer->vertices, text,
-                                                    width, height) ||
+                                                   width, height) ||
         !create_resources(renderer, gl, api, display, context, &resource)) {
         restore_state(gl, &state);
         goto out;
@@ -373,11 +405,10 @@ void frame_pacer_gl_hud_render(struct frame_pacer_gl_hud_renderer *renderer,
     gl->gl_bind_vertex_array(resource->vao);
     gl->gl_bind_buffer(GL_ARRAY_BUFFER_, resource->vbo);
     gl->gl_buffer_data(GL_ARRAY_BUFFER_,
-                       (GLsizeiptr)(renderer->vertices->count *
-                                   sizeof(renderer->vertices->data[0])),
+                       (GLsizeiptr)renderer->vertices->count *
+                           (GLsizeiptr)sizeof(renderer->vertices->data[0]),
                        renderer->vertices->data, GL_STATIC_DRAW_);
-    gl->gl_draw_arrays(GL_TRIANGLES, 0,
-                       (GLsizei)renderer->vertices->count);
+    gl->gl_draw_arrays(GL_TRIANGLES, 0, (GLsizei)renderer->vertices->count);
     restore_state(gl, &state);
 out:
     (void)pthread_mutex_unlock(&renderer->mutex);
@@ -390,7 +421,8 @@ void frame_pacer_gl_hud_forget(struct frame_pacer_gl_hud_renderer *renderer,
 {
     struct frame_pacer_gl_hud_resource **link;
 
-    if (!renderer) return;
+    if (!renderer)
+        return;
     (void)pthread_mutex_lock(&renderer->mutex);
     link = &renderer->resources;
     while (*link) {
@@ -414,7 +446,8 @@ void frame_pacer_gl_hud_renderer_destroy(
 {
     struct frame_pacer_gl_hud_resource *resource;
 
-    if (!renderer) return;
+    if (!renderer)
+        return;
     (void)pthread_mutex_lock(&renderer->mutex);
     resource = renderer->resources;
     renderer->resources = 0;

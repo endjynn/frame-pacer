@@ -28,8 +28,8 @@ struct frame_pacer_effective_reporter {
     _Atomic uint64_t reported[FRAME_PACER_REPORT_BACKEND_COUNT];
 };
 
-#define FRAME_PACER_EFFECTIVE_REPORTER_INITIALIZER \
-    { PTHREAD_MUTEX_INITIALIZER, { 0, 0, 0 } }
+#define FRAME_PACER_EFFECTIVE_REPORTER_INITIALIZER                             \
+    {PTHREAD_MUTEX_INITIALIZER, {0, 0, 0}}
 
 typedef void (*frame_pacer_report_write_fn)(void *, const char *);
 

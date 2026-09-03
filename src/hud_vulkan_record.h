@@ -23,8 +23,10 @@ struct frame_pacer_hud_record_provider {
 };
 
 bool frame_pacer_hud_record(struct frame_pacer_hud_record_provider const *,
-    VkCommandBuffer, VkImage, VkFramebuffer, VkRenderPass,
-    const struct frame_pacer_hud_pipeline *, const struct frame_pacer_hud_vertex_buffer *,
-    VkExtent2D, uint32_t vertex_count);
+                            VkCommandBuffer, VkImage, VkFramebuffer,
+                            VkRenderPass,
+                            const struct frame_pacer_hud_pipeline *,
+                            const struct frame_pacer_hud_vertex_buffer *,
+                            VkExtent2D, uint32_t vertex_count);
 
 #endif

@@ -11,11 +11,16 @@
 int main(void)
 {
     static const EGLint config_attributes[] = {
-        EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
-        EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
-        EGL_RED_SIZE, 8,
-        EGL_GREEN_SIZE, 8,
-        EGL_BLUE_SIZE, 8,
+        EGL_SURFACE_TYPE,
+        EGL_WINDOW_BIT,
+        EGL_RENDERABLE_TYPE,
+        EGL_OPENGL_BIT,
+        EGL_RED_SIZE,
+        8,
+        EGL_GREEN_SIZE,
+        8,
+        EGL_BLUE_SIZE,
+        8,
         EGL_NONE,
     };
     Display *x_display = XOpenDisplay(0);
@@ -42,14 +47,17 @@ int main(void)
     display = eglGetDisplay((EGLNativeDisplayType)x_display);
     if (display == EGL_NO_DISPLAY || !eglInitialize(display, 0, 0) ||
         !eglBindAPI(EGL_OPENGL_API) ||
-        !eglChooseConfig(display, config_attributes, &config, 1, &config_count) ||
+        !eglChooseConfig(display, config_attributes, &config, 1,
+                         &config_count) ||
         config_count != 1 ||
-        !eglGetConfigAttrib(display, config, EGL_NATIVE_VISUAL_ID, &visual_id)) {
+        !eglGetConfigAttrib(display, config, EGL_NATIVE_VISUAL_ID,
+                            &visual_id)) {
         fputs("EGL display/configuration unavailable\n", stderr);
         goto cleanup;
     }
     visual_template.visualid = (VisualID)visual_id;
-    visual = XGetVisualInfo(x_display, VisualIDMask, &visual_template, &visual_count);
+    visual = XGetVisualInfo(x_display, VisualIDMask, &visual_template,
+                            &visual_count);
     if (!visual || visual_count < 1) {
         fputs("EGL X11 visual unavailable\n", stderr);
         goto cleanup;
@@ -65,15 +73,15 @@ int main(void)
         window = XCreateWindow(x_display, RootWindow(x_display, visual->screen),
                                0, 0, FRAME_PACER_HUD_REFERENCE_WIDTH + 32U,
                                FRAME_PACER_HUD_REFERENCE_HEIGHT + 32U, 0,
-                               visual->depth, InputOutput,
-                               visual->visual, CWColormap | CWEventMask,
-                               &attributes);
+                               visual->depth, InputOutput, visual->visual,
+                               CWColormap | CWEventMask, &attributes);
     }
-    if (!window) goto cleanup;
+    if (!window)
+        goto cleanup;
     XMapWindow(x_display, window);
     XSync(x_display, False);
-    surface = eglCreateWindowSurface(display, config,
-                                     (EGLNativeWindowType)window, 0);
+    surface =
+        eglCreateWindowSurface(display, config, (EGLNativeWindowType)window, 0);
     context = eglCreateContext(display, config, EGL_NO_CONTEXT, 0);
     if (surface == EGL_NO_SURFACE || context == EGL_NO_CONTEXT ||
         !eglMakeCurrent(display, surface, surface, context)) {
@@ -93,7 +101,8 @@ int main(void)
     glEnable(GL_DEPTH_TEST);
     glClearColor(0.1f, 0.2f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
-    if (!eglSwapBuffers(display, surface) || !eglSwapBuffers(display, surface)) {
+    if (!eglSwapBuffers(display, surface) ||
+        !eglSwapBuffers(display, surface)) {
         fputs("EGL swap failed\n", stderr);
         goto cleanup;
     }
@@ -110,13 +119,19 @@ cleanup:
     if (display != EGL_NO_DISPLAY) {
         (void)eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE,
                              EGL_NO_CONTEXT);
-        if (context != EGL_NO_CONTEXT) (void)eglDestroyContext(display, context);
-        if (surface != EGL_NO_SURFACE) (void)eglDestroySurface(display, surface);
+        if (context != EGL_NO_CONTEXT)
+            (void)eglDestroyContext(display, context);
+        if (surface != EGL_NO_SURFACE)
+            (void)eglDestroySurface(display, surface);
         (void)eglTerminate(display);
     }
-    if (x_display && window) XDestroyWindow(x_display, window);
-    if (x_display && colormap) XFreeColormap(x_display, colormap);
-    if (visual) XFree(visual);
-    if (x_display) XCloseDisplay(x_display);
+    if (x_display && window)
+        XDestroyWindow(x_display, window);
+    if (x_display && colormap)
+        XFreeColormap(x_display, colormap);
+    if (visual)
+        XFree(visual);
+    if (x_display)
+        XCloseDisplay(x_display);
     return exit_code;
 }

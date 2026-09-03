@@ -1,13 +1,12 @@
 #!/bin/sh
 set -eu
 
-fail()
-{
+fail() {
     printf 'frame-pacer package: %s\n' "$1" >&2
     exit 1
 }
 
-root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)
 version=$(sh "$root/packaging/read-version.sh" "$root/VERSION")
 
 payload="$root/build/install-payload"
@@ -20,8 +19,7 @@ for required in \
     i386/libframe_pacer_gl_shim.so \
     frame-pacer-thread-cpu-controller \
     VkLayer_frame_pacer_implicit.json.in \
-    VERSION
-do
+    VERSION; do
     [ -f "$payload/$required" ] && [ ! -L "$payload/$required" ] ||
         fail "install payload is missing $required"
 done
@@ -32,7 +30,7 @@ if [ -z "$epoch" ]; then
         fail 'SOURCE_DATE_EPOCH is unset and the release commit is unavailable'
 fi
 case "$epoch" in
-    ''|*[!0-9]*) fail 'SOURCE_DATE_EPOCH must be a non-negative integer' ;;
+    '' | *[!0-9]*) fail 'SOURCE_DATE_EPOCH must be a non-negative integer' ;;
 esac
 
 package="frame-pacer-$version-linux-x86_64-multilib"
@@ -61,13 +59,11 @@ install -m 0644 "$payload/VERSION" "$package_dir/payload/VERSION"
 install -m 0755 "$payload/frame-pacer-thread-cpu-controller" \
     "$package_dir/payload/frame-pacer-thread-cpu-controller"
 
-for architecture in x86_64 i386
-do
+for architecture in x86_64 i386; do
     for library in \
         libVkLayer_frame_pacer.so \
         libframe_pacer_gl.so \
-        libframe_pacer_gl_shim.so
-    do
+        libframe_pacer_gl_shim.so; do
         install -m 0755 "$payload/$architecture/$library" \
             "$package_dir/payload/$architecture/$library"
         "${STRIP:-strip}" --strip-unneeded \
@@ -90,13 +86,13 @@ rm -f -- "$temporary" "$checksum.tmp-$$"
 tar --sort=name --format=gnu --owner=0 --group=0 --numeric-owner \
     --mtime="@$epoch" --mode='u+rwX,go+rX,go-w' \
     -C "$stage" -cf - "$package" |
-    xz -9e --threads=1 > "$temporary"
-[ "$(wc -c < "$temporary")" -le 52428800 ] ||
+    xz -9e --threads=1 >"$temporary"
+[ "$(wc -c <"$temporary")" -le 52428800 ] ||
     fail 'release archive exceeds 50 MiB'
 mv -f -- "$temporary" "$archive"
 (
     cd "$dist"
-    sha256sum "${archive##*/}" > "${checksum##*/}.tmp-$$"
+    sha256sum "${archive##*/}" >"${checksum##*/}.tmp-$$"
     mv -f -- "${checksum##*/}.tmp-$$" "${checksum##*/}"
 )
 

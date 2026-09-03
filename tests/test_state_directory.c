@@ -22,8 +22,8 @@ int main(void)
     assert(!unsetenv("XDG_STATE_HOME"));
     assert(!setenv("HOME", home, 1));
     assert(frame_pacer_state_directory(output, sizeof(output), true));
-    assert(snprintf(expected, sizeof(expected),
-                    "%s/.local/state/frame-pacer", home) > 0);
+    assert(snprintf(expected, sizeof(expected), "%s/.local/state/frame-pacer",
+                    home) > 0);
     assert(!strcmp(output, expected));
     assert(!lstat(output, &status) && S_ISDIR(status.st_mode) &&
            !(status.st_mode & 0077));

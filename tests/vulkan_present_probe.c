@@ -59,11 +59,12 @@ int main(void)
         fputs("X11 display unavailable\n", stderr);
         return 77;
     }
-    window = XCreateSimpleWindow(display, DefaultRootWindow(display), 0, 0,
-                                 FRAME_PACER_HUD_REFERENCE_WIDTH + 32U,
-                                 FRAME_PACER_HUD_REFERENCE_HEIGHT + 32U,
-                                 0, 0, 0);
-    if (!window) goto cleanup;
+    window =
+        XCreateSimpleWindow(display, DefaultRootWindow(display), 0, 0,
+                            FRAME_PACER_HUD_REFERENCE_WIDTH + 32U,
+                            FRAME_PACER_HUD_REFERENCE_HEIGHT + 32U, 0, 0, 0);
+    if (!window)
+        goto cleanup;
     XMapWindow(display, window);
     XSync(display, False);
 
@@ -94,14 +95,16 @@ int main(void)
         VkPhysicalDevice *devices = calloc(physical_count, sizeof(*devices));
         uint32_t physical_index;
 
-        if (!devices) goto cleanup;
+        if (!devices)
+            goto cleanup;
         result = vkEnumeratePhysicalDevices(instance, &physical_count, devices);
         if (result != VK_SUCCESS) {
             free(devices);
             exit_code = fail("vkEnumeratePhysicalDevices", result);
             goto cleanup;
         }
-        for (physical_index = 0; physical_index < physical_count; ++physical_index) {
+        for (physical_index = 0; physical_index < physical_count;
+             ++physical_index) {
             uint32_t family_count = 0;
             VkQueueFamilyProperties *families;
             uint32_t family;
@@ -109,7 +112,8 @@ int main(void)
             vkGetPhysicalDeviceQueueFamilyProperties(devices[physical_index],
                                                      &family_count, 0);
             families = calloc(family_count, sizeof(*families));
-            if (!families) continue;
+            if (!families)
+                continue;
             vkGetPhysicalDeviceQueueFamilyProperties(devices[physical_index],
                                                      &family_count, families);
             for (family = 0; family < family_count; ++family) {
@@ -125,7 +129,8 @@ int main(void)
                 }
             }
             free(families);
-            if (physical) break;
+            if (physical)
+                break;
         }
         free(devices);
     }
@@ -157,21 +162,22 @@ int main(void)
     }
     vkGetDeviceQueue(device, queue_family, 0, &queue);
     result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical, surface,
-                                                        &capabilities);
+                                                       &capabilities);
     if (result != VK_SUCCESS) {
         exit_code = fail("vkGetPhysicalDeviceSurfaceCapabilitiesKHR", result);
         goto cleanup;
     }
     result = vkGetPhysicalDeviceSurfaceFormatsKHR(physical, surface,
-                                                   &format_count, 0);
+                                                  &format_count, 0);
     if (result != VK_SUCCESS || !format_count) {
         exit_code = fail("vkGetPhysicalDeviceSurfaceFormatsKHR", result);
         goto cleanup;
     }
     formats = calloc(format_count, sizeof(*formats));
-    if (!formats) goto cleanup;
+    if (!formats)
+        goto cleanup;
     result = vkGetPhysicalDeviceSurfaceFormatsKHR(physical, surface,
-                                                   &format_count, formats);
+                                                  &format_count, formats);
     if (result != VK_SUCCESS) {
         exit_code = fail("vkGetPhysicalDeviceSurfaceFormatsKHR", result);
         goto cleanup;
@@ -187,8 +193,10 @@ int main(void)
         goto cleanup;
     }
     if (!(capabilities.supportedCompositeAlpha & composite_alpha)) {
-        VkCompositeAlphaFlagsKHR supported = capabilities.supportedCompositeAlpha;
-        composite_alpha = (VkCompositeAlphaFlagBitsKHR)(supported & (~supported + 1U));
+        VkCompositeAlphaFlagsKHR supported =
+            capabilities.supportedCompositeAlpha;
+        composite_alpha =
+            (VkCompositeAlphaFlagBitsKHR)(supported & (~supported + 1U));
     }
     {
         uint32_t image_count = capabilities.minImageCount + 1;
@@ -207,7 +215,8 @@ int main(void)
             .clipped = VK_TRUE,
         };
 
-        if (capabilities.maxImageCount && image_count > capabilities.maxImageCount)
+        if (capabilities.maxImageCount &&
+            image_count > capabilities.maxImageCount)
             image_count = capabilities.maxImageCount;
         swapchain_info.minImageCount = image_count;
         result = vkCreateSwapchainKHR(device, &swapchain_info, 0, &swapchain);
@@ -258,14 +267,22 @@ int main(void)
     exit_code = 0;
 
 cleanup:
-    if (device) (void)vkDeviceWaitIdle(device);
-    if (acquired) vkDestroySemaphore(device, acquired, 0);
-    if (swapchain) vkDestroySwapchainKHR(device, swapchain, 0);
-    if (device) vkDestroyDevice(device, 0);
+    if (device)
+        (void)vkDeviceWaitIdle(device);
+    if (acquired)
+        vkDestroySemaphore(device, acquired, 0);
+    if (swapchain)
+        vkDestroySwapchainKHR(device, swapchain, 0);
+    if (device)
+        vkDestroyDevice(device, 0);
     free(formats);
-    if (surface) vkDestroySurfaceKHR(instance, surface, 0);
-    if (instance) vkDestroyInstance(instance, 0);
-    if (window) XDestroyWindow(display, window);
-    if (display) XCloseDisplay(display);
+    if (surface)
+        vkDestroySurfaceKHR(instance, surface, 0);
+    if (instance)
+        vkDestroyInstance(instance, 0);
+    if (window)
+        XDestroyWindow(display, window);
+    if (display)
+        XCloseDisplay(display);
     return exit_code;
 }

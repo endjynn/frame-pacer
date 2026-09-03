@@ -1,8 +1,7 @@
 #!/bin/sh
 set -eu
 
-fail()
-{
+fail() {
     printf 'release notes: %s\n' "$1" >&2
     exit 1
 }
@@ -11,8 +10,8 @@ fail()
 version_file=$1
 changelog=$2
 output=$3
-script_directory=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-repository_root=$(CDPATH= cd -- "$script_directory/../.." && pwd)
+script_directory=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+repository_root=$(CDPATH='' cd -- "$script_directory/../.." && pwd)
 version=$(sh "$repository_root/packaging/read-version.sh" "$version_file") ||
     fail 'invalid version'
 prefix="## $version "
@@ -37,4 +36,4 @@ umask 077
         'Compatibility: Debian 12 (glibc 2.36), GCC 12, x86_64 and i386.'
     printf '\n## What'"'"'s Changed\n'
     printf '%s\n' "$section"
-} > "$output" || fail "cannot write $output"
+} >"$output" || fail "cannot write $output"

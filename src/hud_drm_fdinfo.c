@@ -26,11 +26,7 @@ struct observed_client {
     struct observed_engine engines[FRAME_PACER_DRM_ENGINE_COUNT];
 };
 
-enum fdinfo_result {
-    FDINFO_SKIPPED,
-    FDINFO_VALID,
-    FDINFO_INVALID
-};
+enum fdinfo_result { FDINFO_SKIPPED, FDINFO_VALID, FDINFO_INVALID };
 
 static enum drm_engine core_engine(const char *line, size_t *prefix_length)
 {
@@ -38,18 +34,20 @@ static enum drm_engine core_engine(const char *line, size_t *prefix_length)
         const char *prefix;
         enum drm_engine engine;
     } prefixes[] = {
-        { "drm-engine-render:", DRM_ENGINE_RENDER },
-        { "drm-engine-gfx:", DRM_ENGINE_GFX },
-        { "drm-engine-compute:", DRM_ENGINE_COMPUTE },
+        {"drm-engine-render:", DRM_ENGINE_RENDER},
+        {"drm-engine-gfx:", DRM_ENGINE_GFX},
+        {"drm-engine-compute:", DRM_ENGINE_COMPUTE},
     };
     size_t index;
 
-    if (!line) return DRM_ENGINE_INVALID;
+    if (!line)
+        return DRM_ENGINE_INVALID;
     for (index = 0; index < sizeof(prefixes) / sizeof(prefixes[0]); ++index) {
         size_t length = strlen(prefixes[index].prefix);
 
         if (!strncmp(line, prefixes[index].prefix, length)) {
-            if (prefix_length) *prefix_length = length;
+            if (prefix_length)
+                *prefix_length = length;
             return prefixes[index].engine;
         }
     }
@@ -61,17 +59,22 @@ static bool parse_unsigned(const char *text, uint64_t *value)
     const char *cursor = text;
     uint64_t parsed = 0;
 
-    while (*cursor == ' ' || *cursor == '\t') ++cursor;
-    if (!isdigit((unsigned char)*cursor)) return false;
+    while (*cursor == ' ' || *cursor == '\t')
+        ++cursor;
+    if (!isdigit((unsigned char)*cursor))
+        return false;
     do {
         unsigned int digit = (unsigned int)(*cursor - '0');
 
-        if (parsed > (UINT64_MAX - digit) / 10U) return false;
+        if (parsed > (UINT64_MAX - digit) / 10U)
+            return false;
         parsed = parsed * 10U + digit;
         ++cursor;
     } while (isdigit((unsigned char)*cursor));
-    while (*cursor && isspace((unsigned char)*cursor)) ++cursor;
-    if (*cursor) return false;
+    while (*cursor && isspace((unsigned char)*cursor))
+        ++cursor;
+    if (*cursor)
+        return false;
     *value = parsed;
     return true;
 }
@@ -84,23 +87,32 @@ static bool parse_engine_ns(const char *line, enum drm_engine *engine,
     uint64_t parsed = 0;
     enum drm_engine parsed_engine = core_engine(line, &prefix_length);
 
-    if (parsed_engine == DRM_ENGINE_INVALID || !value) return false;
+    if (parsed_engine == DRM_ENGINE_INVALID || !value)
+        return false;
     cursor = line + prefix_length;
-    while (*cursor == ' ' || *cursor == '\t') ++cursor;
-    if (!isdigit((unsigned char)*cursor)) return false;
+    while (*cursor == ' ' || *cursor == '\t')
+        ++cursor;
+    if (!isdigit((unsigned char)*cursor))
+        return false;
     do {
         unsigned int digit = (unsigned int)(*cursor - '0');
 
-        if (parsed > (UINT64_MAX - digit) / 10U) return false;
+        if (parsed > (UINT64_MAX - digit) / 10U)
+            return false;
         parsed = parsed * 10U + digit;
         ++cursor;
     } while (isdigit((unsigned char)*cursor));
-    while (*cursor == ' ' || *cursor == '\t') ++cursor;
-    if (cursor[0] != 'n' || cursor[1] != 's') return false;
+    while (*cursor == ' ' || *cursor == '\t')
+        ++cursor;
+    if (cursor[0] != 'n' || cursor[1] != 's')
+        return false;
     cursor += 2;
-    while (*cursor && isspace((unsigned char)*cursor)) ++cursor;
-    if (*cursor) return false;
-    if (engine) *engine = parsed_engine;
+    while (*cursor && isspace((unsigned char)*cursor))
+        ++cursor;
+    if (*cursor)
+        return false;
+    if (engine)
+        *engine = parsed_engine;
     *value = parsed;
     return true;
 }
@@ -111,8 +123,7 @@ bool frame_pacer_drm_fdinfo_parse_render_ns(const char *line, uint64_t *value)
 }
 
 bool frame_pacer_drm_fdinfo_utilisation(uint64_t previous_render_ns,
-                                        uint64_t render_ns,
-                                        uint64_t elapsed_ns,
+                                        uint64_t render_ns, uint64_t elapsed_ns,
                                         unsigned int *percent)
 {
     uint64_t delta;
@@ -128,7 +139,8 @@ bool frame_pacer_drm_fdinfo_utilisation(uint64_t previous_render_ns,
         uint64_t remainder = elapsed_ns % 200U;
 
         threshold += (remainder * numerator + 199U) / 200U;
-        if (delta < threshold) break;
+        if (delta < threshold)
+            break;
         *percent = candidate;
     }
     return true;
@@ -142,9 +154,11 @@ static bool fd_matches_render_node(const char *directory, const char *fd_name,
     ssize_t length;
     int written = snprintf(path, sizeof(path), "%s/%s", directory, fd_name);
 
-    if (written < 0 || (size_t)written >= sizeof(path)) return false;
+    if (written < 0 || (size_t)written >= sizeof(path))
+        return false;
     length = readlink(path, target, sizeof(target) - 1);
-    if (length < 0) return false;
+    if (length < 0)
+        return false;
     target[length] = '\0';
     base = strrchr(target, '/');
     return base && !strcmp(base + 1, render_node);
@@ -157,14 +171,14 @@ static enum fdinfo_result read_fdinfo(const char *directory,
     FILE *file;
     char path[PATH_MAX], line[256];
     bool have_client = false, have_engine = false, valid = true;
-    int written = snprintf(path, sizeof(path), "%sinfo/%s", directory,
-                           fd_name);
+    int written = snprintf(path, sizeof(path), "%sinfo/%s", directory, fd_name);
 
     if (!client || written < 0 || (size_t)written >= sizeof(path))
         return FDINFO_INVALID;
     memset(client, 0, sizeof(*client));
     file = fopen(path, "re");
-    if (!file) return FDINFO_SKIPPED;
+    if (!file)
+        return FDINFO_SKIPPED;
     while (fgets(line, sizeof(line), file)) {
         enum drm_engine engine;
         uint64_t value;
@@ -179,7 +193,10 @@ static enum fdinfo_result read_fdinfo(const char *directory,
                 break;
             }
             have_client = true;
-        } else if ((engine = core_engine(line, 0)) != DRM_ENGINE_INVALID) {
+            continue;
+        }
+        engine = core_engine(line, 0);
+        if (engine != DRM_ENGINE_INVALID) {
             if (!parse_engine_ns(line, &engine, &value)) {
                 valid = false;
                 break;
@@ -191,7 +208,8 @@ static enum fdinfo_result read_fdinfo(const char *directory,
             have_engine = true;
         }
     }
-    if (ferror(file)) valid = false;
+    if (ferror(file))
+        valid = false;
     (void)fclose(file);
     return valid && have_client && have_engine ? FDINFO_VALID : FDINFO_INVALID;
 }
@@ -222,8 +240,8 @@ static bool merge_client(struct observed_client *clients,
     return true;
 }
 
-static const struct frame_pacer_drm_client_state *previous_client(
-    const struct frame_pacer_drm_fdinfo *state, uint64_t client_id)
+static const struct frame_pacer_drm_client_state *
+previous_client(const struct frame_pacer_drm_fdinfo *state, uint64_t client_id)
 {
     unsigned int index;
 
@@ -247,19 +265,20 @@ static bool commit_sample(struct frame_pacer_drm_fdinfo *state,
     unsigned int client_index, engine, peak = 0;
     bool available = false;
 
-    if (state->started && !elapsed_valid) return false;
+    if (state->started && !elapsed_valid)
+        return false;
     for (client_index = 0; client_index < client_count; ++client_index) {
         const struct frame_pacer_drm_client_state *previous =
             previous_client(state, observed[client_index].client_id);
-        struct frame_pacer_drm_client_state *next =
-            &next_clients[client_index];
+        struct frame_pacer_drm_client_state *next = &next_clients[client_index];
 
         next->used = true;
         next->client_id = observed[client_index].client_id;
         for (engine = 0; engine < FRAME_PACER_DRM_ENGINE_COUNT; ++engine) {
             uint64_t current;
 
-            if (!observed[client_index].engines[engine].present) continue;
+            if (!observed[client_index].engines[engine].present)
+                continue;
             current = observed[client_index].engines[engine].value_ns;
             next->engines[engine].started = true;
             next->engines[engine].high_water_ns = current;
@@ -273,7 +292,8 @@ static bool commit_sample(struct frame_pacer_drm_fdinfo *state,
                 continue;
             }
             current -= previous->engines[engine].high_water_ns;
-            if (UINT64_MAX - deltas[engine] < current) return false;
+            if (UINT64_MAX - deltas[engine] < current)
+                return false;
             deltas[engine] += current;
         }
     }
@@ -286,7 +306,8 @@ static bool commit_sample(struct frame_pacer_drm_fdinfo *state,
             if (comparable[engine] &&
                 frame_pacer_drm_fdinfo_utilisation(
                     0, deltas[engine], elapsed_ns, &engine_percent)) {
-                if (!available || engine_percent > peak) peak = engine_percent;
+                if (!available || engine_percent > peak)
+                    peak = engine_percent;
                 available = true;
             }
         }
@@ -297,7 +318,8 @@ static bool commit_sample(struct frame_pacer_drm_fdinfo *state,
     state->cached_use_percent = available ? peak : 0;
     state->available = available;
     state->started = true;
-    if (available) *percent = peak;
+    if (available)
+        *percent = peak;
     return available;
 }
 
@@ -319,9 +341,11 @@ static bool sample_from_root(struct frame_pacer_drm_fdinfo *state,
         return false;
     written = snprintf(directory_path, sizeof(directory_path), "%s/%u/fd",
                        proc_root, process_id);
-    if (written < 0 || (size_t)written >= sizeof(directory_path)) return false;
+    if (written < 0 || (size_t)written >= sizeof(directory_path))
+        return false;
     directory = opendir(directory_path);
-    if (!directory) return false;
+    if (!directory)
+        return false;
     for (;;) {
         struct observed_client candidate;
         enum fdinfo_result result;
@@ -329,22 +353,24 @@ static bool sample_from_root(struct frame_pacer_drm_fdinfo *state,
         errno = 0;
         entry = readdir(directory);
         if (!entry) {
-            if (errno) valid = false;
+            if (errno)
+                valid = false;
             break;
         }
         if (entry->d_name[0] == '.' ||
-            !fd_matches_render_node(directory_path, entry->d_name,
-                                    render_node))
+            !fd_matches_render_node(directory_path, entry->d_name, render_node))
             continue;
         result = read_fdinfo(directory_path, entry->d_name, &candidate);
-        if (result == FDINFO_SKIPPED) continue;
+        if (result == FDINFO_SKIPPED)
+            continue;
         if (result == FDINFO_INVALID ||
             !merge_client(clients, &client_count, &candidate)) {
             valid = false;
             break;
         }
     }
-    if (closedir(directory)) valid = false;
+    if (closedir(directory))
+        valid = false;
     if (!valid) {
         state->available = false;
         state->cached_use_percent = 0;

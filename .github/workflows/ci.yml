@@ -18,6 +18,24 @@ env:
   DEBIAN_FRONTEND: noninteractive
 
 jobs:
+  quality:
+    name: Strict formatting and static analysis
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install build dependencies
+        run: sh .github/scripts/install-dependencies.sh
+      - name: Install cross-analysis headers
+        run: sudo apt-get install -y --no-install-recommends mingw-w64-common
+      - name: Set up pinned development tools
+        run: make setup-tools
+      - name: Run strict quality checks
+        run: make check-quality
+
   acceptance:
     name: Build and acceptance tests
     runs-on: ubuntu-22.04

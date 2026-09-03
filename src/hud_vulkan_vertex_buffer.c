@@ -2,8 +2,8 @@
 
 #include <string.h>
 
-static bool valid_provider(
-    const struct frame_pacer_hud_vertex_buffer_provider *provider)
+static bool
+valid_provider(const struct frame_pacer_hud_vertex_buffer_provider *provider)
 {
     return provider && provider->create_buffer && provider->destroy_buffer &&
            provider->get_requirements && provider->allocate_memory &&
@@ -77,8 +77,8 @@ bool frame_pacer_hud_create_vertex_buffer(
                                   &resources->memory) != VK_SUCCESS ||
         !resources->memory)
         goto fail;
-    if (provider->bind_memory(device, resources->buffer, resources->memory, 0) !=
-        VK_SUCCESS)
+    if (provider->bind_memory(device, resources->buffer, resources->memory,
+                              0) != VK_SUCCESS)
         goto fail;
     if (provider->map_memory(device, resources->memory, 0, VK_WHOLE_SIZE, 0,
                              &resources->map) != VK_SUCCESS ||

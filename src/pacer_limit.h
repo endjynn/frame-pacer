@@ -123,13 +123,16 @@ struct frame_pacer_limit {
 void frame_pacer_limit_init(struct frame_pacer_limit *);
 void frame_pacer_limit_destroy(struct frame_pacer_limit *);
 uint32_t frame_pacer_limit_poll(struct frame_pacer_limit *, uint64_t now_ns);
-FRAME_PACER_LIMIT_INTERNAL uint64_t frame_pacer_limit_revision(
-    const struct frame_pacer_limit *);
-FRAME_PACER_LIMIT_INTERNAL bool frame_pacer_limit_snapshot(
-    struct frame_pacer_limit *, struct frame_pacer_effective_config *);
-FRAME_PACER_LIMIT_INTERNAL void frame_pacer_limit_set_reporting_enabled(
-    struct frame_pacer_limit *, bool enabled);
-uint32_t frame_pacer_limit_thread_cpu_quota(struct frame_pacer_limit *, bool *enabled);
+FRAME_PACER_LIMIT_INTERNAL uint64_t
+frame_pacer_limit_revision(const struct frame_pacer_limit *);
+FRAME_PACER_LIMIT_INTERNAL bool
+frame_pacer_limit_snapshot(struct frame_pacer_limit *,
+                           struct frame_pacer_effective_config *);
+FRAME_PACER_LIMIT_INTERNAL void
+frame_pacer_limit_set_reporting_enabled(struct frame_pacer_limit *,
+                                        bool enabled);
+uint32_t frame_pacer_limit_thread_cpu_quota(struct frame_pacer_limit *,
+                                            bool *enabled);
 bool frame_pacer_limit_hud_enabled(struct frame_pacer_limit *);
 const char *frame_pacer_limit_executable(const struct frame_pacer_limit *);
 #ifdef FRAME_PACER_TEST

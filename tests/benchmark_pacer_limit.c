@@ -34,7 +34,8 @@ static void pin_current_cpu(void)
     cpu_set_t set;
     int cpu = sched_getcpu();
 
-    if (cpu < 0) return;
+    if (cpu < 0)
+        return;
     CPU_ZERO(&set);
     CPU_SET(cpu, &set);
     (void)sched_setaffinity(0, sizeof(set), &set);
@@ -65,22 +66,24 @@ static uint32_t poll_limit(struct frame_pacer_limit *limit, uint64_t now)
 
 static void write_config(int fd)
 {
-    static const char config[] =
-        "global_fps_limit = 60\n"
-        "hud = off\n";
+    static const char config[] = "global_fps_limit = 60\n"
+                                 "hud = off\n";
     size_t offset = 0;
 
     while (offset < sizeof(config) - 1) {
-        ssize_t written = write(fd, config + offset, sizeof(config) - 1 - offset);
+        ssize_t written =
+            write(fd, config + offset, sizeof(config) - 1 - offset);
 
-        if (written < 0 && errno == EINTR) continue;
+        if (written < 0 && errno == EINTR)
+            continue;
         assert(written > 0);
         offset += (size_t)written;
     }
     assert(!fsync(fd));
 }
 
-static double benchmark_poll(struct frame_pacer_limit *limit, uint64_t iterations)
+static double benchmark_poll(struct frame_pacer_limit *limit,
+                             uint64_t iterations)
 {
     uint64_t begin, index, total = 0;
 
@@ -110,7 +113,8 @@ static double benchmark_options(struct frame_pacer_limit *limit,
 
 static double benchmark_disabled_logging(uint64_t iterations)
 {
-    struct frame_pacer_runtime_log log = FRAME_PACER_RUNTIME_LOG_INITIALIZER(512);
+    struct frame_pacer_runtime_log log =
+        FRAME_PACER_RUNTIME_LOG_INITIALIZER(512);
     uint64_t begin, index, total = 0;
 
     begin = timestamp_ns();

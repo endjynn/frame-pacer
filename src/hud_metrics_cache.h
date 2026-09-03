@@ -43,16 +43,15 @@ struct frame_pacer_hud_metrics_cache {
 #endif
 };
 
-__attribute__((visibility("hidden")))
-void frame_pacer_hud_metrics_cache_init(
-    struct frame_pacer_hud_metrics_cache *, unsigned int process_id);
-__attribute__((visibility("hidden")))
-void frame_pacer_hud_metrics_cache_destroy(
-    struct frame_pacer_hud_metrics_cache *);
-__attribute__((visibility("hidden")))
-void frame_pacer_hud_metrics_cache_snapshot(
-    struct frame_pacer_hud_metrics_cache *, uint64_t now_ns,
-    struct frame_pacer_metrics_snapshot *);
+__attribute__((visibility("hidden"))) void
+frame_pacer_hud_metrics_cache_init(struct frame_pacer_hud_metrics_cache *,
+                                   unsigned int process_id);
+__attribute__((visibility("hidden"))) void
+frame_pacer_hud_metrics_cache_destroy(struct frame_pacer_hud_metrics_cache *);
+__attribute__((visibility("hidden"))) void
+frame_pacer_hud_metrics_cache_snapshot(struct frame_pacer_hud_metrics_cache *,
+                                       uint64_t now_ns,
+                                       struct frame_pacer_metrics_snapshot *);
 
 #ifdef FRAME_PACER_TEST
 void frame_pacer_hud_metrics_cache_test_set_sampler(

@@ -24,7 +24,8 @@ static void pin_current_cpu(void)
     cpu_set_t set;
     int cpu = sched_getcpu();
 
-    if (cpu < 0) return;
+    if (cpu < 0)
+        return;
     CPU_ZERO(&set);
     CPU_SET(cpu, &set);
     (void)sched_setaffinity(0, sizeof(set), &set);

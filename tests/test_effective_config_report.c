@@ -25,8 +25,8 @@ static struct frame_pacer_effective_config sample_config(void)
                    "Torchlight_Infinite.exe");
     (void)snprintf(config.matched_section, sizeof(config.matched_section), "%s",
                    "Torchlight Infinite");
-    (void)snprintf(config.matched_executable, sizeof(config.matched_executable), "%s",
-                   "Torchlight_Infinite.exe");
+    (void)snprintf(config.matched_executable, sizeof(config.matched_executable),
+                   "%s", "Torchlight_Infinite.exe");
     return config;
 }
 
@@ -38,11 +38,15 @@ static void test_exact_format(void)
         output, sizeof(output), &config, FRAME_PACER_REPORT_VULKAN, true);
 
     assert(length == strlen(output));
-    assert(!strcmp(output,
-        "frame-pacer: effective-config revision=7 trigger=startup backend=vulkan "
-        "renderer=\"Torchlight_Infinite.exe\" config=valid rule=\"Torchlight Infinite\" "
+    assert(!strcmp(
+        output,
+        "frame-pacer: effective-config revision=7 trigger=startup "
+        "backend=vulkan "
+        "renderer=\"Torchlight_Infinite.exe\" config=valid rule=\"Torchlight "
+        "Infinite\" "
         "match=\"Torchlight_Infinite.exe\" fps=60 fps_source=per-game hud=on "
-        "hud_source=global thread_cpu=50% thread_cpu_source=per-game reason=none\n"));
+        "hud_source=global thread_cpu=50% thread_cpu_source=per-game "
+        "reason=none\n"));
 
     config.status = FRAME_PACER_CONFIG_MALFORMED;
     config.reason = FRAME_PACER_REASON_INVALID_VALUE;
@@ -56,9 +60,11 @@ static void test_exact_format(void)
     config.renderer[0] = '\0';
     config.matched_section[0] = '\0';
     config.matched_executable[0] = '\0';
-    assert(frame_pacer_effective_report_format(
-        output, sizeof(output), &config, FRAME_PACER_REPORT_EGL, false));
-    assert(strstr(output, "trigger=reload backend=egl renderer=unknown config=malformed"));
+    assert(frame_pacer_effective_report_format(output, sizeof(output), &config,
+                                               FRAME_PACER_REPORT_EGL, false));
+    assert(
+        strstr(output,
+               "trigger=reload backend=egl renderer=unknown config=malformed"));
     assert(strstr(output, "rule=none match=none fps=off fps_source=default"));
     assert(strstr(output, "reason=invalid-value line=42\n"));
 }
@@ -77,7 +83,8 @@ static void test_escaping_and_bounds(void)
     config.renderer[sizeof(config.renderer) - 1] = '\0';
     memset(config.matched_section, 's', sizeof(config.matched_section) - 1);
     config.matched_section[sizeof(config.matched_section) - 1] = '\0';
-    memset(config.matched_executable, 'm', sizeof(config.matched_executable) - 1);
+    memset(config.matched_executable, 'm',
+           sizeof(config.matched_executable) - 1);
     config.matched_executable[sizeof(config.matched_executable) - 1] = '\0';
     config.status = FRAME_PACER_CONFIG_MALFORMED;
     config.reason = FRAME_PACER_REASON_DUPLICATE_MATCHING_RULE;
@@ -91,8 +98,8 @@ static void test_escaping_and_bounds(void)
     assert(strstr(output, "...\""));
 
     config.error_line = 0;
-    for (index = FRAME_PACER_CONFIG_VALID; index <= FRAME_PACER_CONFIG_MALFORMED;
-         ++index) {
+    for (index = FRAME_PACER_CONFIG_VALID;
+         index <= FRAME_PACER_CONFIG_MALFORMED; ++index) {
         config.status = (enum frame_pacer_config_status)index;
         assert(frame_pacer_effective_report_format(
             output, sizeof(output), &config, FRAME_PACER_REPORT_GLX, true));
@@ -104,8 +111,8 @@ static void test_escaping_and_bounds(void)
             output, sizeof(output), &config, FRAME_PACER_REPORT_GLX, true));
     }
     config.reason = (enum frame_pacer_config_reason)999;
-    assert(!frame_pacer_effective_report_format(
-        output, sizeof(output), &config, FRAME_PACER_REPORT_GLX, true));
+    assert(!frame_pacer_effective_report_format(output, sizeof(output), &config,
+                                                FRAME_PACER_REPORT_GLX, true));
 }
 
 struct write_context {
@@ -134,9 +141,9 @@ static void *report_thread(void *opaque)
 {
     struct report_context *context = opaque;
 
-    (void)frame_pacer_effective_report_if_due(
-        context->reporter, context->limit, FRAME_PACER_REPORT_GLX,
-        capture, context->writer);
+    (void)frame_pacer_effective_report_if_due(context->reporter, context->limit,
+                                              FRAME_PACER_REPORT_GLX, capture,
+                                              context->writer);
     return 0;
 }
 
@@ -146,7 +153,8 @@ static void publish(struct frame_pacer_limit *limit,
     (void)pthread_mutex_lock(&limit->mutex);
     limit->effective = *config;
     atomic_store_explicit(&limit->fps, config->fps_limit, memory_order_relaxed);
-    atomic_store_explicit(&limit->revision, config->revision, memory_order_release);
+    atomic_store_explicit(&limit->revision, config->revision,
+                          memory_order_release);
     (void)pthread_mutex_unlock(&limit->mutex);
 }
 

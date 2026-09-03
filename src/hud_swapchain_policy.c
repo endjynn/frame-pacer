@@ -18,15 +18,18 @@ struct frame_pacer_hud_swapchain_result frame_pacer_hud_create_swapchain(
     if (!create_swapchain || !create_info || !swapchain)
         return outcome;
     if (create_info->imageUsage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) {
-        outcome.result = create_swapchain(device, create_info, allocator, swapchain);
+        outcome.result =
+            create_swapchain(device, create_info, allocator, swapchain);
         outcome.color_attachment_enabled = outcome.result == VK_SUCCESS;
         return outcome;
     }
     if (!get_surface_capabilities ||
         get_surface_capabilities(physical_device, create_info->surface,
                                  &capabilities) != VK_SUCCESS ||
-        !(capabilities.supportedUsageFlags & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)) {
-        outcome.result = create_swapchain(device, create_info, allocator, swapchain);
+        !(capabilities.supportedUsageFlags &
+          VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)) {
+        outcome.result =
+            create_swapchain(device, create_info, allocator, swapchain);
         return outcome;
     }
 
@@ -40,6 +43,7 @@ struct frame_pacer_hud_swapchain_result frame_pacer_hud_create_swapchain(
     /* A driver may reject a legal combination for a reason not exposed by the
      * surface capabilities. Recover the exact caller request, fail-open. */
     outcome.retried_original = true;
-    outcome.result = create_swapchain(device, create_info, allocator, swapchain);
+    outcome.result =
+        create_swapchain(device, create_info, allocator, swapchain);
     return outcome;
 }

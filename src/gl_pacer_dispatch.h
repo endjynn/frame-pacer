@@ -9,24 +9,24 @@
 
 typedef void (*frame_pacer_glx_swap_fn)(Display *, GLXDrawable);
 typedef EGLBoolean (*frame_pacer_egl_swap_fn)(EGLDisplay, EGLSurface);
-typedef EGLBoolean (*frame_pacer_egl_swap_damage_fn)(
-    EGLDisplay, EGLSurface, const EGLint *, EGLint);
+typedef EGLBoolean (*frame_pacer_egl_swap_damage_fn)(EGLDisplay, EGLSurface,
+                                                     const EGLint *, EGLint);
 typedef EGLContext (*frame_pacer_egl_current_context_fn)(void);
 typedef EGLBoolean (*frame_pacer_egl_query_surface_fn)(EGLDisplay, EGLSurface,
-                                                        EGLint, EGLint *);
+                                                       EGLint, EGLint *);
 typedef EGLBoolean (*frame_pacer_egl_destroy_context_fn)(EGLDisplay,
-                                                          EGLContext);
+                                                         EGLContext);
 typedef EGLBoolean (*frame_pacer_egl_terminate_fn)(EGLDisplay);
 typedef GLXContext (*frame_pacer_glx_current_context_fn)(void);
 typedef void (*frame_pacer_glx_query_drawable_fn)(Display *, GLXDrawable, int,
-                                                   unsigned int *);
+                                                  unsigned int *);
 typedef void (*frame_pacer_glx_destroy_context_fn)(Display *, GLXContext);
 typedef const GLubyte *(*frame_pacer_gl_get_string_fn)(GLenum);
 typedef void (*frame_pacer_gl_get_integer_fn)(GLenum, GLint *);
 typedef void (*frame_pacer_gl_disable_fn)(GLenum);
 typedef void (*frame_pacer_gl_enable_fn)(GLenum);
 typedef void (*frame_pacer_gl_blend_func_separate_fn)(GLenum, GLenum, GLenum,
-                                                       GLenum);
+                                                      GLenum);
 typedef void (*frame_pacer_gl_blend_equation_separate_fn)(GLenum, GLenum);
 typedef GLboolean (*frame_pacer_gl_is_enabled_fn)(GLenum);
 typedef void (*frame_pacer_gl_active_texture_fn)(GLenum);
@@ -36,42 +36,40 @@ typedef void (*frame_pacer_gl_bind_framebuffer_fn)(GLenum, GLuint);
 typedef void (*frame_pacer_gl_viewport_fn)(GLint, GLint, GLsizei, GLsizei);
 typedef void (*frame_pacer_gl_scissor_fn)(GLint, GLint, GLsizei, GLsizei);
 typedef void (*frame_pacer_gl_color_mask_fn)(GLboolean, GLboolean, GLboolean,
-                                              GLboolean);
+                                             GLboolean);
 typedef GLuint (*frame_pacer_gl_create_shader_fn)(GLenum);
 typedef void (*frame_pacer_gl_shader_source_fn)(GLuint, GLsizei,
-                                                 const GLchar *const *,
-                                                 const GLint *);
+                                                const GLchar *const *,
+                                                const GLint *);
 typedef void (*frame_pacer_gl_compile_shader_fn)(GLuint);
 typedef void (*frame_pacer_gl_get_shader_iv_fn)(GLuint, GLenum, GLint *);
 typedef void (*frame_pacer_gl_get_shader_info_log_fn)(GLuint, GLsizei,
-                                                       GLsizei *, GLchar *);
+                                                      GLsizei *, GLchar *);
 typedef void (*frame_pacer_gl_delete_shader_fn)(GLuint);
 typedef GLuint (*frame_pacer_gl_create_program_fn)(void);
 typedef void (*frame_pacer_gl_attach_shader_fn)(GLuint, GLuint);
 typedef void (*frame_pacer_gl_bind_attrib_location_fn)(GLuint, GLuint,
-                                                        const GLchar *);
+                                                       const GLchar *);
 typedef void (*frame_pacer_gl_link_program_fn)(GLuint);
 typedef void (*frame_pacer_gl_get_program_iv_fn)(GLuint, GLenum, GLint *);
 typedef void (*frame_pacer_gl_get_program_info_log_fn)(GLuint, GLsizei,
-                                                        GLsizei *, GLchar *);
+                                                       GLsizei *, GLchar *);
 typedef void (*frame_pacer_gl_delete_program_fn)(GLuint);
 typedef void (*frame_pacer_gl_use_program_fn)(GLuint);
-typedef GLint (*frame_pacer_gl_get_uniform_location_fn)(GLuint,
-                                                         const GLchar *);
+typedef GLint (*frame_pacer_gl_get_uniform_location_fn)(GLuint, const GLchar *);
 typedef void (*frame_pacer_gl_uniform_2f_fn)(GLint, GLfloat, GLfloat);
 typedef void (*frame_pacer_gl_gen_vertex_arrays_fn)(GLsizei, GLuint *);
-typedef void (*frame_pacer_gl_delete_vertex_arrays_fn)(GLsizei,
-                                                        const GLuint *);
+typedef void (*frame_pacer_gl_delete_vertex_arrays_fn)(GLsizei, const GLuint *);
 typedef void (*frame_pacer_gl_bind_vertex_array_fn)(GLuint);
 typedef void (*frame_pacer_gl_gen_buffers_fn)(GLsizei, GLuint *);
 typedef void (*frame_pacer_gl_delete_buffers_fn)(GLsizei, const GLuint *);
 typedef void (*frame_pacer_gl_bind_buffer_fn)(GLenum, GLuint);
 typedef void (*frame_pacer_gl_buffer_data_fn)(GLenum, GLsizeiptr, const void *,
-                                               GLenum);
+                                              GLenum);
 typedef void (*frame_pacer_gl_enable_vertex_attrib_array_fn)(GLuint);
 typedef void (*frame_pacer_gl_vertex_attrib_pointer_fn)(GLuint, GLint, GLenum,
-                                                         GLboolean, GLsizei,
-                                                         const void *);
+                                                        GLboolean, GLsizei,
+                                                        const void *);
 typedef void (*frame_pacer_gl_draw_arrays_fn)(GLenum, GLint, GLsizei);
 
 struct frame_pacer_gl_dispatch {
@@ -141,9 +139,9 @@ struct frame_pacer_gl_dispatch {
 #define FRAME_PACER_GL_INTERNAL
 #endif
 
-FRAME_PACER_GL_INTERNAL bool frame_pacer_gl_dispatch_init(
-    struct frame_pacer_gl_dispatch *);
-FRAME_PACER_GL_INTERNAL void frame_pacer_gl_dispatch_destroy(
-    struct frame_pacer_gl_dispatch *);
+FRAME_PACER_GL_INTERNAL bool
+frame_pacer_gl_dispatch_init(struct frame_pacer_gl_dispatch *);
+FRAME_PACER_GL_INTERNAL void
+frame_pacer_gl_dispatch_destroy(struct frame_pacer_gl_dispatch *);
 
 #endif

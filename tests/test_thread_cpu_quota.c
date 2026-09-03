@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "thread_cpu_quota.h"
+#include "thread_cpu_external.h"
 
 #include <assert.h>
 #include <dirent.h>
@@ -18,7 +19,8 @@ static size_t open_descriptor_count(void)
 
     assert(directory);
     while ((entry = readdir(directory))) {
-        if (strcmp(entry->d_name, ".") && strcmp(entry->d_name, "..")) ++count;
+        if (strcmp(entry->d_name, ".") && strcmp(entry->d_name, ".."))
+            ++count;
     }
     assert(closedir(directory) == 0);
     return count;
@@ -34,6 +36,37 @@ static void failed_write_closes_stream(void)
     before = open_descriptor_count();
     assert(!frame_pacer_thread_cpu_quota_test_write_text("/dev/full", text));
     assert(open_descriptor_count() == before);
+}
+
+static void rejected_state_read_closes_descriptor(void)
+{
+    char directory[] = "/tmp/frame-pacer-read-state-XXXXXX";
+    char state[1024], status[1100], text[128];
+    size_t before;
+    FILE *file;
+
+    assert(mkdtemp(directory));
+    assert(snprintf(state, sizeof(state), "%s/state", directory) > 0);
+    assert(snprintf(status, sizeof(status), "%s.status", state) > 0);
+    memset(text, 'x', sizeof(text));
+    before = open_descriptor_count();
+    // The confirmation reader has a 64-byte buffer. Both a completely full
+    // buffer and a larger file must be rejected without leaking the open fd.
+    for (size_t size = 64; size <= sizeof(text); size += 64) {
+        file = fopen(status, "we");
+        assert(file);
+        assert(fwrite(text, 1, size, file) == size);
+        assert(!fclose(file));
+        for (unsigned int attempt = 0; attempt < 32; ++attempt)
+            assert(!frame_pacer_thread_cpu_external_confirmed(state, 50));
+        assert(open_descriptor_count() == before);
+    }
+    file = fopen(status, "we");
+    assert(file && fputs("confirmed 50\n", file) >= 0 && !fclose(file));
+    assert(frame_pacer_thread_cpu_external_confirmed(state, 50));
+    assert(open_descriptor_count() == before);
+    assert(!unlink(status));
+    assert(!rmdir(directory));
 }
 
 static void external_controller_is_disabled_on_destroy(void)
@@ -71,8 +104,8 @@ static void external_controller_is_disabled_on_destroy(void)
 
 static void external_confirmation_is_exact(void)
 {
-    assert(frame_pacer_thread_cpu_quota_test_parse_confirmation(
-        "confirmed 1\n", 1));
+    assert(frame_pacer_thread_cpu_quota_test_parse_confirmation("confirmed 1\n",
+                                                                1));
     assert(frame_pacer_thread_cpu_quota_test_parse_confirmation(
         "confirmed 100\n", 100));
     assert(!frame_pacer_thread_cpu_quota_test_parse_confirmation(
@@ -81,8 +114,8 @@ static void external_confirmation_is_exact(void)
         "confirmed +50\n", 50));
     assert(!frame_pacer_thread_cpu_quota_test_parse_confirmation(
         "confirmed 050\n", 50));
-    assert(!frame_pacer_thread_cpu_quota_test_parse_confirmation(
-        "confirmed 50", 50));
+    assert(!frame_pacer_thread_cpu_quota_test_parse_confirmation("confirmed 50",
+                                                                 50));
     assert(!frame_pacer_thread_cpu_quota_test_parse_confirmation(
         "confirmed 50\nextra", 50));
     assert(!frame_pacer_thread_cpu_quota_test_parse_confirmation(
@@ -103,8 +136,8 @@ static void external_state_is_atomically_replaced(void)
     assert(file && fputs("sentinel\n", file) >= 0 && !fclose(file));
 
     assert(!symlink(target, state));
-    assert(frame_pacer_thread_cpu_quota_test_write_external_state(
-        state, true, 50));
+    assert(frame_pacer_thread_cpu_quota_test_write_external_state(state, true,
+                                                                  50));
     file = fopen(target, "re");
     assert(file && fgets(text, sizeof(text), file) && !fclose(file));
     assert(!strcmp(text, "sentinel\n"));
@@ -116,8 +149,8 @@ static void external_state_is_atomically_replaced(void)
 
     assert(!unlink(state));
     assert(!link(target, state));
-    assert(frame_pacer_thread_cpu_quota_test_write_external_state(
-        state, false, 0));
+    assert(frame_pacer_thread_cpu_quota_test_write_external_state(state, false,
+                                                                  0));
     file = fopen(target, "re");
     assert(file && fgets(text, sizeof(text), file) && !fclose(file));
     assert(!strcmp(text, "sentinel\n"));
@@ -147,13 +180,13 @@ static void helper_lookup_supports_build_and_install_layouts(void)
     assert(!chmod(helper, 0700));
     assert(snprintf(architecture, sizeof(architecture),
                     "%s/lib/x86_64-linux-gnu/libframe_pacer_gl.so", build) > 0);
-    assert(frame_pacer_thread_cpu_quota_test_helper_path(
-        architecture, resolved, sizeof(resolved)));
+    assert(frame_pacer_thread_cpu_quota_test_helper_path(architecture, resolved,
+                                                         sizeof(resolved)));
     assert(!strcmp(helper, resolved));
     assert(!unlink(helper));
 
-    assert(snprintf(installed, sizeof(installed), "%s/frame-pacer",
-                    directory) > 0);
+    assert(snprintf(installed, sizeof(installed), "%s/frame-pacer", directory) >
+           0);
     assert(!mkdir(installed, 0700));
     assert(snprintf(helper, sizeof(helper),
                     "%s/frame-pacer-thread-cpu-controller", installed) > 0);
@@ -163,14 +196,14 @@ static void helper_lookup_supports_build_and_install_layouts(void)
     assert(!chmod(helper, 0700));
     assert(snprintf(architecture, sizeof(architecture),
                     "%s/i386/libVkLayer_frame_pacer.so", installed) > 0);
-    assert(frame_pacer_thread_cpu_quota_test_helper_path(
-        architecture, resolved, sizeof(resolved)));
+    assert(frame_pacer_thread_cpu_quota_test_helper_path(architecture, resolved,
+                                                         sizeof(resolved)));
     assert(!strcmp(helper, resolved));
     assert(snprintf(architecture, sizeof(architecture),
                     "%s/lib/x86_64-linux-gnu/libframe_pacer_gl.so",
                     installed) > 0);
-    assert(frame_pacer_thread_cpu_quota_test_helper_path(
-        architecture, resolved, sizeof(resolved)));
+    assert(frame_pacer_thread_cpu_quota_test_helper_path(architecture, resolved,
+                                                         sizeof(resolved)));
     assert(!strcmp(helper, resolved));
     assert(!chmod(helper, 0720));
     assert(!frame_pacer_thread_cpu_quota_test_helper_path(
@@ -183,8 +216,8 @@ static void helper_lookup_supports_build_and_install_layouts(void)
 
 static void proc_identity_parsing_is_exact(void)
 {
-    assert(frame_pacer_thread_cpu_quota_test_parse_host_pid_line(
-        "NSpid:\t123\n"));
+    assert(
+        frame_pacer_thread_cpu_quota_test_parse_host_pid_line("NSpid:\t123\n"));
     assert(frame_pacer_thread_cpu_quota_test_parse_host_pid_line(
         "NSpid: 123\r\n"));
     assert(!frame_pacer_thread_cpu_quota_test_parse_host_pid_line(
@@ -193,8 +226,8 @@ static void proc_identity_parsing_is_exact(void)
         "NSpid:\t+123\n"));
     assert(!frame_pacer_thread_cpu_quota_test_parse_host_pid_line(
         "NSpid:\t123junk\n"));
-    assert(!frame_pacer_thread_cpu_quota_test_parse_host_pid_line(
-        "NSpid:\t123"));
+    assert(
+        !frame_pacer_thread_cpu_quota_test_parse_host_pid_line("NSpid:\t123"));
     assert(frame_pacer_thread_cpu_quota_test_valid_boot_id(
         "01234567-89ab-cdef-0123-456789abcdef"));
     assert(!frame_pacer_thread_cpu_quota_test_valid_boot_id(
@@ -206,6 +239,7 @@ static void proc_identity_parsing_is_exact(void)
 
 int main(void)
 {
+    rejected_state_read_closes_descriptor();
     struct frame_pacer_thread_cpu_quota quota;
     uint32_t percent = 99;
 

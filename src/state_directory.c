@@ -47,8 +47,7 @@ bool frame_pacer_state_directory(char *output, size_t size,
         state = fallback;
     }
     written = snprintf(output, size, "%s/frame-pacer", state);
-    if (written < 0 || (size_t)written >= size ||
-        !create_directory(output) ||
+    if (written < 0 || (size_t)written >= size || !create_directory(output) ||
         !usable_directory(output, require_private)) {
         output[0] = '\0';
         return false;

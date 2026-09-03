@@ -20,7 +20,8 @@ int main(void)
     __eglMustCastToProperFunctionPointerType (*egl_get_proc)(const char *);
     void (*glx_swap)(Display *, GLXDrawable);
     EGLBoolean (*egl_swap)(EGLDisplay, EGLSurface);
-    EGLBoolean (*egl_swap_damage)(EGLDisplay, EGLSurface, const EGLint *, EGLint);
+    EGLBoolean (*egl_swap_damage)(EGLDisplay, EGLSurface, const EGLint *,
+                                  EGLint);
     unsigned int (*glx_calls)(void);
     unsigned int (*egl_calls)(void);
     void (*set_egl_context)(GLboolean);
@@ -82,7 +83,8 @@ int main(void)
     memcpy(&glx_swap, &symbol, sizeof(glx_swap));
     glx_swap((Display *)1, 0);
     glx_proc = glx_get_proc((const GLubyte *)"eglSwapBuffers");
-    _Static_assert(sizeof(symbol) == sizeof(glx_proc), "unsupported function pointer representation");
+    _Static_assert(sizeof(symbol) == sizeof(glx_proc),
+                   "unsupported function pointer representation");
     memcpy(&symbol, &glx_proc, sizeof(symbol));
     assert(symbol);
     memcpy(&egl_swap, &symbol, sizeof(egl_swap));
@@ -156,7 +158,7 @@ int main(void)
     assert(gl_programs() == 5);
 
     if (reload_path && *reload_path) {
-        const struct timespec delay = { .tv_sec = 1, .tv_nsec = 100000000L };
+        const struct timespec delay = {.tv_sec = 1, .tv_nsec = 100000000L};
         FILE *reload = fopen(reload_path, "w");
 
         assert(reload);

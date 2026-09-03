@@ -14,7 +14,8 @@ struct frame_pacer_queue_state {
 };
 
 void frame_pacer_queue_note_present(struct frame_pacer_queue_state *);
-bool frame_pacer_queue_needs_fallback(struct frame_pacer_queue_state *, uint64_t now_ns,
-                                      bool *entered, uint64_t *submits_since_present);
+bool frame_pacer_queue_needs_fallback(struct frame_pacer_queue_state *,
+                                      uint64_t now_ns, bool *entered,
+                                      uint64_t *submits_since_present);
 
 #endif

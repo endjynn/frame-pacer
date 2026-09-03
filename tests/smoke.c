@@ -12,20 +12,24 @@ static unsigned int log_descriptor_count(void)
     struct dirent *entry;
     unsigned int count = 0;
 
-    if (!directory) return 0;
+    if (!directory)
+        return 0;
     while ((entry = readdir(directory))) {
         char path[64];
         char target[4096];
         ssize_t length;
 
-        if (entry->d_name[0] == '.') continue;
+        if (entry->d_name[0] == '.')
+            continue;
         if (snprintf(path, sizeof(path), "/proc/self/fd/%s", entry->d_name) >=
             (int)sizeof(path))
             continue;
         length = readlink(path, target, sizeof(target) - 1);
-        if (length < 0) continue;
+        if (length < 0)
+            continue;
         target[length] = '\0';
-        if (strstr(target, "/frame-pacer/frame-pacer-")) ++count;
+        if (strstr(target, "/frame-pacer/frame-pacer-"))
+            ++count;
     }
     (void)closedir(directory);
     return count;
@@ -57,10 +61,12 @@ int main(void)
         {
             unsigned int log_descriptors = log_descriptor_count();
 
-            if (log_descriptors == 0) continue;
-            fprintf(stderr,
-                    "layer retained %u log descriptors after instance teardown\n",
-                    log_descriptors);
+            if (log_descriptors == 0)
+                continue;
+            fprintf(
+                stderr,
+                "layer retained %u log descriptors after instance teardown\n",
+                log_descriptors);
             return 2;
         }
     }

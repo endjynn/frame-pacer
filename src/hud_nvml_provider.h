@@ -30,10 +30,11 @@ struct frame_pacer_nvml_provider {
     int (*temperature)(void *, unsigned int, unsigned int *);
 };
 
-FRAME_PACER_NVML_INTERNAL bool frame_pacer_nvml_provider_init(
-    struct frame_pacer_nvml_provider *, const char *library);
-FRAME_PACER_NVML_INTERNAL void frame_pacer_nvml_provider_destroy(
-    struct frame_pacer_nvml_provider *);
+FRAME_PACER_NVML_INTERNAL bool
+frame_pacer_nvml_provider_init(struct frame_pacer_nvml_provider *,
+                               const char *library);
+FRAME_PACER_NVML_INTERNAL void
+frame_pacer_nvml_provider_destroy(struct frame_pacer_nvml_provider *);
 FRAME_PACER_NVML_INTERNAL
 bool frame_pacer_nvml_provider_select_process(
     struct frame_pacer_nvml_provider *, unsigned int process_id);

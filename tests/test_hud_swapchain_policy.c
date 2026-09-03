@@ -36,15 +36,16 @@ static VkResult VKAPI_CALL create(VkDevice device,
     (void)allocator;
     assert(fake.calls < 2);
     fake.usage[fake.calls++] = info->imageUsage;
-    result = (info->imageUsage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) ?
-        fake.augmented_result : fake.original_result;
+    result = (info->imageUsage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
+                 ? fake.augmented_result
+                 : fake.original_result;
     if (result == VK_SUCCESS)
         *swapchain = (VkSwapchainKHR)(uintptr_t)3;
     return result;
 }
 
-static struct frame_pacer_hud_swapchain_result run(
-    VkSwapchainCreateInfoKHR *info)
+static struct frame_pacer_hud_swapchain_result
+run(VkSwapchainCreateInfoKHR *info)
 {
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     return frame_pacer_hud_create_swapchain(
@@ -68,7 +69,8 @@ int main(void)
     result = run(&info);
     assert(result.result == VK_SUCCESS && result.color_attachment_enabled);
     assert(!result.retried_original && fake.calls == 1);
-    assert(fake.usage[0] == (VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT));
+    assert(fake.usage[0] == (VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                             VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT));
     assert(info.imageUsage == VK_IMAGE_USAGE_TRANSFER_DST_BIT);
 
     memset(&fake, 0, sizeof(fake));
@@ -104,6 +106,7 @@ int main(void)
     info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     result = run(&info);
     assert(result.result == VK_SUCCESS && result.color_attachment_enabled);
-    assert(fake.calls == 1 && fake.usage[0] == VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
+    assert(fake.calls == 1 &&
+           fake.usage[0] == VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
     return 0;
 }

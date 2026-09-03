@@ -5,14 +5,14 @@
 #ifdef FRAME_PACER_TEST
 static size_t allocations_before_failure = SIZE_MAX;
 
-__attribute__((visibility("hidden")))
-void frame_pacer_layer_test_fail_next_allocation(void)
+__attribute__((visibility("hidden"))) void
+frame_pacer_layer_test_fail_next_allocation(void)
 {
     allocations_before_failure = 0;
 }
 
-__attribute__((visibility("hidden")))
-void frame_pacer_layer_test_fail_allocation_after(size_t successes)
+__attribute__((visibility("hidden"))) void
+frame_pacer_layer_test_fail_allocation_after(size_t successes)
 {
     allocations_before_failure = successes;
 }
@@ -92,9 +92,9 @@ struct frame_pacer_vulkan_queue *frame_pacer_vulkan_registry_find_queue(
     return 0;
 }
 
-static void remember_physical_devices(
-    struct frame_pacer_vulkan_registry *registry,
-    struct frame_pacer_vulkan_instance *instance)
+static void
+remember_physical_devices(struct frame_pacer_vulkan_registry *registry,
+                          struct frame_pacer_vulkan_instance *instance)
 {
     PFN_vkEnumeratePhysicalDevices enumerate;
     PFN_vkGetPhysicalDeviceQueueFamilyProperties get_queues;
@@ -111,12 +111,13 @@ static void remember_physical_devices(
     {
         uint32_t capacity = count;
 
-        handles = frame_pacer_vulkan_registry_allocate_zero(
-            capacity, sizeof(*handles));
+        handles = frame_pacer_vulkan_registry_allocate_zero(capacity,
+                                                            sizeof(*handles));
         if (!handles)
             return;
-        get_queues = (PFN_vkGetPhysicalDeviceQueueFamilyProperties)instance->gipa(
-            instance->handle, "vkGetPhysicalDeviceQueueFamilyProperties");
+        get_queues =
+            (PFN_vkGetPhysicalDeviceQueueFamilyProperties)instance->gipa(
+                instance->handle, "vkGetPhysicalDeviceQueueFamilyProperties");
         if (enumerate(instance->handle, &count, handles) != VK_SUCCESS) {
             free(handles);
             return;
@@ -192,7 +193,8 @@ PFN_vkDestroyInstance frame_pacer_vulkan_registry_remove_instance(
         physical_link = &registry->physical_devices;
         while (*physical_link) {
             if ((*physical_link)->instance == item) {
-                struct frame_pacer_vulkan_physical_device *found = *physical_link;
+                struct frame_pacer_vulkan_physical_device *found =
+                    *physical_link;
 
                 *physical_link = found->next;
                 free(found->queue_families);
@@ -206,7 +208,8 @@ PFN_vkDestroyInstance frame_pacer_vulkan_registry_remove_instance(
             instance_link = &(*instance_link)->next;
         *instance_link = item->next;
     }
-    registry->fallback_gipa = registry->instances ? registry->instances->gipa : 0;
+    registry->fallback_gipa =
+        registry->instances ? registry->instances->gipa : 0;
     frame_pacer_vulkan_registry_unlock(registry);
     if (removed)
         *removed = item;
@@ -244,8 +247,8 @@ frame_pacer_vulkan_registry_collect_queues(
         return FRAME_PACER_VULKAN_QUEUES_READY;
     if (!device->gdpa || !device->set_loader_data)
         return FRAME_PACER_VULKAN_QUEUES_UNAVAILABLE;
-    get_queue = (PFN_vkGetDeviceQueue)device->gdpa(device->handle,
-                                                   "vkGetDeviceQueue");
+    get_queue =
+        (PFN_vkGetDeviceQueue)device->gdpa(device->handle, "vkGetDeviceQueue");
     if (!get_queue)
         return FRAME_PACER_VULKAN_QUEUES_UNAVAILABLE;
 
@@ -354,22 +357,22 @@ void frame_pacer_vulkan_registry_set_test_registry(
     test_registry = registry;
 }
 
-__attribute__((visibility("hidden")))
-uint32_t frame_pacer_layer_test_queue_family_count(VkPhysicalDevice physical)
+__attribute__((visibility("hidden"))) uint32_t
+frame_pacer_layer_test_queue_family_count(VkPhysicalDevice physical)
 {
     struct frame_pacer_vulkan_physical_device *item;
     uint32_t count;
 
     frame_pacer_vulkan_registry_lock(test_registry);
     item = frame_pacer_vulkan_registry_find_physical_device(test_registry,
-                                                             physical);
+                                                            physical);
     count = item ? item->queue_family_count : 0;
     frame_pacer_vulkan_registry_unlock(test_registry);
     return count;
 }
 
-__attribute__((visibility("hidden")))
-uint32_t frame_pacer_layer_test_physical_device_count(void)
+__attribute__((visibility("hidden"))) uint32_t
+frame_pacer_layer_test_physical_device_count(void)
 {
     struct frame_pacer_vulkan_physical_device *item;
     uint32_t count = 0;
@@ -381,8 +384,8 @@ uint32_t frame_pacer_layer_test_physical_device_count(void)
     return count;
 }
 
-__attribute__((visibility("hidden")))
-uint32_t frame_pacer_layer_test_queue_count(void)
+__attribute__((visibility("hidden"))) uint32_t
+frame_pacer_layer_test_queue_count(void)
 {
     struct frame_pacer_vulkan_queue *item;
     uint32_t count = 0;

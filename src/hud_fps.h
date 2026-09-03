@@ -27,6 +27,7 @@ void frame_pacer_fps_destroy(struct frame_pacer_fps_tracker *);
 /* Returns true only when a complete new sample has been produced. */
 bool frame_pacer_fps_record_present(struct frame_pacer_fps_tracker *,
                                     uint64_t now_ns, uint32_t *fps_out);
-bool frame_pacer_fps_snapshot(struct frame_pacer_fps_tracker *, uint32_t *fps_out);
+bool frame_pacer_fps_snapshot(struct frame_pacer_fps_tracker *,
+                              uint32_t *fps_out);
 
 #endif

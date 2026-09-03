@@ -80,6 +80,11 @@ def validate_ci(workflow: dict) -> None:
     assert triggers["pull_request"].get("branches") == ["main"]
     assert triggers["push"].get("branches") == ["main"]
     assert workflow.get("concurrency", {}).get("cancel-in-progress") == "true"
+    quality = workflow["jobs"]["quality"]
+    assert "if" not in quality, "Quality checks must not be conditional"
+    commands = [step.get("run", "") for step in quality["steps"]]
+    assert "make setup-tools" in commands, "CI must use the pinned tools"
+    assert "make check-quality" in commands, "CI must enforce strict quality checks"
     for job_name, job in workflow["jobs"].items():
         permissions = job.get("permissions", {"contents": "read"})
         assert permissions == {"contents": "read"}, f"CI:{job_name} can write"

@@ -13,12 +13,15 @@ static const char *const required_commands[] = {
     [FRAME_PACER_HUD_COMMAND_CREATE_SHADER_MODULE] = "vkCreateShaderModule",
     [FRAME_PACER_HUD_COMMAND_DESTROY_SHADER_MODULE] = "vkDestroyShaderModule",
     [FRAME_PACER_HUD_COMMAND_CREATE_PIPELINE_LAYOUT] = "vkCreatePipelineLayout",
-    [FRAME_PACER_HUD_COMMAND_DESTROY_PIPELINE_LAYOUT] = "vkDestroyPipelineLayout",
-    [FRAME_PACER_HUD_COMMAND_CREATE_GRAPHICS_PIPELINES] = "vkCreateGraphicsPipelines",
+    [FRAME_PACER_HUD_COMMAND_DESTROY_PIPELINE_LAYOUT] =
+        "vkDestroyPipelineLayout",
+    [FRAME_PACER_HUD_COMMAND_CREATE_GRAPHICS_PIPELINES] =
+        "vkCreateGraphicsPipelines",
     [FRAME_PACER_HUD_COMMAND_DESTROY_PIPELINE] = "vkDestroyPipeline",
     [FRAME_PACER_HUD_COMMAND_CREATE_COMMAND_POOL] = "vkCreateCommandPool",
     [FRAME_PACER_HUD_COMMAND_DESTROY_COMMAND_POOL] = "vkDestroyCommandPool",
-    [FRAME_PACER_HUD_COMMAND_ALLOCATE_COMMAND_BUFFERS] = "vkAllocateCommandBuffers",
+    [FRAME_PACER_HUD_COMMAND_ALLOCATE_COMMAND_BUFFERS] =
+        "vkAllocateCommandBuffers",
     [FRAME_PACER_HUD_COMMAND_CREATE_FENCE] = "vkCreateFence",
     [FRAME_PACER_HUD_COMMAND_DESTROY_FENCE] = "vkDestroyFence",
     [FRAME_PACER_HUD_COMMAND_WAIT_FOR_FENCES] = "vkWaitForFences",

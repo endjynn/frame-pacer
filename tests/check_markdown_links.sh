@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-find . -path './.git' -prune -o -path './build' -prune -o \
+find . -path './.git' -prune -o -path './build' -prune -o -path './.cache' -prune -o \
     -name '*.md' -type f -print | while IFS= read -r document; do
     directory=$(dirname "$document")
     awk '
@@ -14,7 +14,7 @@ find . -path './.git' -prune -o -path './build' -prune -o \
         }
     ' "$document" | while IFS= read -r target; do
         case "$target" in
-            *://*|mailto:*|\#*) continue ;;
+            *://* | mailto:* | \#*) continue ;;
         esac
         target=${target%%\#*}
         if [ ! -e "$directory/$target" ]; then

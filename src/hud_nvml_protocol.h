@@ -19,8 +19,9 @@ struct frame_pacer_nvml_message {
 FRAME_PACER_NVML_INTERNAL void frame_pacer_nvml_protocol_encode(
     unsigned char output[FRAME_PACER_NVML_PROTOCOL_SIZE],
     const struct frame_pacer_nvml_message *);
-FRAME_PACER_NVML_INTERNAL bool frame_pacer_nvml_protocol_decode(
-    const unsigned char *, size_t, uint32_t previous_sequence,
-    bool have_previous, struct frame_pacer_nvml_message *);
+FRAME_PACER_NVML_INTERNAL bool
+frame_pacer_nvml_protocol_decode(const unsigned char *, size_t,
+                                 uint32_t previous_sequence, bool have_previous,
+                                 struct frame_pacer_nvml_message *);
 
 #endif

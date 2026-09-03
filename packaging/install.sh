@@ -1,14 +1,12 @@
 #!/bin/sh
 set -eu
 
-fail()
-{
+fail() {
     printf 'frame-pacer install: %s\n' "$1" >&2
     exit 1
 }
 
-validate_path()
-{
+validate_path() {
     name=$1
     value=$2
 
@@ -17,15 +15,14 @@ validate_path()
         *) fail "$name must be an absolute path" ;;
     esac
     case "$value/" in
-        *'/../'*|*'/./'*|*'//'*) fail "$name contains an unsafe path component" ;;
+        *'/../'* | *'/./'* | *'//'*) fail "$name contains an unsafe path component" ;;
     esac
     if printf '%s' "$value" | LC_ALL=C grep -q '[[:cntrl:]]'; then
         fail "$name contains a control character"
     fi
 }
 
-atomic_install()
-{
+atomic_install() {
     atomic_source=$1
     atomic_destination=$2
     atomic_mode=$3
@@ -39,8 +36,7 @@ atomic_install()
     current_temporary=
 }
 
-write_manifest()
-{
+write_manifest() {
     manifest_destination=$1
     manifest_library_path=$2
     manifest_layer_name=$3
@@ -54,20 +50,19 @@ write_manifest()
     rm -f -- "$manifest_temporary"
     sed -e "s|@LIBRARY_PATH@|$manifest_replacement|" \
         -e "s|@LAYER_NAME@|$manifest_layer_name|" \
-        "$payload_dir/VkLayer_frame_pacer_implicit.json.in" > "$manifest_temporary"
+        "$payload_dir/VkLayer_frame_pacer_implicit.json.in" >"$manifest_temporary"
     chmod 0644 "$manifest_temporary"
     mv -f -- "$manifest_temporary" "$manifest_destination"
     current_temporary=
 }
 
-cleanup()
-{
+cleanup() {
     if [ -n "${current_temporary:-}" ]; then
         rm -f -- "$current_temporary"
     fi
 }
 
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
 payload_dir=${FRAME_PACER_PAYLOAD_DIR:-"$script_dir/payload"}
 prefix=${PREFIX:-"${HOME:-}/.local"}
 destdir=${DESTDIR:-}
@@ -93,8 +88,7 @@ for required in \
     i386/libframe_pacer_gl_shim.so \
     frame-pacer-thread-cpu-controller \
     VkLayer_frame_pacer_implicit.json.in \
-    VERSION
-do
+    VERSION; do
     [ -f "$payload_dir/$required" ] && [ ! -L "$payload_dir/$required" ] ||
         fail "payload is missing $required"
 done
@@ -122,15 +116,13 @@ atomic_install "$payload_dir/frame-pacer-thread-cpu-controller" \
     "$runtime_dir/frame-pacer-thread-cpu-controller" 0755
 atomic_install "$payload_dir/VERSION" "$runtime_dir/VERSION" 0644
 
-for destination in lib lib/x86_64-linux-gnu
-do
+for destination in lib lib/x86_64-linux-gnu; do
     atomic_install "$payload_dir/x86_64/libframe_pacer_gl.so" \
         "$runtime_dir/$destination/libframe_pacer_gl.so" 0755
     atomic_install "$payload_dir/x86_64/libframe_pacer_gl_shim.so" \
         "$runtime_dir/$destination/libframe_pacer_gl_shim.so" 0755
 done
-for destination in lib32 lib/i386-linux-gnu
-do
+for destination in lib32 lib/i386-linux-gnu; do
     atomic_install "$payload_dir/i386/libframe_pacer_gl.so" \
         "$runtime_dir/$destination/libframe_pacer_gl.so" 0755
     atomic_install "$payload_dir/i386/libframe_pacer_gl_shim.so" \

@@ -7,12 +7,13 @@ int main(void)
 {
     struct frame_pacer_nvml_message input = {
         .sequence = 7,
-        .sample = {
-            .available = FRAME_PACER_NVML_GPU_USE |
-                         FRAME_PACER_NVML_GPU_TEMP,
-            .gpu_use_percent = 37,
-            .gpu_temp_celsius = 64,
-        },
+        .sample =
+            {
+                .available =
+                    FRAME_PACER_NVML_GPU_USE | FRAME_PACER_NVML_GPU_TEMP,
+                .gpu_use_percent = 37,
+                .gpu_temp_celsius = 64,
+            },
     };
     struct frame_pacer_nvml_message output;
     unsigned char encoded[FRAME_PACER_NVML_PROTOCOL_SIZE + 1];
@@ -27,8 +28,8 @@ int main(void)
     assert(output.sample.gpu_temp_celsius == 64);
     assert(!frame_pacer_nvml_protocol_decode(
         encoded, FRAME_PACER_NVML_PROTOCOL_SIZE - 1, 0, false, &output));
-    assert(!frame_pacer_nvml_protocol_decode(encoded, sizeof(encoded), 0,
-                                             false, &output));
+    assert(!frame_pacer_nvml_protocol_decode(encoded, sizeof(encoded), 0, false,
+                                             &output));
     assert(!frame_pacer_nvml_protocol_decode(
         encoded, FRAME_PACER_NVML_PROTOCOL_SIZE, 7, true, &output));
     encoded[0] ^= 1U;

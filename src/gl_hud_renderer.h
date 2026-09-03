@@ -24,8 +24,8 @@ struct frame_pacer_gl_hud_renderer {
     void (*log)(const char *);
 };
 
-#define FRAME_PACER_GL_HUD_RENDERER_INITIALIZER(vertices_, log_) \
-    { .mutex = PTHREAD_MUTEX_INITIALIZER, .vertices = (vertices_), .log = (log_) }
+#define FRAME_PACER_GL_HUD_RENDERER_INITIALIZER(vertices_, log_)               \
+    {.mutex = PTHREAD_MUTEX_INITIALIZER, .vertices = (vertices_), .log = (log_)}
 
 #if defined(__GNUC__)
 #define FRAME_PACER_GL_HUD_INTERNAL __attribute__((visibility("hidden")))
@@ -33,16 +33,16 @@ struct frame_pacer_gl_hud_renderer {
 #define FRAME_PACER_GL_HUD_INTERNAL
 #endif
 
-FRAME_PACER_GL_HUD_INTERNAL void frame_pacer_gl_hud_render(
-                               struct frame_pacer_gl_hud_renderer *,
-                               const struct frame_pacer_gl_dispatch *,
-                               const struct frame_pacer_hud_text *,
-                               EGLDisplay, EGLSurface, Display *, GLXDrawable);
-FRAME_PACER_GL_HUD_INTERNAL void frame_pacer_gl_hud_forget(
-                               struct frame_pacer_gl_hud_renderer *,
-                               enum frame_pacer_gl_context_api, void *, void *,
-                               bool);
-FRAME_PACER_GL_HUD_INTERNAL void frame_pacer_gl_hud_renderer_destroy(
-    struct frame_pacer_gl_hud_renderer *);
+FRAME_PACER_GL_HUD_INTERNAL void
+frame_pacer_gl_hud_render(struct frame_pacer_gl_hud_renderer *,
+                          const struct frame_pacer_gl_dispatch *,
+                          const struct frame_pacer_hud_text *, EGLDisplay,
+                          EGLSurface, Display *, GLXDrawable);
+FRAME_PACER_GL_HUD_INTERNAL void
+frame_pacer_gl_hud_forget(struct frame_pacer_gl_hud_renderer *,
+                          enum frame_pacer_gl_context_api, void *, void *,
+                          bool);
+FRAME_PACER_GL_HUD_INTERNAL void
+frame_pacer_gl_hud_renderer_destroy(struct frame_pacer_gl_hud_renderer *);
 
 #endif

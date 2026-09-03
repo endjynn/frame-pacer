@@ -34,9 +34,9 @@ static bool install_signal_handlers(void)
     struct sigaction action = {0};
 
     action.sa_handler = request_stop;
-    if (sigemptyset(&action.sa_mask)) return false;
-    return !sigaction(SIGTERM, &action, 0) &&
-           !sigaction(SIGINT, &action, 0) &&
+    if (sigemptyset(&action.sa_mask))
+        return false;
+    return !sigaction(SIGTERM, &action, 0) && !sigaction(SIGINT, &action, 0) &&
            !sigaction(SIGHUP, &action, 0);
 }
 
@@ -80,10 +80,10 @@ static bool valid_paths(pid_t pid, const char *scope, const char *state)
             isspace((unsigned char)scope[index]))
             return false;
     scope_name = strrchr(scope, '/');
-    if (!scope_name || !*++scope_name) return false;
+    if (!scope_name || !*++scope_name)
+        return false;
     written = snprintf(user_prefix, sizeof(user_prefix),
-                       "frame-pacer-thread-cpu-u%ju-b",
-                       (uintmax_t)getuid());
+                       "frame-pacer-thread-cpu-u%ju-b", (uintmax_t)getuid());
     if (written < 0 || (size_t)written >= sizeof(user_prefix) ||
         strncmp(scope_name, user_prefix, (size_t)written))
         return false;
@@ -100,7 +100,8 @@ static bool valid_paths(pid_t pid, const char *scope, const char *state)
         return false;
 
     state_name = strrchr(state, '/');
-    if (!state_name || state_name == state || !*++state_name) return false;
+    if (!state_name || state_name == state || !*++state_name)
+        return false;
     written = snprintf(expected_state, sizeof(expected_state), "thread-cpu-%s",
                        scope_name);
     if (written < 0 || (size_t)written >= sizeof(expected_state) ||
@@ -109,13 +110,14 @@ static bool valid_paths(pid_t pid, const char *scope, const char *state)
     state_parent_end = state_name - 1;
     parent_length = (size_t)(state_parent_end - state);
     if (parent_length < sizeof("/frame-pacer") - 1 ||
-        strncmp(state_parent_end - (sizeof("/frame-pacer") - 1),
-                "/frame-pacer", sizeof("/frame-pacer") - 1))
+        strncmp(state_parent_end - (sizeof("/frame-pacer") - 1), "/frame-pacer",
+                sizeof("/frame-pacer") - 1))
         return false;
     {
         char parent[PATH_MAX];
 
-        if (parent_length >= sizeof(parent)) return false;
+        if (parent_length >= sizeof(parent))
+            return false;
         memcpy(parent, state, parent_length);
         parent[parent_length] = '\0';
         if (lstat(parent, &directory_status) ||
@@ -143,12 +145,14 @@ static bool write_file(const char *path, const char *text)
     bool written;
     bool closed;
 
-    if (fd < 0) return false;
+    if (fd < 0)
+        return false;
     do {
         ssize_t result = write(fd, text, size);
 
         written = result == (ssize_t)size;
-        if (result < 0 && errno == EINTR) continue;
+        if (result < 0 && errno == EINTR)
+            continue;
         break;
     } while (true);
     written = written && fsync(fd) == 0;
@@ -162,11 +166,13 @@ static bool read_file(const char *path, char *out, size_t size)
     size_t offset = 0;
     int fd;
 
-    if (!path || !out || !size) return false;
+    if (!path || !out || !size)
+        return false;
     fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
     if (fd < 0 || fstat(fd, &before) || !S_ISREG(before.st_mode) ||
         before.st_uid != getuid() || before.st_nlink != 1) {
-        if (fd >= 0) (void)close(fd);
+        if (fd >= 0)
+            (void)close(fd);
         return false;
     }
     while (offset < size) {
@@ -181,10 +187,13 @@ static bool read_file(const char *path, char *out, size_t size)
             return false;
         }
     }
-    if (offset == size || fstat(fd, &after) || close(fd) ||
-        before.st_dev != after.st_dev || before.st_ino != after.st_ino ||
-        before.st_uid != after.st_uid || before.st_mode != after.st_mode ||
-        before.st_nlink != after.st_nlink || before.st_size != after.st_size ||
+    bool valid = fstat(fd, &after) == 0;
+    if (close(fd))
+        valid = false;
+    if (offset >= size || !valid || before.st_dev != after.st_dev ||
+        before.st_ino != after.st_ino || before.st_uid != after.st_uid ||
+        before.st_mode != after.st_mode || before.st_nlink != after.st_nlink ||
+        before.st_size != after.st_size ||
         before.st_mtim.tv_sec != after.st_mtim.tv_sec ||
         before.st_mtim.tv_nsec != after.st_mtim.tv_nsec)
         return false;
@@ -195,11 +204,10 @@ static bool read_file(const char *path, char *out, size_t size)
 static bool tid_exists(pid_t pid, uint32_t tid)
 {
     char path[80];
-    int written = snprintf(path, sizeof(path), "/proc/%ld/task/%u",
-                           (long)pid, tid);
+    int written =
+        snprintf(path, sizeof(path), "/proc/%ld/task/%u", (long)pid, tid);
 
-    return written > 0 && (size_t)written < sizeof(path) &&
-           !access(path, F_OK);
+    return written > 0 && (size_t)written < sizeof(path) && !access(path, F_OK);
 }
 
 static unsigned collect(pid_t pid, uint32_t out[MAX_TIDS], bool *overflow)
@@ -212,16 +220,20 @@ static unsigned collect(pid_t pid, uint32_t out[MAX_TIDS], bool *overflow)
 
     *overflow = false;
     written = snprintf(path, sizeof(path), "/proc/%ld/task", (long)pid);
-    if (written < 0 || (size_t)written >= sizeof(path) ||
-        !(directory = opendir(path)))
+    if (written < 0 || (size_t)written >= sizeof(path))
+        return 0;
+    directory = opendir(path);
+    if (!directory)
         return 0;
     while ((entry = readdir(directory))) {
         char *end;
         unsigned long value;
 
-        if (!isdigit((unsigned char)entry->d_name[0])) continue;
+        if (!isdigit((unsigned char)entry->d_name[0]))
+            continue;
         value = strtoul(entry->d_name, &end, 10);
-        if (*end || !value || value > UINT32_MAX) continue;
+        if (*end || !value || value > UINT32_MAX)
+            continue;
         if (count == MAX_TIDS)
             *overflow = true;
         else
@@ -239,8 +251,10 @@ static bool cgroup_of(pid_t pid, uint32_t tid, char *out, size_t size)
 
     written = snprintf(path, sizeof(path), "/proc/%ld/task/%u/cgroup",
                        (long)pid, tid);
-    if (written < 0 || (size_t)written >= sizeof(path) ||
-        !(file = fopen(path, "re")))
+    if (written < 0 || (size_t)written >= sizeof(path))
+        return false;
+    file = fopen(path, "re");
+    if (!file)
         return false;
     if (!fgets(line, sizeof(line), file) ||
         (!strchr(line, '\n') && !feof(file))) {
@@ -248,8 +262,11 @@ static bool cgroup_of(pid_t pid, uint32_t tid, char *out, size_t size)
         return false;
     }
     (void)fclose(file);
-    if (strncmp(line, "0::", 3)) return false;
-    line[strcspn(line, "\r\n")] = '\0';
+    if (strncmp(line, "0::", 3))
+        return false;
+    char *ending = strpbrk(line, "\r\n");
+    if (ending)
+        *ending = '\0';
     written = snprintf(out, size, "%s", line + 3);
     return written >= 0 && (size_t)written < size;
 }
@@ -280,8 +297,11 @@ static bool file_is(const char *path, const char *want)
 {
     char text[64];
 
-    if (!read_file(path, text, sizeof(text))) return false;
-    text[strcspn(text, "\r\n")] = '\0';
+    if (!read_file(path, text, sizeof(text)))
+        return false;
+    char *ending = strpbrk(text, "\r\n");
+    if (ending)
+        *ending = '\0';
     return !strcmp(text, want);
 }
 
@@ -291,27 +311,30 @@ static void prune_empty_children(const char *root)
     struct dirent *entry;
     char path[PATH_MAX];
 
-    if (!directory) return;
+    if (!directory)
+        return;
     while ((entry = readdir(directory))) {
         const char *cursor = entry->d_name;
         char threads_path[PATH_MAX];
         FILE *threads;
 
-        if (strncmp(cursor, "t-", 2) ||
-            !isdigit((unsigned char)cursor[2]))
+        if (strncmp(cursor, "t-", 2) || !isdigit((unsigned char)cursor[2]))
             continue;
         for (cursor += 2; *cursor; ++cursor)
-            if (!isdigit((unsigned char)*cursor)) break;
+            if (!isdigit((unsigned char)*cursor))
+                break;
         if (*cursor || !join(path, sizeof(path), root, entry->d_name) ||
-            !join(threads_path, sizeof(threads_path), path,
-                  "cgroup.threads") ||
-            !(threads = fopen(threads_path, "re")))
+            !join(threads_path, sizeof(threads_path), path, "cgroup.threads"))
+            continue;
+        threads = fopen(threads_path, "re");
+        if (!threads)
             continue;
         {
             bool empty = fgetc(threads) == EOF;
 
             (void)fclose(threads);
-            if (empty) (void)rmdir(path);
+            if (empty)
+                (void)rmdir(path);
         }
     }
     (void)closedir(directory);
@@ -353,10 +376,13 @@ static void release_scope(pid_t pid, const char *scope,
     char *separator;
     int written;
 
-    if (!scope ||
-        (written = snprintf(parent, sizeof(parent), "%s", scope)) < 0 ||
-        (size_t)written >= sizeof(parent) ||
-        !(separator = strrchr(parent, '/')) || separator == parent)
+    if (!scope)
+        return;
+    written = snprintf(parent, sizeof(parent), "%s", scope);
+    if (written < 0 || (size_t)written >= sizeof(parent))
+        return;
+    separator = strrchr(parent, '/');
+    if (!separator || separator == parent)
         return;
     *separator = '\0';
     if (process_in_scope(pid, scope_relative)) {
@@ -369,7 +395,8 @@ static void release_scope(pid_t pid, const char *scope,
     (void)rmdir(scope);
 }
 
-static bool apply(pid_t pid, const char *scope, const char *root, const char *root_rel, unsigned quota)
+static bool apply(pid_t pid, const char *scope, const char *root,
+                  const char *root_rel, unsigned quota)
 {
     uint32_t tids[MAX_TIDS];
     bool overflow;
@@ -378,8 +405,10 @@ static bool apply(pid_t pid, const char *scope, const char *root, const char *ro
     char path[PATH_MAX], relative[PATH_MAX], child[64], child_path[PATH_MAX];
     char wanted[32];
 
-    if (overflow || !count || quota < 1 || quota > 100) return false;
-    if (mkdir(root, 0700) && errno != EEXIST) return false;
+    if (overflow || !count || quota < 1 || quota > 100)
+        return false;
+    if (mkdir(root, 0700) && errno != EEXIST)
+        return false;
     if (!join(path, sizeof(path), root, "cgroup.type") ||
         (!file_is(path, "threaded") && !write_file(path, "threaded")))
         return false;
@@ -395,7 +424,8 @@ static bool apply(pid_t pid, const char *scope, const char *root, const char *ro
             !join(child_path, sizeof(child_path), root, child))
             return false;
         if (mkdir(child_path, 0700) && errno != EEXIST) {
-            if (tid_exists(pid, tids[index])) return false;
+            if (tid_exists(pid, tids[index]))
+                return false;
             continue;
         }
         if (!join(path, sizeof(path), child_path, "cgroup.type") ||
@@ -404,7 +434,8 @@ static bool apply(pid_t pid, const char *scope, const char *root, const char *ro
             !write_tid(path, tids[index]) ||
             !join(path, sizeof(path), child_path, "cpu.max") ||
             !write_file(path, wanted)) {
-            if (tid_exists(pid, tids[index])) return false;
+            if (tid_exists(pid, tids[index]))
+                return false;
             continue;
         }
     }
@@ -434,20 +465,20 @@ static bool write_all(int fd, const char *text, size_t size)
             offset += (size_t)written;
             continue;
         }
-        if (written < 0 && errno == EINTR) continue;
+        if (written < 0 && errno == EINTR)
+            continue;
         return false;
     }
     return true;
 }
 
-static bool discover_scope(pid_t pid, const char *scope_name,
-                           char *output, size_t size)
+static bool discover_scope(pid_t pid, const char *scope_name, char *output,
+                           size_t size)
 {
     char candidate[PATH_MAX], prefix[80];
     unsigned int attempt;
     int written = snprintf(prefix, sizeof(prefix),
-                           "/user.slice/user-%ju.slice/",
-                           (uintmax_t)getuid());
+                           "/user.slice/user-%ju.slice/", (uintmax_t)getuid());
 
     if (!scope_name || !output || !size || written < 0 ||
         (size_t)written >= sizeof(prefix))
@@ -457,10 +488,12 @@ static bool discover_scope(pid_t pid, const char *scope_name,
         struct timespec pause = {.tv_nsec = 10000000L};
 
         if (cgroup_of(pid, (uint32_t)pid, candidate, sizeof(candidate)) &&
-            !strncmp(candidate, prefix, strlen(prefix)) &&
-            (name = strrchr(candidate, '/')) && !strcmp(name + 1, scope_name)) {
-            written = snprintf(output, size, "%s", candidate);
-            return written >= 0 && (size_t)written < size;
+            !strncmp(candidate, prefix, strlen(prefix))) {
+            name = strrchr(candidate, '/');
+            if (name && !strcmp(name + 1, scope_name)) {
+                written = snprintf(output, size, "%s", candidate);
+                return written >= 0 && (size_t)written < size;
+            }
         }
         (void)nanosleep(&pause, 0);
     }
@@ -475,15 +508,19 @@ static void publish_status(const char *path, const char *text)
 
     written = snprintf(temporary, sizeof(temporary), "%s.tmp-%ld", path,
                        (long)getpid());
-    if (written < 0 || (size_t)written >= sizeof(temporary)) return;
+    if (written < 0 || (size_t)written >= sizeof(temporary))
+        return;
     (void)unlink(temporary);
-    fd = open(temporary,
-              O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600);
-    if (fd < 0) return;
-    complete = write_all(fd, text, strlen(text)) && !fchmod(fd, 0600) &&
-               !fsync(fd);
-    if (close(fd)) complete = false;
-    if (!complete || rename(temporary, path)) (void)unlink(temporary);
+    fd = open(temporary, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+              0600);
+    if (fd < 0)
+        return;
+    complete =
+        write_all(fd, text, strlen(text)) && !fchmod(fd, 0600) && !fsync(fd);
+    if (close(fd))
+        complete = false;
+    if (!complete || rename(temporary, path))
+        (void)unlink(temporary);
 }
 
 static int lock_controller(const char *state, char *path, size_t size)
@@ -498,7 +535,8 @@ static int lock_controller(const char *state, char *path, size_t size)
         return -1;
     }
     fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600);
-    if (fd < 0) return -1;
+    if (fd < 0)
+        return -1;
     if (fstat(fd, &status)) {
         int saved = errno;
 
@@ -528,11 +566,12 @@ int main(int argc, char **argv)
     const char *scope_relative, *state;
     char discovered_scope[PATH_MAX], scope[PATH_MAX], root[PATH_MAX],
         root_relative[PATH_MAX];
-    char status[PATH_MAX], lock_path[PATH_MAX], buffer[64], last_status[64] = "";
+    char status[PATH_MAX], lock_path[PATH_MAX], buffer[64],
+        last_status[64] = "";
     bool active = false;
     bool bootstrap = argc == 7 && !strcmp(argv[6], "--bootstrap");
-    bool owned_scope = bootstrap ||
-                       (argc == 7 && !strcmp(argv[6], "--owned-scope"));
+    bool owned_scope =
+        bootstrap || (argc == 7 && !strcmp(argv[6], "--owned-scope"));
     int lock_fd;
 
     if ((argc != 6 && !owned_scope) || strcmp(argv[1], "--pid") ||
@@ -542,7 +581,8 @@ int main(int argc, char **argv)
     state = argv[5];
     if (!parse_pid(argv[2], &pid) || !valid_paths(pid, scope_relative, state))
         return 64;
-    if (!install_signal_handlers()) return 1;
+    if (!install_signal_handlers())
+        return 1;
     if (bootstrap) {
         struct frame_pacer_systemd systemd = {0};
         const char *scope_name = strrchr(scope_relative, '/');
@@ -557,9 +597,8 @@ int main(int argc, char **argv)
         }
         started = frame_pacer_systemd_start_scope(&systemd, scope_name, pid);
         frame_pacer_systemd_close(&systemd);
-        if (!started &&
-            !discover_scope(pid, scope_name, discovered_scope,
-                            sizeof(discovered_scope))) {
+        if (!started && !discover_scope(pid, scope_name, discovered_scope,
+                                        sizeof(discovered_scope))) {
             fputs("frame-pacer controller: scope bootstrap failed\n", stderr);
             (void)unlink(state);
             return 1;
@@ -573,7 +612,8 @@ int main(int argc, char **argv)
         }
         scope_relative = discovered_scope;
     }
-    if (snprintf(scope, sizeof(scope), "/sys/fs/cgroup%s", scope_relative) < 0 ||
+    if (snprintf(scope, sizeof(scope), "/sys/fs/cgroup%s", scope_relative) <
+            0 ||
         strlen(scope_relative) + strlen("/sys/fs/cgroup") >= sizeof(scope) ||
         !join(root, sizeof(root), scope, "frame-pacer-thread-cpu") ||
         !join(root_relative, sizeof(root_relative), scope_relative,
@@ -588,13 +628,14 @@ int main(int argc, char **argv)
     }
 
     while (!stop_requested &&
-           (owned_scope ? process_in_scope(pid, scope_relative) :
-                          kill(pid, 0) == 0)) {
+           (owned_scope ? process_in_scope(pid, scope_relative)
+                        : kill(pid, 0) == 0)) {
         unsigned int quota = 0;
         bool enabled = false;
         struct timespec pause = {.tv_nsec = 250000000L};
 
-        if (!read_file(state, buffer, sizeof(buffer))) break;
+        if (!read_file(state, buffer, sizeof(buffer)))
+            break;
         if (!frame_pacer_thread_cpu_parse_state(buffer, &enabled, &quota))
             enabled = false;
         if (enabled) {

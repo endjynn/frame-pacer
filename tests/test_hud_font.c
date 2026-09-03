@@ -17,7 +17,8 @@ int main(void)
                 if (frame_pacer_font_pixel((unsigned char)character, x, y))
                     ++lit;
         assert(lit <= FRAME_PACER_FONT_LIT_PIXELS_MAX);
-        if (lit > densest) densest = lit;
+        if (lit > densest)
+            densest = lit;
     }
     assert(densest == FRAME_PACER_FONT_LIT_PIXELS_MAX);
     assert(frame_pacer_font_pixel('f', 2, 0));

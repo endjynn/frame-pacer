@@ -15,10 +15,11 @@ struct frame_pacer_hud_text {
     uint32_t line_count;
 };
 
-void frame_pacer_hud_text_format(
-    struct frame_pacer_hud_text *,
-    const struct frame_pacer_metrics_snapshot *, int fps_valid, uint32_t fps,
-    uint32_t limit, bool thread_cpu_quota_configured,
-    bool thread_cpu_quota_confirmed, uint32_t thread_cpu_quota);
+void frame_pacer_hud_text_format(struct frame_pacer_hud_text *,
+                                 const struct frame_pacer_metrics_snapshot *,
+                                 int fps_valid, uint32_t fps, uint32_t limit,
+                                 bool thread_cpu_quota_configured,
+                                 bool thread_cpu_quota_confirmed,
+                                 uint32_t thread_cpu_quota);
 
 #endif

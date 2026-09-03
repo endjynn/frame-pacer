@@ -5,10 +5,12 @@
 #include <stddef.h>
 #include <string.h>
 
-static bool valid_provider(const struct frame_pacer_hud_pipeline_provider *provider)
+static bool
+valid_provider(const struct frame_pacer_hud_pipeline_provider *provider)
 {
     return provider && provider->create_shader_module &&
-           provider->destroy_shader_module && provider->create_pipeline_layout &&
+           provider->destroy_shader_module &&
+           provider->create_pipeline_layout &&
            provider->destroy_pipeline_layout &&
            provider->create_graphics_pipelines && provider->destroy_pipeline;
 }
@@ -149,8 +151,9 @@ bool frame_pacer_hud_create_pipeline(
     VkShaderModule vertex_module = VK_NULL_HANDLE;
     VkShaderModule fragment_module = VK_NULL_HANDLE;
 
-    if (!resources || !valid_provider(provider) || !render_pass || !vertex_code ||
-        !fragment_code || !vertex_code_size || !fragment_code_size)
+    if (!resources || !valid_provider(provider) || !render_pass ||
+        !vertex_code || !fragment_code || !vertex_code_size ||
+        !fragment_code_size)
         return false;
 
     memset(resources, 0, sizeof(*resources));

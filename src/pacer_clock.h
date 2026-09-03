@@ -28,7 +28,8 @@ struct frame_pacer_decision {
 
 void frame_pacer_clock_init(struct frame_pacer_clock *);
 void frame_pacer_clock_destroy(struct frame_pacer_clock *);
-void frame_pacer_clock_wait(struct frame_pacer_clock *, uint32_t fps, frame_pacer_now_fn,
-                            frame_pacer_sleep_fn, void *, struct frame_pacer_decision *);
+void frame_pacer_clock_wait(struct frame_pacer_clock *, uint32_t fps,
+                            frame_pacer_now_fn, frame_pacer_sleep_fn, void *,
+                            struct frame_pacer_decision *);
 
 #endif

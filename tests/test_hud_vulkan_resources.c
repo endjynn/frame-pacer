@@ -15,7 +15,8 @@ struct fake_provider {
 
 static struct fake_provider fake;
 
-static VkResult VKAPI_CALL fake_get_images(VkDevice device, VkSwapchainKHR swapchain,
+static VkResult VKAPI_CALL fake_get_images(VkDevice device,
+                                           VkSwapchainKHR swapchain,
                                            uint32_t *count, VkImage *images)
 {
     uint32_t index;
@@ -33,10 +34,9 @@ static VkResult VKAPI_CALL fake_get_images(VkDevice device, VkSwapchainKHR swapc
     return VK_SUCCESS;
 }
 
-static VkResult VKAPI_CALL fake_create_view(VkDevice device,
-                                             const VkImageViewCreateInfo *info,
-                                             const VkAllocationCallbacks *allocator,
-                                             VkImageView *view)
+static VkResult VKAPI_CALL
+fake_create_view(VkDevice device, const VkImageViewCreateInfo *info,
+                 const VkAllocationCallbacks *allocator, VkImageView *view)
 {
     uintptr_t value;
     (void)device;
@@ -76,10 +76,10 @@ static void reset(uint32_t image_count)
         fake.images[index] = (VkImage)(uintptr_t)(index + 1);
 }
 
-static enum frame_pacer_hud_resource_status setup(
-    struct frame_pacer_hud_image_views *resources,
-    const struct frame_pacer_hud_vulkan_provider *functions,
-    VkImageUsageFlags usage)
+static enum frame_pacer_hud_resource_status
+setup(struct frame_pacer_hud_image_views *resources,
+      const struct frame_pacer_hud_vulkan_provider *functions,
+      VkImageUsageFlags usage)
 {
     return frame_pacer_hud_create_image_views(
         resources, functions, (VkDevice)(uintptr_t)1,

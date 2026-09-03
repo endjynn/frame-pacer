@@ -32,8 +32,7 @@ static void *metrics_worker(void *argument)
 #endif
         {
             if (!cache->metrics_initialized) {
-                frame_pacer_metrics_init(&cache->metrics, 0,
-                                         cache->process_id);
+                frame_pacer_metrics_init(&cache->metrics, 0, cache->process_id);
                 cache->metrics_initialized = true;
             }
             if (reset)
@@ -119,11 +118,13 @@ void frame_pacer_hud_metrics_cache_snapshot(
         cache->request_pending = true;
         if (!cache->worker_started && !cache->worker_failed) {
 #ifdef FRAME_PACER_TEST
-            int created = cache->test_thread_failure ? 1 :
-                pthread_create(&cache->worker, 0, metrics_worker, cache);
+            int created =
+                cache->test_thread_failure
+                    ? 1
+                    : pthread_create(&cache->worker, 0, metrics_worker, cache);
 #else
-            int created = pthread_create(&cache->worker, 0, metrics_worker,
-                                         cache);
+            int created =
+                pthread_create(&cache->worker, 0, metrics_worker, cache);
 #endif
             if (created) {
                 cache->worker_failed = true;

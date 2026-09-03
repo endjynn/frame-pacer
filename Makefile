@@ -83,7 +83,7 @@ GL_RUNTIME_ARTIFACTS := \
 	build/lib/libframe_pacer_gl_shim.so \
 	build/lib32/libframe_pacer_gl_shim.so
 
-.PHONY: all check check-unit check-unit-i386 check-shell check-docs check-workflows check-hud-image check-hot-path-stack check-abi check-analyzer check-sanitize check-tsan check-coverage benchmark-performance docs-hud-image \
+.PHONY: all check setup-tools format check-format lint check-clang-tidy check-quality check-quality-tools compile-commands check-unit check-unit-i386 check-shell check-docs check-workflows check-hud-image check-hot-path-stack check-abi check-analyzer check-sanitize check-tsan check-coverage benchmark-performance docs-hud-image \
 	clean install install-payload uninstall release-package check-release-package \
 	thread-cpu-quota-probe run-thread-cpu-quota-probe \
 	thread-cpu-quota-controller-integration run-thread-cpu-quota-controller-integration \
@@ -94,6 +94,21 @@ GL_RUNTIME_ARTIFACTS := \
 	run-glx-present-probe egl-present-probe run-egl-present-probe
 
 all: $(VULKAN_ARTIFACTS) $(CONTROLLER_ARTIFACT)
+setup-tools:
+	python3 tools/quality.py setup
+format:
+	python3 tools/quality.py format
+check-format:
+	python3 tools/quality.py check-format
+lint:
+	python3 tools/quality.py lint
+compile-commands: build/hud_spv.h build/hud_nvml_helper_image.h build/hud_nvml_helper_test_image.h $(VERSION_HEADER)
+	python3 tools/compile_commands.py
+check-clang-tidy: compile-commands
+	python3 tools/quality.py tidy
+check-quality-tools:
+	python3 tests/test_quality_tools.py
+check-quality: check-format lint check-clang-tidy check-quality-tools
 docs-hud-image: build/generated-frame-pacer-hud.png
 	cp $< docs/images/frame-pacer-hud.png
 check-hud-image: build/generated-frame-pacer-hud.png

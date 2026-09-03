@@ -25,9 +25,7 @@ static unsigned int device_destroys;
 static const char *missing_gipa;
 static const char *missing_gdpa;
 
-static VKAPI_ATTR void VKAPI_CALL dummy_command(void)
-{
-}
+static VKAPI_ATTR void VKAPI_CALL dummy_command(void) {}
 
 static VKAPI_ATTR VkResult VKAPI_CALL fake_create_instance(
     const VkInstanceCreateInfo *info, const VkAllocationCallbacks *allocator,
@@ -63,9 +61,9 @@ static VKAPI_ATTR VkResult VKAPI_CALL fake_enumerate_physical_devices(
     return VK_SUCCESS;
 }
 
-static VKAPI_ATTR void VKAPI_CALL fake_get_queue_families(
-    VkPhysicalDevice physical, uint32_t *count,
-    VkQueueFamilyProperties *properties)
+static VKAPI_ATTR void VKAPI_CALL
+fake_get_queue_families(VkPhysicalDevice physical, uint32_t *count,
+                        VkQueueFamilyProperties *properties)
 {
     assert(physical == fake_physical);
     if (!properties) {
@@ -86,9 +84,9 @@ static VKAPI_ATTR void VKAPI_CALL fake_get_memory_properties(
     memset(properties, 0, sizeof(*properties));
 }
 
-static VKAPI_ATTR VkResult VKAPI_CALL fake_create_device(
-    VkPhysicalDevice physical, const VkDeviceCreateInfo *info,
-    const VkAllocationCallbacks *allocator, VkDevice *device)
+static VKAPI_ATTR VkResult VKAPI_CALL
+fake_create_device(VkPhysicalDevice physical, const VkDeviceCreateInfo *info,
+                   const VkAllocationCallbacks *allocator, VkDevice *device)
 {
     (void)info;
     (void)allocator;
@@ -98,24 +96,26 @@ static VKAPI_ATTR VkResult VKAPI_CALL fake_create_device(
     return VK_SUCCESS;
 }
 
-static VKAPI_ATTR void VKAPI_CALL fake_destroy_device(
-    VkDevice device, const VkAllocationCallbacks *allocator)
+static VKAPI_ATTR void VKAPI_CALL
+fake_destroy_device(VkDevice device, const VkAllocationCallbacks *allocator)
 {
     (void)allocator;
     assert(device == fake_device);
     ++device_destroys;
 }
 
-static VKAPI_ATTR void VKAPI_CALL fake_get_device_queue(
-    VkDevice device, uint32_t family, uint32_t index, VkQueue *queue)
+static VKAPI_ATTR void VKAPI_CALL fake_get_device_queue(VkDevice device,
+                                                        uint32_t family,
+                                                        uint32_t index,
+                                                        VkQueue *queue)
 {
     assert(device == fake_device);
     assert(family == 0 && index == 0);
     *queue = fake_queue;
 }
 
-static VKAPI_ATTR VkResult VKAPI_CALL fake_set_device_loader_data(
-    VkDevice device, void *object)
+static VKAPI_ATTR VkResult VKAPI_CALL
+fake_set_device_loader_data(VkDevice device, void *object)
 {
     assert(device == fake_device);
     assert(object == fake_queue);
@@ -138,7 +138,8 @@ static PFN_vkVoidFunction VKAPI_CALL fake_gdpa(VkDevice device,
 static PFN_vkVoidFunction VKAPI_CALL fake_gipa(VkInstance instance,
                                                const char *name)
 {
-    if (missing_gipa && !strcmp(name, missing_gipa)) return 0;
+    if (missing_gipa && !strcmp(name, missing_gipa))
+        return 0;
     if (!strcmp(name, "vkCreateInstance"))
         return (PFN_vkVoidFunction)fake_create_instance;
     if (!strcmp(name, "vkDestroyInstance")) {
@@ -232,8 +233,8 @@ int main(void)
     assert(!frame_pacer_layer_test_should_log_present_failure(VK_SUCCESS));
     assert(frame_pacer_layer_test_should_log_present_failure(
         VK_ERROR_OUT_OF_DATE_KHR));
-    assert(!frame_pacer_layer_test_should_log_present_failure(
-        VK_SUBOPTIMAL_KHR));
+    assert(
+        !frame_pacer_layer_test_should_log_present_failure(VK_SUBOPTIMAL_KHR));
     assert(frame_pacer_layer_test_should_log_present_failure(
         VK_ERROR_OUT_OF_DATE_KHR));
 
@@ -295,7 +296,8 @@ int main(void)
     assert(frame_pacer_layer_test_queue_count() == 0);
 
     create_device = device_info(&device_loader, &device_data, &device_link);
-    assert(vkCreateDevice(fake_physical, &create_device, 0, &device) == VK_SUCCESS);
+    assert(vkCreateDevice(fake_physical, &create_device, 0, &device) ==
+           VK_SUCCESS);
     assert(device == fake_device);
     assert(frame_pacer_layer_test_queue_count() == 1);
     assert(vkGetDeviceProcAddr(device, "vkFramePacerUnknown") ==

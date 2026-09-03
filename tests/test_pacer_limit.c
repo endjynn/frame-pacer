@@ -27,8 +27,8 @@ static void fixture_init(struct fixture *fixture)
     assert(snprintf(fixture->root, sizeof(fixture->root), "%s", template) > 0);
     assert(snprintf(fixture->directory, sizeof(fixture->directory),
                     "%s/frame-pacer", template) > 0);
-    assert(snprintf(fixture->path, sizeof(fixture->path),
-                    "%s/frame-pacer.conf", fixture->directory) > 0);
+    assert(snprintf(fixture->path, sizeof(fixture->path), "%s/frame-pacer.conf",
+                    fixture->directory) > 0);
     assert(!mkdir(fixture->directory, 0700));
     assert(!setenv("XDG_CONFIG_HOME", fixture->root, 1));
     frame_pacer_limit_init(&fixture->limit);
@@ -71,7 +71,8 @@ static void write_text(const char *path, const char *text)
     write_bytes(path, text, strlen(text));
 }
 
-static struct frame_pacer_effective_config poll_snapshot(struct fixture *fixture)
+static struct frame_pacer_effective_config
+poll_snapshot(struct fixture *fixture)
 {
     struct frame_pacer_effective_config snapshot;
 
@@ -116,8 +117,8 @@ static void test_selection_and_revisions(void)
     assert(snapshot.reason == FRAME_PACER_REASON_MISSING_FILE);
     assert(snapshot.renderer[0]);
     revision = snapshot.revision;
-    assert(frame_pacer_limit_poll(&fixture.limit, fixture.now -
-                                  FRAME_PACER_CONFIG_POLL_NS) == 0);
+    assert(frame_pacer_limit_poll(
+               &fixture.limit, fixture.now - FRAME_PACER_CONFIG_POLL_NS) == 0);
     assert(frame_pacer_limit_revision(&fixture.limit) == revision);
 
     write_text(fixture.path, "global_fps_limit = 60\nhud = off\n");
@@ -147,13 +148,13 @@ static void test_selection_and_revisions(void)
     assert(frame_pacer_limit_hud_enabled(&fixture.limit));
     {
         bool enabled = false;
-        assert(frame_pacer_limit_thread_cpu_quota(&fixture.limit, &enabled) == 50);
+        assert(frame_pacer_limit_thread_cpu_quota(&fixture.limit, &enabled) ==
+               50);
         assert(enabled);
     }
 
-    write_text(fixture.path,
-               "global_fps_limit = 30\n[Other]\n"
-               "executable = \"other.exe\"\nfps_limit = 45\n");
+    write_text(fixture.path, "global_fps_limit = 30\n[Other]\n"
+                             "executable = \"other.exe\"\nfps_limit = 45\n");
     snapshot = poll_snapshot(&fixture);
     assert(snapshot.fps_limit == 30);
     assert(snapshot.fps_source == FRAME_PACER_SOURCE_GLOBAL);
@@ -187,7 +188,7 @@ static void test_wine_launcher_handoff(void)
 {
     static const char maps[] =
         "00400000-00401000 r--p 00001000 103:01 1 /games/ignored.exe\n"
-        "140000000-140001000 r--p 00000000 103:01 2 "
+        "140000000-140001000\tr--p\t00000000\t103:01 2\t"
         "/games/KINGDOM HEARTS FINAL MIX.exe\n"
         "6ffff000-70000000 r--p 00000000 103:01 3 /games/helper.dll\n";
     struct frame_pacer_effective_config snapshot;
@@ -200,8 +201,7 @@ static void test_wine_launcher_handoff(void)
     write_bytes(maps_template, maps, sizeof(maps) - 1);
     assert(!setenv("FRAME_PACER_TEST_PROC_MAPS", maps_template, 1));
     fixture_init(&fixture);
-    assert(!strcmp(fixture.limit.executable,
-                   "KINGDOM HEARTS FINAL MIX.exe"));
+    assert(!strcmp(fixture.limit.executable, "KINGDOM HEARTS FINAL MIX.exe"));
     assert(snprintf(fixture.limit.executable_candidates[1],
                     FRAME_PACER_EXECUTABLE_MAX, "%s",
                     "KINGDOM HEARTS HD 1.5+2.5 ReMIX.exe") > 0);
@@ -218,8 +218,8 @@ static void test_wine_launcher_handoff(void)
     assert(snapshot.fps_limit == 45);
     assert(!strcmp(snapshot.renderer, "KINGDOM HEARTS FINAL MIX.exe"));
     assert(!strcmp(snapshot.matched_section, "Selected game"));
-    assert(!strcmp(snapshot.matched_executable,
-                   "KINGDOM HEARTS FINAL MIX.exe"));
+    assert(
+        !strcmp(snapshot.matched_executable, "KINGDOM HEARTS FINAL MIX.exe"));
 
     write_text(fixture.path,
                "[Collection]\n"
@@ -245,13 +245,18 @@ static void test_parser_taxonomy(void)
     const unsigned char invalid_bytes[] = "global_fps_limit = 30\n#\0suffix\n";
 
     fixture_init(&fixture);
-    expect_failure(&fixture, "[broken\n", FRAME_PACER_REASON_INVALID_SECTION, 1);
-    expect_failure(&fixture, "global_fps_limit 30\n", FRAME_PACER_REASON_MISSING_EQUALS, 1);
-    expect_failure(&fixture, "unknown = 30\n", FRAME_PACER_REASON_UNKNOWN_KEY, 1);
-    expect_failure(&fixture, "hud = on\nhud = off\n", FRAME_PACER_REASON_DUPLICATE_KEY, 2);
+    expect_failure(&fixture, "[broken\n", FRAME_PACER_REASON_INVALID_SECTION,
+                   1);
+    expect_failure(&fixture, "global_fps_limit 30\n",
+                   FRAME_PACER_REASON_MISSING_EQUALS, 1);
+    expect_failure(&fixture, "unknown = 30\n", FRAME_PACER_REASON_UNKNOWN_KEY,
+                   1);
+    expect_failure(&fixture, "hud = on\nhud = off\n",
+                   FRAME_PACER_REASON_DUPLICATE_KEY, 2);
     expect_failure(&fixture, "global_fps_limit = 1000\n",
                    FRAME_PACER_REASON_INVALID_VALUE, 1);
-    expect_failure(&fixture, "[Bad executable]\nexecutable = \"a/b\"\nfps_limit = 30\n",
+    expect_failure(&fixture,
+                   "[Bad executable]\nexecutable = \"a/b\"\nfps_limit = 30\n",
                    FRAME_PACER_REASON_INVALID_EXECUTABLE, 2);
     expect_failure(&fixture, "[Incomplete]\nexecutable = \"other.exe\"\n",
                    FRAME_PACER_REASON_INCOMPLETE_RULE, 1);
@@ -259,7 +264,8 @@ static void test_parser_taxonomy(void)
                     "[First]\nexecutable = \"%s\"\nfps_limit = 30\n"
                     "[Second]\nexecutable = \"%s\"\nfps_limit = 40\n",
                     fixture.limit.executable, fixture.limit.executable) > 0);
-    expect_failure(&fixture, duplicate, FRAME_PACER_REASON_DUPLICATE_MATCHING_RULE, 4);
+    expect_failure(&fixture, duplicate,
+                   FRAME_PACER_REASON_DUPLICATE_MATCHING_RULE, 4);
 
     write_bytes(fixture.path, invalid_bytes, sizeof(invalid_bytes) - 1);
     snapshot = poll_snapshot(&fixture);
@@ -324,25 +330,24 @@ static void test_injected_failures(void)
         enum frame_pacer_config_status status;
         enum frame_pacer_config_reason reason;
     } cases[] = {
-        { FRAME_PACER_TEST_FAILURE_METADATA, FRAME_PACER_CONFIG_UNREADABLE,
-          FRAME_PACER_REASON_METADATA_FAILED },
-        { FRAME_PACER_TEST_FAILURE_WRONG_OWNER, FRAME_PACER_CONFIG_INSECURE,
-          FRAME_PACER_REASON_WRONG_OWNER },
-        { FRAME_PACER_TEST_FAILURE_OPEN, FRAME_PACER_CONFIG_UNREADABLE,
-          FRAME_PACER_REASON_OPEN_FAILED },
-        { FRAME_PACER_TEST_FAILURE_FSTAT, FRAME_PACER_CONFIG_UNREADABLE,
-          FRAME_PACER_REASON_METADATA_FAILED },
-        { FRAME_PACER_TEST_FAILURE_FINAL_FSTAT, FRAME_PACER_CONFIG_UNREADABLE,
-          FRAME_PACER_REASON_METADATA_FAILED },
-        { FRAME_PACER_TEST_FAILURE_READ, FRAME_PACER_CONFIG_UNREADABLE,
-          FRAME_PACER_REASON_READ_FAILED },
-        { FRAME_PACER_TEST_FAILURE_CHANGED, FRAME_PACER_CONFIG_UNREADABLE,
-          FRAME_PACER_REASON_CHANGED_DURING_READ },
-        { FRAME_PACER_TEST_FAILURE_CLOSE, FRAME_PACER_CONFIG_UNREADABLE,
-          FRAME_PACER_REASON_CLOSE_FAILED },
-        { FRAME_PACER_TEST_FAILURE_ALLOC, FRAME_PACER_CONFIG_UNREADABLE,
-          FRAME_PACER_REASON_OUT_OF_MEMORY }
-    };
+        {FRAME_PACER_TEST_FAILURE_METADATA, FRAME_PACER_CONFIG_UNREADABLE,
+         FRAME_PACER_REASON_METADATA_FAILED},
+        {FRAME_PACER_TEST_FAILURE_WRONG_OWNER, FRAME_PACER_CONFIG_INSECURE,
+         FRAME_PACER_REASON_WRONG_OWNER},
+        {FRAME_PACER_TEST_FAILURE_OPEN, FRAME_PACER_CONFIG_UNREADABLE,
+         FRAME_PACER_REASON_OPEN_FAILED},
+        {FRAME_PACER_TEST_FAILURE_FSTAT, FRAME_PACER_CONFIG_UNREADABLE,
+         FRAME_PACER_REASON_METADATA_FAILED},
+        {FRAME_PACER_TEST_FAILURE_FINAL_FSTAT, FRAME_PACER_CONFIG_UNREADABLE,
+         FRAME_PACER_REASON_METADATA_FAILED},
+        {FRAME_PACER_TEST_FAILURE_READ, FRAME_PACER_CONFIG_UNREADABLE,
+         FRAME_PACER_REASON_READ_FAILED},
+        {FRAME_PACER_TEST_FAILURE_CHANGED, FRAME_PACER_CONFIG_UNREADABLE,
+         FRAME_PACER_REASON_CHANGED_DURING_READ},
+        {FRAME_PACER_TEST_FAILURE_CLOSE, FRAME_PACER_CONFIG_UNREADABLE,
+         FRAME_PACER_REASON_CLOSE_FAILED},
+        {FRAME_PACER_TEST_FAILURE_ALLOC, FRAME_PACER_CONFIG_UNREADABLE,
+         FRAME_PACER_REASON_OUT_OF_MEMORY}};
     struct frame_pacer_effective_config snapshot;
     struct fixture fixture;
     size_t index;
@@ -355,9 +360,11 @@ static void test_injected_failures(void)
         assert(snapshot.status == cases[index].status);
         assert(snapshot.reason == cases[index].reason);
     }
-    frame_pacer_limit_test_fail_at(&fixture.limit, FRAME_PACER_TEST_FAILURE_NONE);
+    frame_pacer_limit_test_fail_at(&fixture.limit,
+                                   FRAME_PACER_TEST_FAILURE_NONE);
     snapshot = poll_snapshot(&fixture);
-    assert(snapshot.status == FRAME_PACER_CONFIG_VALID && snapshot.fps_limit == 30);
+    assert(snapshot.status == FRAME_PACER_CONFIG_VALID &&
+           snapshot.fps_limit == 30);
 
     fixture.limit.path[0] = '\0';
     snapshot = poll_snapshot(&fixture);
@@ -370,9 +377,7 @@ static void test_semantic_revisions(void)
 {
     struct frame_pacer_effective_config snapshot;
     struct fixture fixture;
-    struct timespec times[2] = {
-        { .tv_nsec = UTIME_NOW }, { .tv_nsec = UTIME_NOW }
-    };
+    struct timespec times[2] = {{.tv_nsec = UTIME_NOW}, {.tv_nsec = UTIME_NOW}};
     char config[2400];
     uint64_t revision;
 
@@ -403,16 +408,19 @@ static void test_semantic_revisions(void)
     snapshot = poll_snapshot(&fixture);
     assert(snapshot.revision == revision);
 
-    assert(snprintf(config, sizeof(config),
-                    "hud = off\n[Current]\nexecutable = \"%s\"\nfps_limit = 30\n",
-                    fixture.limit.executable) > 0);
+    assert(
+        snprintf(config, sizeof(config),
+                 "hud = off\n[Current]\nexecutable = \"%s\"\nfps_limit = 30\n",
+                 fixture.limit.executable) > 0);
     write_text(fixture.path, config);
     snapshot = poll_snapshot(&fixture);
     assert(snapshot.revision == ++revision && !snapshot.hud_enabled);
 
-    assert(snprintf(config, sizeof(config),
-                    "hud = off\n[Current]\nexecutable = \"%s\"\nfps_limit = 30\n"
-                    "thread_cpu_limit = 50%%\n", fixture.limit.executable) > 0);
+    assert(
+        snprintf(config, sizeof(config),
+                 "hud = off\n[Current]\nexecutable = \"%s\"\nfps_limit = 30\n"
+                 "thread_cpu_limit = 50%%\n",
+                 fixture.limit.executable) > 0);
     write_text(fixture.path, config);
     snapshot = poll_snapshot(&fixture);
     assert(snapshot.revision == ++revision && snapshot.thread_cpu_enabled);
@@ -420,10 +428,11 @@ static void test_semantic_revisions(void)
     write_text(fixture.path, "global_fps_limit = 30\nhud = off\n");
     snapshot = poll_snapshot(&fixture);
     assert(snapshot.revision == ++revision);
-    assert(snapshot.fps_limit == 30 && snapshot.fps_source == FRAME_PACER_SOURCE_GLOBAL);
+    assert(snapshot.fps_limit == 30 &&
+           snapshot.fps_source == FRAME_PACER_SOURCE_GLOBAL);
 
-    assert(snprintf(fixture.limit.executable_candidates[1], FRAME_PACER_EXECUTABLE_MAX,
-                    "%s", "launcher.exe") > 0);
+    assert(snprintf(fixture.limit.executable_candidates[1],
+                    FRAME_PACER_EXECUTABLE_MAX, "%s", "launcher.exe") > 0);
     fixture.limit.executable_candidate_count = 2;
     write_text(fixture.path,
                "[Launcher]\nexecutable = \"launcher.exe\"\nfps_limit = 30\n");
@@ -441,9 +450,8 @@ static void test_reporting_disabled_fast_path(void)
 
     fixture_init(&fixture);
     frame_pacer_limit_set_reporting_enabled(&fixture.limit, false);
-    write_text(fixture.path,
-               "global_fps_limit = 61\n"
-               "hud = off\n");
+    write_text(fixture.path, "global_fps_limit = 61\n"
+                             "hud = off\n");
     assert(frame_pacer_limit_poll(&fixture.limit, fixture.now) == 61);
     assert(!frame_pacer_limit_hud_enabled(&fixture.limit));
     assert(frame_pacer_limit_thread_cpu_quota(&fixture.limit, &enabled) == 0);

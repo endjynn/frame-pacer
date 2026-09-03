@@ -2,6 +2,73 @@
 
 ## Standard checks
 
+### Formatting and static analysis
+
+Set up the pinned development tools once (Linux x86_64, glibc 2.28 or newer):
+
+```sh
+make setup-tools
+```
+
+This downloads checksum-verified clang-format, clang-tidy, ShellCheck, shfmt,
+and actionlint into `.cache/dev-tools/` inside the checkout. It uses Python 3
+without pip, sudo, or system installation. LLVM binaries use the
+[clang-format](https://github.com/ssciwr/clang-format-wheel) and
+[clang-tidy](https://github.com/ssciwr/clang-tidy-wheel) Python wheel distributions;
+the other tools use their upstream release binaries. Exact versions and SHA-256
+hashes are recorded in `tools/versions.json`. Updates are deliberate source
+changes, never automatic downloads of `latest`.
+
+```sh
+make format          # Apply C and POSIX-shell formatting
+make check-quality   # Strict formatting, lint, C analysis, and tool self-tests
+```
+
+Individual targets are `check-format`, `lint`, `check-clang-tidy`, and
+`check-quality-tools`. Checks never rewrite source or apply analyzer fixes.
+Missing tools, version mismatches, formatting differences, and enabled analyzer
+diagnostics all fail. Keep format-only changes separate from functional commits.
+
+Clang-tidy uses C17 correctness checks and Clang's static analyzer, with every
+enabled warning treated as an error. Its compilation database comes from the
+Makefile's actual recipes, including x86_64, i386, test macros, and diagnostic
+Windows probes. MinGW's shared headers (`mingw-w64-common` on Debian/Ubuntu)
+are needed to analyze those Windows-only probes; no Windows compiler or game is
+run by this check. New C files without analysis recipes fail the coverage check.
+Generated headers must be built, but are not formatted. `QUALITY_JOBS=2` is the
+default concurrency; choose a value from 1 to 32 if needed.
+
+Applicable opt-in analyzer checks are enabled, including enum ranges, Unix
+portability, structure padding, and untrusted-input tracking. C++-only, Apple,
+and MPI opt-in checks are excluded because this project does not use those
+languages or APIs. The Annex K API recommendation checker is excluded because
+glibc does not provide its proposed `*_s` replacements.
+
+Two line-specific blocking-I/O suppressions remain: configuration reload holds
+its consistency lock, and GL context setup holds the renderer lock. Splitting
+these operations requires preserving reusable buffers, publication ordering,
+and context/resource lifetime. These are intentional synchronization tradeoffs,
+not disabled project-wide checks. Telemetry sampling is single-worker-owned and
+needs no internal lock; the separate HUD snapshot publication lock remains.
+Rollback tests compare explicit byte snapshots without suppressions.
+
+One taint-analysis suppression covers loading the GL backend beside this
+process's own shim. The directory is obtained from the dynamic loader or the
+kernel mapping containing the shim's own address, and the backend filename is
+fixed. The analyzer cannot infer that provenance; the untrusted-input checker
+remains enabled everywhere else.
+
+Fix applicable findings rather than disabling their rules. Do not introduce
+extra per-frame work, weaken tests, or hide operations behind wrappers merely
+to silence an analyzer. Any remaining exception must name the specific check
+and explain why changing the code would be worse.
+
+These tools are not needed to build or run frame-pacer. `make check` retains its
+existing build dependencies; the additional strict quality suite runs as a
+required, independent CI job. Both suites should pass before submitting work.
+
+### Acceptance suite
+
 Run the complete deterministic acceptance suite before submitting changes:
 
 ```sh
@@ -40,8 +107,8 @@ need a suitable graphical or systemd user session and are not hosted-CI gates.
 
 ## Continuous integration
 
-Pull requests and main-branch pushes run independent acceptance, i386,
-analyzer, sanitizer, ThreadSanitizer, and release-package jobs on the fixed
+Pull requests and main-branch pushes run independent quality, acceptance, i386,
+GCC analyzer, sanitizer, ThreadSanitizer, and release-package jobs on the fixed
 Ubuntu runner. The release-package job uses the same digest-pinned Debian 12
 environment as published binaries.
 

@@ -8,9 +8,7 @@ static const char *missing_command;
 static unsigned int device_lookups;
 static unsigned int memory_queries;
 
-static VKAPI_ATTR void VKAPI_CALL dummy_command(void)
-{
-}
+static VKAPI_ATTR void VKAPI_CALL dummy_command(void) {}
 
 static VKAPI_ATTR void VKAPI_CALL fake_get_memory_properties(
     VkPhysicalDevice physical, VkPhysicalDeviceMemoryProperties *properties)
@@ -49,8 +47,8 @@ int main(void)
     struct frame_pacer_metrics_snapshot snapshot;
 
     frame_pacer_hud_vulkan_device_init(
-        &hud, (VkDevice)(uintptr_t)1, (VkPhysicalDevice)(uintptr_t)2,
-        fake_gdpa, (VkInstance)(uintptr_t)3, fake_gipa, 0);
+        &hud, (VkDevice)(uintptr_t)1, (VkPhysicalDevice)(uintptr_t)2, fake_gdpa,
+        (VkInstance)(uintptr_t)3, fake_gipa, 0);
     assert(hud.commands_ready);
     assert(device_lookups == FRAME_PACER_HUD_REQUIRED_COMMAND_COUNT);
     assert(memory_queries == 1);
@@ -58,14 +56,14 @@ int main(void)
     assert(hud.memory_properties.memoryTypeCount == 1);
     assert(hud.get_surface_capabilities);
     assert(hud.resources.get_swapchain_images ==
-           (PFN_vkGetSwapchainImagesKHR)
-               hud.commands.functions[FRAME_PACER_HUD_COMMAND_GET_SWAPCHAIN_IMAGES]);
+           (PFN_vkGetSwapchainImagesKHR)hud.commands
+               .functions[FRAME_PACER_HUD_COMMAND_GET_SWAPCHAIN_IMAGES]);
     assert(hud.draw.create_render_pass ==
-           (PFN_vkCreateRenderPass)
-               hud.commands.functions[FRAME_PACER_HUD_COMMAND_CREATE_RENDER_PASS]);
+           (PFN_vkCreateRenderPass)hud.commands
+               .functions[FRAME_PACER_HUD_COMMAND_CREATE_RENDER_PASS]);
     assert(hud.pipeline.create_shader_module ==
-           (PFN_vkCreateShaderModule)
-               hud.commands.functions[FRAME_PACER_HUD_COMMAND_CREATE_SHADER_MODULE]);
+           (PFN_vkCreateShaderModule)hud.commands
+               .functions[FRAME_PACER_HUD_COMMAND_CREATE_SHADER_MODULE]);
     assert(hud.vertex_buffer.create_buffer ==
            (PFN_vkCreateBuffer)
                hud.commands.functions[FRAME_PACER_HUD_COMMAND_CREATE_BUFFER]);
@@ -88,15 +86,14 @@ int main(void)
     device_lookups = 0;
     memory_queries = 0;
     frame_pacer_hud_vulkan_device_init(
-        &hud, (VkDevice)(uintptr_t)1, (VkPhysicalDevice)(uintptr_t)2,
-        fake_gdpa, (VkInstance)(uintptr_t)3, fake_gipa, 0);
+        &hud, (VkDevice)(uintptr_t)1, (VkPhysicalDevice)(uintptr_t)2, fake_gdpa,
+        (VkInstance)(uintptr_t)3, fake_gipa, 0);
     assert(!hud.commands_ready);
     assert(!hud.record.draw);
     assert(device_lookups == FRAME_PACER_HUD_COMMAND_DRAW + 1U);
     frame_pacer_hud_vulkan_device_destroy(&hud);
 
-    frame_pacer_hud_vulkan_device_init(0, VK_NULL_HANDLE,
-                                       VK_NULL_HANDLE, 0,
+    frame_pacer_hud_vulkan_device_init(0, VK_NULL_HANDLE, VK_NULL_HANDLE, 0,
                                        VK_NULL_HANDLE, 0, 0);
     frame_pacer_hud_vulkan_device_destroy(0);
     frame_pacer_hud_vulkan_device_metrics_snapshot(0, 0, &snapshot);

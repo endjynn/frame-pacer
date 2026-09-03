@@ -14,17 +14,19 @@
 typedef void (*frame_pacer_glx_swap_fn)(Display *, GLXDrawable);
 typedef EGLBoolean (*frame_pacer_egl_swap_fn)(EGLDisplay, EGLSurface);
 typedef EGLBoolean (*frame_pacer_egl_swap_damage_fn)(EGLDisplay, EGLSurface,
-                                                      const EGLint *, EGLint);
+                                                     const EGLint *, EGLint);
 typedef void (*frame_pacer_glx_destroy_context_fn)(Display *, GLXContext);
-typedef EGLBoolean (*frame_pacer_egl_destroy_context_fn)(EGLDisplay, EGLContext);
+typedef EGLBoolean (*frame_pacer_egl_destroy_context_fn)(EGLDisplay,
+                                                         EGLContext);
 typedef EGLBoolean (*frame_pacer_egl_terminate_fn)(EGLDisplay);
 typedef __GLXextFuncPtr (*frame_pacer_glx_get_proc_fn)(const GLubyte *);
-typedef __eglMustCastToProperFunctionPointerType (*frame_pacer_egl_get_proc_fn)(const char *);
+typedef __eglMustCastToProperFunctionPointerType (*frame_pacer_egl_get_proc_fn)(
+    const char *);
 
-EGLBoolean eglSwapBuffersWithDamageKHR(EGLDisplay, EGLSurface,
-                                        const EGLint *, EGLint);
-EGLBoolean eglSwapBuffersWithDamageEXT(EGLDisplay, EGLSurface,
-                                        const EGLint *, EGLint);
+EGLBoolean eglSwapBuffersWithDamageKHR(EGLDisplay, EGLSurface, const EGLint *,
+                                       EGLint);
+EGLBoolean eglSwapBuffersWithDamageEXT(EGLDisplay, EGLSurface, const EGLint *,
+                                       EGLint);
 
 #if __SIZEOF_POINTER__ == 8
 #define FRAME_PACER_GLIBC_DLSYM_VERSION "GLIBC_2.2.5"
@@ -58,7 +60,8 @@ static void bootstrap(void)
     void *symbol;
 
     libc_reference = dlopen("libc.so.6", RTLD_LAZY | RTLD_NOLOAD);
-    if (!libc_reference) return;
+    if (!libc_reference)
+        return;
     symbol = dlvsym(libc_reference, "dlsym", FRAME_PACER_GLIBC_DLSYM_VERSION);
     _Static_assert(sizeof(real_dlsym) == sizeof(symbol),
                    "unsupported function pointer representation");
@@ -72,20 +75,25 @@ static bool mapped_shim_path(char *path, size_t path_size)
     uintptr_t anchor = (uintptr_t)(void *)&shim_anchor;
 
     maps = fopen("/proc/self/maps", "r");
-    if (!maps) return false;
+    if (!maps)
+        return false;
     while (fgets(line, sizeof(line), maps)) {
         unsigned long start, end;
-        char *file;
+        char *file, *newline;
         int written;
 
         if (sscanf(line, "%lx-%lx", &start, &end) != 2 ||
             anchor < (uintptr_t)start || anchor >= (uintptr_t)end)
             continue;
         file = strchr(line, '/');
-        if (!file) break;
-        file[strcspn(file, "\n")] = '\0';
+        if (!file)
+            break;
+        newline = strchr(file, '\n');
+        if (newline)
+            *newline = '\0';
         written = snprintf(path, path_size, "%s", file);
-        if (written < 0 || (size_t)written >= path_size) break;
+        if (written < 0 || (size_t)written >= path_size)
+            break;
         (void)fclose(maps);
         return true;
     }
@@ -99,10 +107,16 @@ static void load_adjacent_renderer(char *path)
     size_t remaining;
     int written;
 
-    if (!slash) return;
+    if (!slash)
+        return;
     remaining = (size_t)(path + PATH_MAX - slash - 1);
     written = snprintf(slash + 1, remaining, "libframe_pacer_gl.so");
-    if (written < 0 || (size_t)written >= remaining) return;
+    if (written < 0 || (size_t)written >= remaining)
+        return;
+    /* The directory comes from dladdr or the kernel mapping containing our
+     * own shim_anchor, not an arbitrary file-supplied library path. The backend
+     * basename is fixed above. Taint analysis cannot infer that provenance. */
+    // NOLINTNEXTLINE(clang-analyzer-optin.taint.GenericTaint)
     renderer = dlopen(path, RTLD_NOW | RTLD_LOCAL | RTLD_DEEPBIND);
 }
 
@@ -114,16 +128,19 @@ static void load_renderer(void)
     int written;
 
     (void)pthread_once(&bootstrap_once, bootstrap);
-    if (!real_dlsym) return;
+    if (!real_dlsym)
+        return;
 
     symbol = real_dlsym(RTLD_NEXT, "glXSwapBuffers");
     copy_function(symbol, &real_glx_swap, sizeof(real_glx_swap));
     symbol = real_dlsym(RTLD_NEXT, "eglSwapBuffers");
     copy_function(symbol, &real_egl_swap, sizeof(real_egl_swap));
     symbol = real_dlsym(RTLD_NEXT, "eglSwapBuffersWithDamageKHR");
-    copy_function(symbol, &real_egl_swap_damage_khr, sizeof(real_egl_swap_damage_khr));
+    copy_function(symbol, &real_egl_swap_damage_khr,
+                  sizeof(real_egl_swap_damage_khr));
     symbol = real_dlsym(RTLD_NEXT, "eglSwapBuffersWithDamageEXT");
-    copy_function(symbol, &real_egl_swap_damage_ext, sizeof(real_egl_swap_damage_ext));
+    copy_function(symbol, &real_egl_swap_damage_ext,
+                  sizeof(real_egl_swap_damage_ext));
     symbol = real_dlsym(RTLD_NEXT, "glXDestroyContext");
     copy_function(symbol, &real_glx_destroy_context,
                   sizeof(real_glx_destroy_context));
@@ -196,8 +213,10 @@ void glXSwapBuffers(Display *display, GLXDrawable drawable)
     void *symbol = renderer_symbol("glXSwapBuffers");
 
     copy_function(symbol, &function, sizeof(function));
-    if (function) function(display, drawable);
-    else if (real_glx_swap) real_glx_swap(display, drawable);
+    if (function)
+        function(display, drawable);
+    else if (real_glx_swap)
+        real_glx_swap(display, drawable);
 }
 
 EGLBoolean eglSwapBuffers(EGLDisplay display, EGLSurface surface)
@@ -206,7 +225,8 @@ EGLBoolean eglSwapBuffers(EGLDisplay display, EGLSurface surface)
     void *symbol = renderer_symbol("eglSwapBuffers");
 
     copy_function(symbol, &function, sizeof(function));
-    if (function) return function(display, surface);
+    if (function)
+        return function(display, surface);
     return real_egl_swap ? real_egl_swap(display, surface) : EGL_FALSE;
 }
 
@@ -217,9 +237,11 @@ EGLBoolean eglSwapBuffersWithDamageKHR(EGLDisplay display, EGLSurface surface,
     void *symbol = renderer_symbol("eglSwapBuffersWithDamageKHR");
 
     copy_function(symbol, &function, sizeof(function));
-    if (function) return function(display, surface, rects, count);
-    return real_egl_swap_damage_khr ?
-        real_egl_swap_damage_khr(display, surface, rects, count) : EGL_FALSE;
+    if (function)
+        return function(display, surface, rects, count);
+    return real_egl_swap_damage_khr
+               ? real_egl_swap_damage_khr(display, surface, rects, count)
+               : EGL_FALSE;
 }
 
 EGLBoolean eglSwapBuffersWithDamageEXT(EGLDisplay display, EGLSurface surface,
@@ -229,9 +251,11 @@ EGLBoolean eglSwapBuffersWithDamageEXT(EGLDisplay display, EGLSurface surface,
     void *symbol = renderer_symbol("eglSwapBuffersWithDamageEXT");
 
     copy_function(symbol, &function, sizeof(function));
-    if (function) return function(display, surface, rects, count);
-    return real_egl_swap_damage_ext ?
-        real_egl_swap_damage_ext(display, surface, rects, count) : EGL_FALSE;
+    if (function)
+        return function(display, surface, rects, count);
+    return real_egl_swap_damage_ext
+               ? real_egl_swap_damage_ext(display, surface, rects, count)
+               : EGL_FALSE;
 }
 
 void glXDestroyContext(Display *display, GLXContext context)
@@ -240,8 +264,10 @@ void glXDestroyContext(Display *display, GLXContext context)
     void *symbol = renderer_symbol("glXDestroyContext");
 
     copy_function(symbol, &function, sizeof(function));
-    if (function) function(display, context);
-    else if (real_glx_destroy_context) real_glx_destroy_context(display, context);
+    if (function)
+        function(display, context);
+    else if (real_glx_destroy_context)
+        real_glx_destroy_context(display, context);
 }
 
 EGLBoolean eglDestroyContext(EGLDisplay display, EGLContext context)
@@ -250,9 +276,10 @@ EGLBoolean eglDestroyContext(EGLDisplay display, EGLContext context)
     void *symbol = renderer_symbol("eglDestroyContext");
 
     copy_function(symbol, &function, sizeof(function));
-    if (function) return function(display, context);
-    return real_egl_destroy_context ?
-        real_egl_destroy_context(display, context) : EGL_FALSE;
+    if (function)
+        return function(display, context);
+    return real_egl_destroy_context ? real_egl_destroy_context(display, context)
+                                    : EGL_FALSE;
 }
 
 EGLBoolean eglTerminate(EGLDisplay display)
@@ -261,7 +288,8 @@ EGLBoolean eglTerminate(EGLDisplay display)
     void *symbol = renderer_symbol("eglTerminate");
 
     copy_function(symbol, &function, sizeof(function));
-    if (function) return function(display);
+    if (function)
+        return function(display);
     return real_egl_terminate ? real_egl_terminate(display) : EGL_FALSE;
 }
 
@@ -271,7 +299,8 @@ __GLXextFuncPtr glXGetProcAddress(const GLubyte *name)
     void *symbol = renderer_symbol("glXGetProcAddress");
 
     copy_function(symbol, &function, sizeof(function));
-    return function ? function(name) : (real_glx_get_proc ? real_glx_get_proc(name) : 0);
+    return function ? function(name)
+                    : (real_glx_get_proc ? real_glx_get_proc(name) : 0);
 }
 
 __GLXextFuncPtr glXGetProcAddressARB(const GLubyte *name)
@@ -285,7 +314,8 @@ __eglMustCastToProperFunctionPointerType eglGetProcAddress(const char *name)
     void *symbol = renderer_symbol("eglGetProcAddress");
 
     copy_function(symbol, &function, sizeof(function));
-    return function ? function(name) : (real_egl_get_proc ? real_egl_get_proc(name) : 0);
+    return function ? function(name)
+                    : (real_egl_get_proc ? real_egl_get_proc(name) : 0);
 }
 
 void *dlsym(void *handle, const char *name)
@@ -293,21 +323,25 @@ void *dlsym(void *handle, const char *name)
     void *symbol;
 
     (void)pthread_once(&bootstrap_once, bootstrap);
-    if (!real_dlsym) return 0;
+    if (!real_dlsym)
+        return 0;
 
     /*
      * Match MangoHud's ordering: preserve the caller's requested lookup before
      * considering an override.  Unity resolves setup entry points (such as
      * glXMakeCurrent) before it asks for the presentation entry point.  Loading
-     * the private renderer on that first GLX/EGL lookup makes the later resolver
-     * path available without changing the result for unrelated GL functions.
+     * the private renderer on that first GLX/EGL lookup makes the later
+     * resolver path available without changing the result for unrelated GL
+     * functions.
      */
     symbol = real_dlsym(handle, name);
-    if (!symbol || !is_graphics_symbol(name)) return symbol;
+    if (!symbol || !is_graphics_symbol(name))
+        return symbol;
 
     if (is_interposed_symbol(name)) {
         void *replacement = renderer_symbol(name);
-        if (replacement) return replacement;
+        if (replacement)
+            return replacement;
     } else {
         (void)renderer_symbol(name);
     }

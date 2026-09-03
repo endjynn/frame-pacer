@@ -15,8 +15,7 @@ struct frame_pacer_drm_engine_state {
 
 struct frame_pacer_drm_client_state {
     uint64_t client_id;
-    struct frame_pacer_drm_engine_state
-        engines[FRAME_PACER_DRM_ENGINE_COUNT];
+    struct frame_pacer_drm_engine_state engines[FRAME_PACER_DRM_ENGINE_COUNT];
     bool used;
 };
 
@@ -33,8 +32,7 @@ struct frame_pacer_drm_fdinfo {
 bool frame_pacer_drm_fdinfo_parse_render_ns(const char *line, uint64_t *value);
 /* Convert successive per-process engine-time samples to a bounded percent. */
 bool frame_pacer_drm_fdinfo_utilisation(uint64_t previous_render_ns,
-                                        uint64_t render_ns,
-                                        uint64_t elapsed_ns,
+                                        uint64_t render_ns, uint64_t elapsed_ns,
                                         unsigned int *percent);
 /* Sample only descriptors belonging to render_node and deduplicate DRM client
  * IDs. Failed samples leave the previously committed baselines unchanged. */

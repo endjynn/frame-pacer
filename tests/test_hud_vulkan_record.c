@@ -8,8 +8,8 @@ static unsigned int barriers;
 static unsigned int draws;
 static bool fail_begin;
 
-static VkResult VKAPI_CALL reset_command_buffer(
-    VkCommandBuffer command, VkCommandBufferResetFlags flags)
+static VkResult VKAPI_CALL reset_command_buffer(VkCommandBuffer command,
+                                                VkCommandBufferResetFlags flags)
 {
     (void)command;
     (void)flags;
@@ -37,9 +37,8 @@ static void VKAPI_CALL pipeline_barrier(
     VkCommandBuffer command, VkPipelineStageFlags source_stage,
     VkPipelineStageFlags destination_stage, VkDependencyFlags dependencies,
     uint32_t memory_barrier_count, const VkMemoryBarrier *memory_barriers,
-    uint32_t buffer_barrier_count,
-    const VkBufferMemoryBarrier *buffer_barriers, uint32_t image_barrier_count,
-    const VkImageMemoryBarrier *image_barriers)
+    uint32_t buffer_barrier_count, const VkBufferMemoryBarrier *buffer_barriers,
+    uint32_t image_barrier_count, const VkImageMemoryBarrier *image_barriers)
 {
     (void)command;
     (void)source_stage;
@@ -79,9 +78,11 @@ static void VKAPI_CALL bind_pipeline(VkCommandBuffer command,
     ++calls;
 }
 
-static void VKAPI_CALL bind_vertex_buffers(
-    VkCommandBuffer command, uint32_t first_binding, uint32_t binding_count,
-    const VkBuffer *buffers, const VkDeviceSize *offsets)
+static void VKAPI_CALL bind_vertex_buffers(VkCommandBuffer command,
+                                           uint32_t first_binding,
+                                           uint32_t binding_count,
+                                           const VkBuffer *buffers,
+                                           const VkDeviceSize *offsets)
 {
     (void)command;
     (void)first_binding;
@@ -127,10 +128,11 @@ static void VKAPI_CALL set_scissor(VkCommandBuffer command,
     ++calls;
 }
 
-static void VKAPI_CALL push_constants(
-    VkCommandBuffer command, VkPipelineLayout layout,
-    VkShaderStageFlags stage_flags, uint32_t offset, uint32_t size,
-    const void *values)
+static void VKAPI_CALL push_constants(VkCommandBuffer command,
+                                      VkPipelineLayout layout,
+                                      VkShaderStageFlags stage_flags,
+                                      uint32_t offset, uint32_t size,
+                                      const void *values)
 {
     (void)command;
     (void)layout;
@@ -174,7 +176,8 @@ int main(void)
     calls = barriers = draws = 0;
     fail_begin = false;
     assert(frame_pacer_hud_record(&provider, command, image, framebuffer,
-                                  render_pass, &pipeline, &vertices, extent, 6));
+                                  render_pass, &pipeline, &vertices, extent,
+                                  6));
     assert(barriers == 2 && draws == 1);
 
     fail_begin = true;

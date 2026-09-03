@@ -12,9 +12,10 @@ static VkResult next_result(void)
     return ++calls == fail_at ? VK_ERROR_OUT_OF_HOST_MEMORY : VK_SUCCESS;
 }
 
-static VkResult VKAPI_CALL create_buffer(
-    VkDevice device, const VkBufferCreateInfo *info,
-    const VkAllocationCallbacks *allocator, VkBuffer *buffer)
+static VkResult VKAPI_CALL create_buffer(VkDevice device,
+                                         const VkBufferCreateInfo *info,
+                                         const VkAllocationCallbacks *allocator,
+                                         VkBuffer *buffer)
 {
     (void)device;
     (void)info;
@@ -43,9 +44,9 @@ static void VKAPI_CALL get_requirements(VkDevice device, VkBuffer buffer,
     };
 }
 
-static VkResult VKAPI_CALL allocate_memory(
-    VkDevice device, const VkMemoryAllocateInfo *info,
-    const VkAllocationCallbacks *allocator, VkDeviceMemory *memory)
+static VkResult VKAPI_CALL
+allocate_memory(VkDevice device, const VkMemoryAllocateInfo *info,
+                const VkAllocationCallbacks *allocator, VkDeviceMemory *memory)
 {
     (void)device;
     (void)info;
@@ -111,36 +112,35 @@ int main(void)
 {
     VkPhysicalDeviceMemoryProperties memory_properties = {
         .memoryTypeCount = 1,
-        .memoryTypes[0].propertyFlags =
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        .memoryTypes[0].propertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
     };
     const VkDevice device = (VkDevice)(uintptr_t)1;
     struct frame_pacer_hud_vertex_buffer buffer;
 
     calls = destroys = fail_at = 0;
-    assert(frame_pacer_hud_create_vertex_buffer(
-        &buffer, &provider, device, &memory_properties, 128));
+    assert(frame_pacer_hud_create_vertex_buffer(&buffer, &provider, device,
+                                                &memory_properties, 128));
     frame_pacer_hud_destroy_vertex_buffer(&buffer, &provider, device, 0);
     assert(destroys == 3);
 
     calls = destroys = 0;
     fail_at = 3;
-    assert(!frame_pacer_hud_create_vertex_buffer(
-        &buffer, &provider, device, &memory_properties, 128));
+    assert(!frame_pacer_hud_create_vertex_buffer(&buffer, &provider, device,
+                                                 &memory_properties, 128));
     assert(destroys == 2);
 
     calls = destroys = 0;
     fail_at = 4;
-    assert(!frame_pacer_hud_create_vertex_buffer(
-        &buffer, &provider, device, &memory_properties, 128));
+    assert(!frame_pacer_hud_create_vertex_buffer(&buffer, &provider, device,
+                                                 &memory_properties, 128));
     assert(destroys == 3);
 
     memory_properties.memoryTypes[0].propertyFlags =
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
     calls = destroys = fail_at = 0;
-    assert(!frame_pacer_hud_create_vertex_buffer(
-        &buffer, &provider, device, &memory_properties, 128));
+    assert(!frame_pacer_hud_create_vertex_buffer(&buffer, &provider, device,
+                                                 &memory_properties, 128));
     assert(destroys == 1);
     return 0;
 }

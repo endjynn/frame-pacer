@@ -57,9 +57,10 @@ static VkResult VKAPI_CALL allocate_command_buffers(
     return next_result();
 }
 
-static VkResult VKAPI_CALL create_fence(
-    VkDevice device, const VkFenceCreateInfo *info,
-    const VkAllocationCallbacks *allocator, VkFence *fence)
+static VkResult VKAPI_CALL create_fence(VkDevice device,
+                                        const VkFenceCreateInfo *info,
+                                        const VkAllocationCallbacks *allocator,
+                                        VkFence *fence)
 {
     (void)device;
     (void)info;
@@ -68,9 +69,9 @@ static VkResult VKAPI_CALL create_fence(
     return next_result();
 }
 
-static VkResult VKAPI_CALL create_semaphore(
-    VkDevice device, const VkSemaphoreCreateInfo *info,
-    const VkAllocationCallbacks *allocator, VkSemaphore *semaphore)
+static VkResult VKAPI_CALL
+create_semaphore(VkDevice device, const VkSemaphoreCreateInfo *info,
+                 const VkAllocationCallbacks *allocator, VkSemaphore *semaphore)
 {
     (void)device;
     (void)info;
@@ -79,9 +80,9 @@ static VkResult VKAPI_CALL create_semaphore(
     return next_result();
 }
 
-static void VKAPI_CALL destroy_render_pass(
-    VkDevice device, VkRenderPass render_pass,
-    const VkAllocationCallbacks *allocator)
+static void VKAPI_CALL
+destroy_render_pass(VkDevice device, VkRenderPass render_pass,
+                    const VkAllocationCallbacks *allocator)
 {
     (void)device;
     (void)render_pass;
@@ -89,9 +90,9 @@ static void VKAPI_CALL destroy_render_pass(
     ++destroys;
 }
 
-static void VKAPI_CALL destroy_framebuffer(
-    VkDevice device, VkFramebuffer framebuffer,
-    const VkAllocationCallbacks *allocator)
+static void VKAPI_CALL
+destroy_framebuffer(VkDevice device, VkFramebuffer framebuffer,
+                    const VkAllocationCallbacks *allocator)
 {
     (void)device;
     (void)framebuffer;
@@ -99,9 +100,9 @@ static void VKAPI_CALL destroy_framebuffer(
     ++destroys;
 }
 
-static void VKAPI_CALL destroy_command_pool(
-    VkDevice device, VkCommandPool command_pool,
-    const VkAllocationCallbacks *allocator)
+static void VKAPI_CALL
+destroy_command_pool(VkDevice device, VkCommandPool command_pool,
+                     const VkAllocationCallbacks *allocator)
 {
     (void)device;
     (void)command_pool;
@@ -118,9 +119,8 @@ static void VKAPI_CALL destroy_fence(VkDevice device, VkFence fence,
     ++destroys;
 }
 
-static void VKAPI_CALL destroy_semaphore(
-    VkDevice device, VkSemaphore semaphore,
-    const VkAllocationCallbacks *allocator)
+static void VKAPI_CALL destroy_semaphore(VkDevice device, VkSemaphore semaphore,
+                                         const VkAllocationCallbacks *allocator)
 {
     (void)device;
     (void)semaphore;
@@ -147,10 +147,11 @@ int main(void)
     const struct frame_pacer_hud_image_views image_views = {
         .count = 2,
         .ready = true,
-        .views = {
-            (VkImageView)(uintptr_t)1,
-            (VkImageView)(uintptr_t)2,
-        },
+        .views =
+            {
+                (VkImageView)(uintptr_t)1,
+                (VkImageView)(uintptr_t)2,
+            },
     };
     const VkDevice device = (VkDevice)(uintptr_t)1;
     const VkExtent2D extent = {1280, 720};
@@ -158,8 +159,8 @@ int main(void)
 
     creates = destroys = fail_at = 0;
     assert(frame_pacer_hud_create_draw_resources(
-        &resources, &provider, device, &image_views,
-        VK_FORMAT_B8G8R8A8_SRGB, extent, 0));
+        &resources, &provider, device, &image_views, VK_FORMAT_B8G8R8A8_SRGB,
+        extent, 0));
     assert(resources.ready && resources.count == 2);
     frame_pacer_hud_destroy_draw_resources(&resources, &provider, device, 0);
     assert(!resources.ready && destroys == 8);
@@ -167,8 +168,8 @@ int main(void)
     creates = destroys = 0;
     fail_at = 3;
     assert(!frame_pacer_hud_create_draw_resources(
-        &resources, &provider, device, &image_views,
-        VK_FORMAT_B8G8R8A8_SRGB, extent, 0));
+        &resources, &provider, device, &image_views, VK_FORMAT_B8G8R8A8_SRGB,
+        extent, 0));
     assert(!resources.ready && destroys == 3);
     return 0;
 }

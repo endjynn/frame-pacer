@@ -24,8 +24,8 @@ const char *frame_pacer_hud_resource_status_string(
 
 void frame_pacer_hud_destroy_image_views(
     struct frame_pacer_hud_image_views *resources,
-    const struct frame_pacer_hud_vulkan_provider *provider,
-    VkDevice device, const VkAllocationCallbacks *allocator)
+    const struct frame_pacer_hud_vulkan_provider *provider, VkDevice device,
+    const VkAllocationCallbacks *allocator)
 {
     uint32_t index;
 
@@ -34,7 +34,8 @@ void frame_pacer_hud_destroy_image_views(
     if (provider && provider->destroy_image_view) {
         for (index = 0; index < resources->count; ++index) {
             if (resources->views[index])
-                provider->destroy_image_view(device, resources->views[index], allocator);
+                provider->destroy_image_view(device, resources->views[index],
+                                             allocator);
         }
     }
     memset(resources, 0, sizeof(*resources));
@@ -42,9 +43,8 @@ void frame_pacer_hud_destroy_image_views(
 
 enum frame_pacer_hud_resource_status frame_pacer_hud_create_image_views(
     struct frame_pacer_hud_image_views *resources,
-    const struct frame_pacer_hud_vulkan_provider *provider,
-    VkDevice device, VkSwapchainKHR swapchain, VkFormat format,
-    VkImageUsageFlags image_usage)
+    const struct frame_pacer_hud_vulkan_provider *provider, VkDevice device,
+    VkSwapchainKHR swapchain, VkFormat format, VkImageUsageFlags image_usage)
 {
     uint32_t count = 0;
     uint32_t index;
@@ -62,7 +62,8 @@ enum frame_pacer_hud_resource_status frame_pacer_hud_create_image_views(
         return FRAME_PACER_HUD_RESOURCE_IMAGE_QUERY_FAILED;
     if (!count || count > FRAME_PACER_HUD_MAX_SWAPCHAIN_IMAGES)
         return FRAME_PACER_HUD_RESOURCE_IMAGE_COUNT_INVALID;
-    result = provider->get_swapchain_images(device, swapchain, &count, resources->images);
+    result = provider->get_swapchain_images(device, swapchain, &count,
+                                            resources->images);
     if (result != VK_SUCCESS)
         return FRAME_PACER_HUD_RESOURCE_IMAGE_QUERY_FAILED;
     if (!count || count > FRAME_PACER_HUD_MAX_SWAPCHAIN_IMAGES)
@@ -74,13 +75,14 @@ enum frame_pacer_hud_resource_status frame_pacer_hud_create_image_views(
             .image = resources->images[index],
             .viewType = VK_IMAGE_VIEW_TYPE_2D,
             .format = format,
-            .subresourceRange = {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                .baseMipLevel = 0,
-                .levelCount = 1,
-                .baseArrayLayer = 0,
-                .layerCount = 1,
-            },
+            .subresourceRange =
+                {
+                    .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
         };
         result = provider->create_image_view(device, &view_info, 0,
                                              &resources->views[index]);

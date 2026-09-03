@@ -1,14 +1,12 @@
 #!/bin/sh
 set -eu
 
-fail()
-{
+fail() {
     printf 'frame-pacer uninstall: %s\n' "$1" >&2
     exit 1
 }
 
-validate_path()
-{
+validate_path() {
     name=$1
     value=$2
 
@@ -17,7 +15,7 @@ validate_path()
         *) fail "$name must be an absolute path" ;;
     esac
     case "$value/" in
-        *'/../'*|*'/./'*|*'//'*) fail "$name contains an unsafe path component" ;;
+        *'/../'* | *'/./'* | *'//'*) fail "$name contains an unsafe path component" ;;
     esac
     if printf '%s' "$value" | LC_ALL=C grep -q '[[:cntrl:]]'; then
         fail "$name contains a control character"

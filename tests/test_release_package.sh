@@ -8,20 +8,17 @@ archive="$root/build/dist/$package.tar.xz"
 checksum="$archive.sha256"
 test_root=$(mktemp -d)
 
-cleanup()
-{
+cleanup() {
     rm -rf -- "$test_root"
 }
 trap cleanup EXIT HUP INT TERM
 
-fail()
-{
+fail() {
     printf 'release package test: %s\n' "$1" >&2
     exit 1
 }
 
-validate_archive_name()
-{
+validate_archive_name() {
     candidate=$1
     base=${candidate##*/}
     embedded=$(tar -xOf "$candidate" "$package/VERSION" 2>/dev/null) || return 1
@@ -30,7 +27,7 @@ validate_archive_name()
 
 [ -f "$archive" ] || fail 'archive is missing'
 [ -f "$checksum" ] || fail 'checksum is missing'
-[ "$(wc -c < "$archive")" -le 52428800 ] || fail 'archive exceeds 50 MiB'
+[ "$(wc -c <"$archive")" -le 52428800 ] || fail 'archive exceeds 50 MiB'
 (
     cd "${archive%/*}"
     sha256sum -c "${checksum##*/}"
@@ -75,8 +72,8 @@ printf '%s\n' \
     "$package/payload/x86_64/libVkLayer_frame_pacer.so" \
     "$package/payload/x86_64/libframe_pacer_gl.so" \
     "$package/payload/x86_64/libframe_pacer_gl_shim.so" \
-    "$package/uninstall.sh" | sort > "$expected"
-tar -tf "$archive" | sort > "$test_root/actual"
+    "$package/uninstall.sh" | sort >"$expected"
+tar -tf "$archive" | sort >"$test_root/actual"
 cmp "$expected" "$test_root/actual" || fail 'archive inventory differs'
 
 if tar --numeric-owner -tvf "$archive" | awk '$2 != "0/0" { bad = 1 } END { exit bad }'; then
@@ -94,8 +91,7 @@ test "$(stat -c %a "$release/install.sh")" = 755
 test "$(stat -c %a "$release/uninstall.sh")" = 755
 test "$(stat -c %a "$release/README.md")" = 644
 
-for architecture in x86_64 i386
-do
+for architecture in x86_64 i386; do
     case "$architecture" in
         x86_64) class='ELF 64-bit' ;;
         i386) class='ELF 32-bit' ;;
@@ -103,8 +99,7 @@ do
     for library in \
         libVkLayer_frame_pacer.so \
         libframe_pacer_gl.so \
-        libframe_pacer_gl_shim.so
-    do
+        libframe_pacer_gl_shim.so; do
         binary="$release/payload/$architecture/$library"
         file "$binary" | grep -q "$class" || fail "$architecture binary class is wrong"
         file "$binary" | grep -q 'stripped' || fail "$library is not stripped"
@@ -132,8 +127,8 @@ prefix='/opt/frame pacer & beta'
 runtime="$stage$prefix/lib/frame-pacer"
 config="$stage/config/frame-pacer/frame-pacer.conf"
 mkdir -p "${config%/*}" "$runtime"
-printf 'hud = off\n' > "$config"
-printf 'neighbor\n' > "$runtime/unrelated.txt"
+printf 'hud = off\n' >"$config"
+printf 'neighbor\n' >"$runtime/unrelated.txt"
 
 DESTDIR="$stage" PREFIX="$prefix" "$release/install.sh"
 jq -e '.layer.library_path == $PREFIX + "/lib/frame-pacer/x86_64/libVkLayer_frame_pacer.so"' \
@@ -142,7 +137,7 @@ jq -e '.layer.library_path == $PREFIX + "/lib/frame-pacer/x86_64/libVkLayer_fram
 jq -e '.layer.library_path == $PREFIX + "/lib/frame-pacer/i386/libVkLayer_frame_pacer.so"' \
     --arg PREFIX "$prefix" \
     "$stage$prefix/share/vulkan/implicit_layer.d/VkLayer_frame_pacer.i386.json" >/dev/null
-printf 'previous version\n' > "$runtime/x86_64/libVkLayer_frame_pacer.so"
+printf 'previous version\n' >"$runtime/x86_64/libVkLayer_frame_pacer.so"
 DESTDIR="$stage" PREFIX="$prefix" "$release/install.sh"
 file "$runtime/x86_64/libVkLayer_frame_pacer.so" | grep -q 'ELF 64-bit'
 
@@ -159,10 +154,9 @@ smoke_runtime="$smoke_stage$smoke_prefix/lib/frame-pacer"
 DESTDIR="$smoke_stage" PREFIX="$smoke_prefix" "$release/install.sh"
 smoke_config="$test_root/smoke-config/frame-pacer"
 mkdir -p "$smoke_config"
-printf 'global_fps_limit = 999\nhud = on\n' > "$smoke_config/frame-pacer.conf"
+printf 'global_fps_limit = 999\nhud = on\n' >"$smoke_config/frame-pacer.conf"
 chmod 600 "$smoke_config/frame-pacer.conf"
-for architecture in x86_64 i386
-do
+for architecture in x86_64 i386; do
     case "$architecture" in
         x86_64)
             gl_directory=lib
@@ -190,7 +184,7 @@ do
     vulkan_state="$test_root/staged-vulkan-$architecture/state"
     mkdir -p "$layer_directory" "$vulkan_state"
     sed "s|\"../libVkLayer_frame_pacer.so\"|\"$smoke_runtime/$architecture/libVkLayer_frame_pacer.so\"|" \
-        VkLayer_frame_pacer.json.in > "$layer_directory/VkLayer_frame_pacer.json"
+        VkLayer_frame_pacer.json.in >"$layer_directory/VkLayer_frame_pacer.json"
     XDG_CONFIG_HOME="$test_root/smoke-config" XDG_STATE_HOME="$vulkan_state" \
         FRAME_PACER_LOG=1 VK_LAYER_PATH="$layer_directory" \
         VK_INSTANCE_LAYERS=VK_LAYER_ENDJYNN_frame_pacer "$vulkan_probe"

@@ -1,0 +1,32 @@
+{
+  "clang-format": {
+    "version": "22.1.8",
+    "url": "https://files.pythonhosted.org/packages/e5/88/b82c066fa807da4ca2518fecf79071361f6324b77375e5e92c059c0697fd/clang_format-22.1.8-py2.py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    "sha256": "b00cff6bfd1f1686f073a4fdf1cb937dbd58bf7510c659477805c03afdea0816",
+    "binary": "clang_format/data/bin/clang-format"
+  },
+  "clang-tidy": {
+    "version": "22.1.8",
+    "url": "https://files.pythonhosted.org/packages/82/19/0f2668f8f5e2452b096a2b898f2b6bcecbceb6dd0c7f75d1755ce1f18d8b/clang_tidy-22.1.8-py2.py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+    "sha256": "1a3de07ba82d4403d8b692ae63a5520d4db5c606014c92c24bbcef9259057bf1",
+    "binary": "clang_tidy/data/bin/clang-tidy"
+  },
+  "shellcheck": {
+    "version": "0.11.0",
+    "url": "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz",
+    "sha256": "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198",
+    "binary": "shellcheck-v0.11.0/shellcheck"
+  },
+  "shfmt": {
+    "version": "3.14.0",
+    "url": "https://github.com/mvdan/sh/releases/download/v3.14.0/shfmt_v3.14.0_linux_amd64",
+    "sha256": "fe42021c7272ef2d67ea36cbc3031683c625d0badec733ef3a57b567246a0b66",
+    "binary": "shfmt"
+  },
+  "actionlint": {
+    "version": "1.7.12",
+    "url": "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz",
+    "sha256": "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8",
+    "binary": "actionlint"
+  }
+}

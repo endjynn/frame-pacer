@@ -1,0 +1,23 @@
+Checks: >-
+  -*,
+  clang-analyzer-*,
+  -clang-analyzer-cplusplus*,
+  -clang-analyzer-optin.cplusplus*,
+  -clang-analyzer-optin.osx*,
+  -clang-analyzer-optin.mpi*,
+  -clang-analyzer-optin.performance.GCDAntipattern,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  bugprone-sizeof-expression,
+  bugprone-suspicious-memset-usage,
+  bugprone-suspicious-memory-comparison,
+  bugprone-undefined-memory-manipulation,
+  bugprone-misplaced-widening-cast,
+  bugprone-assignment-in-if-condition,
+  bugprone-infinite-loop
+WarningsAsErrors: '*'
+HeaderFilterRegex: '(^|/)(src|tests)/'
+SystemHeaders: false
+FormatStyle: none
+# The excluded security rule recommends optional Annex K *_s functions that
+# glibc does not implement, including replacements for already-bounded snprintf.
+# Buffer bounds and memory lifetime are still checked by the analyzer.

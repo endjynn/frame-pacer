@@ -36,20 +36,21 @@ struct frame_pacer_thread_cpu_quota {
 };
 
 void frame_pacer_thread_cpu_quota_init(struct frame_pacer_thread_cpu_quota *);
-void frame_pacer_thread_cpu_quota_destroy(struct frame_pacer_thread_cpu_quota *);
+void frame_pacer_thread_cpu_quota_destroy(
+    struct frame_pacer_thread_cpu_quota *);
 void frame_pacer_thread_cpu_quota_publish(struct frame_pacer_thread_cpu_quota *,
                                           bool enabled, uint32_t percent);
-void frame_pacer_thread_cpu_quota_set_logger(struct frame_pacer_thread_cpu_quota *,
-                                             void (*log)(const char *));
-bool frame_pacer_thread_cpu_quota_confirmed(struct frame_pacer_thread_cpu_quota *,
-                                             uint32_t *percent);
+void frame_pacer_thread_cpu_quota_set_logger(
+    struct frame_pacer_thread_cpu_quota *, void (*log)(const char *));
+bool frame_pacer_thread_cpu_quota_confirmed(
+    struct frame_pacer_thread_cpu_quota *, uint32_t *percent);
 
 #ifdef FRAME_PACER_TEST
 bool frame_pacer_thread_cpu_quota_test_write_text(const char *, const char *);
 bool frame_pacer_thread_cpu_quota_test_parse_confirmation(const char *,
-                                                           uint32_t);
-bool frame_pacer_thread_cpu_quota_test_write_external_state(
-    const char *, bool, uint32_t);
+                                                          uint32_t);
+bool frame_pacer_thread_cpu_quota_test_write_external_state(const char *, bool,
+                                                            uint32_t);
 bool frame_pacer_thread_cpu_quota_test_helper_path(const char *, char *,
                                                    size_t);
 bool frame_pacer_thread_cpu_quota_test_runtime_helper_path(char *, size_t);

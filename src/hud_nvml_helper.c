@@ -18,7 +18,8 @@
 
 #define HELPER_IMAGE_FD 3
 #define HELPER_SOCKET_FD 4
-#define REQUIRED_SEALS (F_SEAL_SEAL | F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_WRITE)
+#define REQUIRED_SEALS                                                         \
+    (F_SEAL_SEAL | F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_WRITE)
 #define SAMPLE_INTERVAL_NS UINT64_C(1000000000)
 
 static volatile sig_atomic_t stopping;
@@ -34,7 +35,8 @@ static bool parse_pid(const char *text, pid_t *pid)
     char *end;
     unsigned long value;
 
-    if (!text || !*text || !isdigit((unsigned char)*text)) return false;
+    if (!text || !*text || !isdigit((unsigned char)*text))
+        return false;
     errno = 0;
     value = strtoul(text, &end, 10);
     if (errno || *end || !value || value > (unsigned long)INT32_MAX)
@@ -45,8 +47,7 @@ static bool parse_pid(const char *text, pid_t *pid)
 
 static bool valid_pci(const char *pci)
 {
-    static const unsigned int hex_positions[] = { 0, 1, 2, 3, 5, 6,
-                                                   8, 9, 11 };
+    static const unsigned int hex_positions[] = {0, 1, 2, 3, 5, 6, 8, 9, 11};
     unsigned int index;
 
     if (!pci || strlen(pci) != 12 || pci[4] != ':' || pci[7] != ':' ||
@@ -54,7 +55,8 @@ static bool valid_pci(const char *pci)
         return false;
     for (index = 0; index < sizeof(hex_positions) / sizeof(hex_positions[0]);
          ++index)
-        if (!isxdigit((unsigned char)pci[hex_positions[index]])) return false;
+        if (!isxdigit((unsigned char)pci[hex_positions[index]]))
+            return false;
     return true;
 }
 
@@ -62,7 +64,8 @@ static uint64_t monotonic_ns(void)
 {
     struct timespec value;
 
-    if (clock_gettime(CLOCK_MONOTONIC, &value)) return 0;
+    if (clock_gettime(CLOCK_MONOTONIC, &value))
+        return 0;
     return (uint64_t)value.tv_sec * UINT64_C(1000000000) +
            (uint64_t)value.tv_nsec;
 }
@@ -85,8 +88,7 @@ static int helper_loop(pid_t target, const char *pci, const char *library,
     if ((fcntl(HELPER_IMAGE_FD, F_GET_SEALS) & REQUIRED_SEALS) !=
             REQUIRED_SEALS ||
         close(HELPER_IMAGE_FD) ||
-        (reject_fd >= 0 &&
-         (fcntl(reject_fd, F_GETFD) >= 0 || errno != EBADF)))
+        (reject_fd >= 0 && (fcntl(reject_fd, F_GETFD) >= 0 || errno != EBADF)))
         return 2;
     flags = fcntl(HELPER_SOCKET_FD, F_GETFL);
     if (flags < 0 || fcntl(HELPER_SOCKET_FD, F_SETFL, flags | O_NONBLOCK))
@@ -97,7 +99,8 @@ static int helper_loop(pid_t target, const char *pci, const char *library,
     if (sigaction(SIGTERM, &action, 0) || sigaction(SIGINT, &action, 0) ||
         signal(SIGPIPE, SIG_IGN) == SIG_ERR)
         return 2;
-    if (!frame_pacer_nvml_provider_init(&provider, library)) return 3;
+    if (!frame_pacer_nvml_provider_init(&provider, library))
+        return 3;
 
     while (!stopping && target_alive(target)) {
         struct pollfd descriptor = {
@@ -108,15 +111,15 @@ static int helper_loop(pid_t target, const char *pci, const char *library,
         int timeout = 1000;
         int result;
 
-        if (!now) break;
+        if (!now)
+            break;
         if (!next_sample || now >= next_sample) {
             struct frame_pacer_nvml_message message;
             unsigned char encoded[FRAME_PACER_NVML_PROTOCOL_SIZE];
             ssize_t sent;
 
             if (!selected)
-                selected = frame_pacer_nvml_provider_select_pci(&provider,
-                                                                 pci);
+                selected = frame_pacer_nvml_provider_select_pci(&provider, pci);
             memset(&message, 0, sizeof(message));
             message.sequence = ++sequence;
             if (selected)
@@ -128,26 +131,29 @@ static int helper_loop(pid_t target, const char *pci, const char *library,
             if (sent < 0 && errno != EAGAIN && errno != EWOULDBLOCK &&
                 errno != EINTR)
                 break;
-            if (sent >= 0 && sent != (ssize_t)sizeof(encoded)) break;
+            if (sent >= 0 && sent != (ssize_t)sizeof(encoded))
+                break;
             next_sample = now + SAMPLE_INTERVAL_NS;
         }
         now = monotonic_ns();
         if (now && next_sample > now) {
             uint64_t remaining_ms = (next_sample - now) / UINT64_C(1000000);
             timeout = remaining_ms > 1000 ? 1000 : (int)remaining_ms;
-            if (timeout < 1) timeout = 1;
+            if (timeout < 1)
+                timeout = 1;
         }
         result = poll(&descriptor, 1, timeout);
-        if (result < 0 && errno != EINTR) break;
-        if (result > 0 &&
-            (descriptor.revents & (POLLHUP | POLLERR | POLLNVAL)))
+        if (result < 0 && errno != EINTR)
+            break;
+        if (result > 0 && (descriptor.revents & (POLLHUP | POLLERR | POLLNVAL)))
             break;
         if (result > 0 && (descriptor.revents & POLLIN)) {
             unsigned char ignored[16];
 
             result = (int)recv(HELPER_SOCKET_FD, ignored, sizeof(ignored),
                                MSG_DONTWAIT);
-            if (!result) break;
+            if (!result)
+                break;
         }
     }
     frame_pacer_nvml_provider_destroy(&provider);
@@ -173,13 +179,15 @@ int main(int argc, char **argv)
             char *end;
             long value = strtol(argv[++index], &end, 10);
 
-            if (*end || value < 5 || value > INT32_MAX) return 1;
+            if (*end || value < 5 || value > INT32_MAX)
+                return 1;
             reject_fd = (int)value;
         }
 #endif
         else
             return 1;
     }
-    if (!parse_pid(pid_text, &target) || !valid_pci(pci)) return 1;
+    if (!parse_pid(pid_text, &target) || !valid_pci(pci))
+        return 1;
     return helper_loop(target, pci, library, reject_fd);
 }

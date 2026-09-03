@@ -37,23 +37,23 @@ static void sequential_waits(void)
     uint64_t before;
 
     frame_pacer_clock_init(&clock);
-    frame_pacer_clock_wait(&clock, TEST_FPS, fake_now,
-                           fake_sleep, &time, &decision);
+    frame_pacer_clock_wait(&clock, TEST_FPS, fake_now, fake_sleep, &time,
+                           &decision);
     assert(decision.first);
 
-    frame_pacer_clock_wait(&clock, TEST_FPS, fake_now,
-                           fake_sleep, &time, &decision);
+    frame_pacer_clock_wait(&clock, TEST_FPS, fake_now, fake_sleep, &time,
+                           &decision);
     assert(time.last_deadline_ns == 100 + TEST_INTERVAL_NS);
 
     time.now_ns += TEST_INTERVAL_NS * 3;
-    frame_pacer_clock_wait(&clock, TEST_FPS, fake_now,
-                           fake_sleep, &time, &decision);
+    frame_pacer_clock_wait(&clock, TEST_FPS, fake_now, fake_sleep, &time,
+                           &decision);
     assert(decision.missed);
     assert(time.last_deadline_ns > time.now_ns - TEST_INTERVAL_NS);
 
     time.interruptions = 2;
-    frame_pacer_clock_wait(&clock, TEST_FPS, fake_now,
-                           fake_sleep, &time, &decision);
+    frame_pacer_clock_wait(&clock, TEST_FPS, fake_now, fake_sleep, &time,
+                           &decision);
     assert(decision.interruptions == 2);
 
     frame_pacer_clock_wait(&clock, 30, fake_now, fake_sleep, &time, &decision);
@@ -71,7 +71,8 @@ static void sequential_waits(void)
     assert(time.now_ns == before);
     frame_pacer_clock_wait(&clock, 30, fake_now, fake_sleep, &time, &decision);
     assert(decision.first && clock.started && clock.fps == 30);
-    frame_pacer_clock_wait(&clock, 1000, fake_now, fake_sleep, &time, &decision);
+    frame_pacer_clock_wait(&clock, 1000, fake_now, fake_sleep, &time,
+                           &decision);
     assert(!decision.first && !clock.started &&
            clock.fps == FRAME_PACER_FPS_LIMIT_OFF);
     frame_pacer_clock_destroy(&clock);
@@ -87,13 +88,13 @@ static void deadlines_saturate_at_uint64_max(void)
     struct fake_time time = {.now_ns = UINT64_MAX - 1};
 
     frame_pacer_clock_init(&clock);
-    frame_pacer_clock_wait(&clock, TEST_FPS, fake_now,
-                           fake_sleep, &time, &decision);
+    frame_pacer_clock_wait(&clock, TEST_FPS, fake_now, fake_sleep, &time,
+                           &decision);
     assert(decision.first);
     assert(clock.next_deadline_ns == UINT64_MAX);
     time.now_ns = UINT64_MAX;
-    frame_pacer_clock_wait(&clock, TEST_FPS, fake_now,
-                           fake_sleep, &time, &decision);
+    frame_pacer_clock_wait(&clock, TEST_FPS, fake_now, fake_sleep, &time,
+                           &decision);
     assert(decision.missed);
     assert(decision.deadline_ns == UINT64_MAX);
     assert(clock.next_deadline_ns == UINT64_MAX);
@@ -111,8 +112,8 @@ static void *wait_in_worker(void *opaque)
     struct worker_context *context = opaque;
     struct frame_pacer_decision decision;
 
-    frame_pacer_clock_wait(context->clock, TEST_FPS, fake_now,
-                           fake_sleep, context->time, &decision);
+    frame_pacer_clock_wait(context->clock, TEST_FPS, fake_now, fake_sleep,
+                           context->time, &decision);
     context->deadline_ns = decision.deadline_ns;
     return 0;
 }
@@ -128,8 +129,8 @@ static void concurrent_waits_are_serialized(void)
     pthread_t second_thread;
 
     frame_pacer_clock_init(&clock);
-    frame_pacer_clock_wait(&clock, TEST_FPS, fake_now,
-                           fake_sleep, &time, &decision);
+    frame_pacer_clock_wait(&clock, TEST_FPS, fake_now, fake_sleep, &time,
+                           &decision);
     assert(!pthread_create(&first_thread, 0, wait_in_worker, &first));
     assert(!pthread_create(&second_thread, 0, wait_in_worker, &second));
     assert(!pthread_join(first_thread, 0));

@@ -35,9 +35,10 @@ int main(void)
         goto cleanup;
     }
     physical_devices = calloc(physical_count, sizeof(*physical_devices));
-    if (!physical_devices) goto cleanup;
-    result = vkEnumeratePhysicalDevices(instance, &physical_count,
-                                         physical_devices);
+    if (!physical_devices)
+        goto cleanup;
+    result =
+        vkEnumeratePhysicalDevices(instance, &physical_count, physical_devices);
     if (result != VK_SUCCESS) {
         fprintf(stderr, "enumerate %d\n", result);
         goto cleanup;
@@ -45,11 +46,13 @@ int main(void)
     physical = physical_devices[0];
     vkGetPhysicalDeviceQueueFamilyProperties(physical, &queue_family_count, 0);
     queue_families = calloc(queue_family_count, sizeof(*queue_families));
-    if (!queue_families) goto cleanup;
+    if (!queue_families)
+        goto cleanup;
     vkGetPhysicalDeviceQueueFamilyProperties(physical, &queue_family_count,
                                              queue_families);
     for (queue_family = 0; queue_family < queue_family_count; ++queue_family)
-        if (queue_families[queue_family].queueCount) break;
+        if (queue_families[queue_family].queueCount)
+            break;
     if (queue_family == queue_family_count) {
         fputs("no queue family\n", stderr);
         goto cleanup;
@@ -86,9 +89,11 @@ int main(void)
     exit_code = 0;
 
 cleanup:
-    if (device) vkDestroyDevice(device, 0);
+    if (device)
+        vkDestroyDevice(device, 0);
     free(queue_families);
     free(physical_devices);
-    if (instance) vkDestroyInstance(instance, 0);
+    if (instance)
+        vkDestroyInstance(instance, 0);
     return exit_code;
 }

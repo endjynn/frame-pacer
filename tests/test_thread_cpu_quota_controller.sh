@@ -10,8 +10,7 @@ status=
 lock=
 controller_pid=
 
-set_paths()
-{
+set_paths() {
     target_pid=$1
     scope_name="frame-pacer-thread-cpu-u$(id -u)-b000000000000-p${target_pid}.scope"
     scope="/user.slice/user-$(id -u).slice/$scope_name"
@@ -20,8 +19,7 @@ set_paths()
     lock="$state.lock"
 }
 
-cleanup()
-{
+cleanup() {
     if [ -n "$controller_pid" ]; then
         kill -TERM "$controller_pid" 2>/dev/null || true
         wait "$controller_pid" 2>/dev/null || true
@@ -55,7 +53,7 @@ expect_usage_error --pid 2 --scope "$scope" "$state"
 chmod 0700 "$state_directory"
 
 set_paths 1
-printf 'sentinel\n' > "$state"
+printf 'sentinel\n' >"$state"
 expect_usage_error --pid 1 --scope "$scope" "$state"
 test "$(cat "$state")" = sentinel
 test ! -e "$status"
@@ -63,8 +61,8 @@ test ! -e "$status"
 # A target that has already exited is a normal controller shutdown. Its owned
 # state and status paths are removed without attempting cgroup mutation.
 set_paths 2147483647
-printf 'off\n' > "$state"
-printf 'stale\n' > "$status"
+printf 'off\n' >"$state"
+printf 'stale\n' >"$status"
 "$controller" --pid 2147483647 --scope "$scope" "$state"
 test ! -e "$state"
 test ! -e "$status"
@@ -73,7 +71,7 @@ test ! -e "$status"
 # links, even when another process with the same UID can write the state dir.
 set_paths $$
 sentinel="$temporary_directory/sentinel"
-printf 'sentinel\n' > "$sentinel"
+printf 'sentinel\n' >"$sentinel"
 ln "$sentinel" "$state"
 "$controller" --pid $$ --scope "$scope" "$state"
 test "$(cat "$sentinel")" = sentinel
@@ -83,7 +81,7 @@ ln -s "$sentinel" "$state"
 test "$(cat "$sentinel")" = sentinel
 test ! -e "$state"
 
-printf 'off\n' > "$state"
+printf 'off\n' >"$state"
 "$controller" --pid $$ --scope "$scope" "$state" &
 controller_pid=$!
 kill -STOP "$controller_pid" 2>/dev/null || true
@@ -106,7 +104,7 @@ test ! -e "$status_temporary"
 
 # The predictable controller lock must reject a hard link without truncating
 # its target or consuming the valid state owned by another controller.
-printf 'off\n' > "$state"
+printf 'off\n' >"$state"
 ln "$sentinel" "$lock"
 set +e
 "$controller" --pid $$ --scope "$scope" "$state"
@@ -121,7 +119,7 @@ rm "$sentinel"
 # State larger than the fixed protocol buffer must be rejected as a whole,
 # never accepted through a valid-looking truncated prefix.
 set_paths $$
-printf 'off%080d\n' 0 > "$state"
+printf 'off%080d\n' 0 >"$state"
 "$controller" --pid $$ --scope "$scope" "$state"
 test ! -e "$state"
 test ! -e "$status"
@@ -129,7 +127,7 @@ test ! -e "$status"
 # SIGTERM is how the transient service is normally stopped. The controller
 # must leave through its cleanup path rather than the default signal action.
 set_paths $$
-printf 'off\n' > "$state"
+printf 'off\n' >"$state"
 "$controller" --pid $$ --scope "$scope" "$state" &
 controller_pid=$!
 attempt=0

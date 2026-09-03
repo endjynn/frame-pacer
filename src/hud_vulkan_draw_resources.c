@@ -26,14 +26,14 @@ void frame_pacer_hud_destroy_draw_resources(
     if (valid_provider(provider)) {
         for (index = 0; index < resources->count; ++index) {
             if (resources->semaphores[index])
-                provider->destroy_semaphore(device, resources->semaphores[index],
-                                            allocator);
+                provider->destroy_semaphore(
+                    device, resources->semaphores[index], allocator);
             if (resources->fences[index])
-                provider->destroy_fence(device, resources->fences[index], allocator);
+                provider->destroy_fence(device, resources->fences[index],
+                                        allocator);
             if (resources->framebuffers[index])
-                provider->destroy_framebuffer(device,
-                                              resources->framebuffers[index],
-                                              allocator);
+                provider->destroy_framebuffer(
+                    device, resources->framebuffers[index], allocator);
         }
         if (resources->command_pool)
             provider->destroy_command_pool(device, resources->command_pool,

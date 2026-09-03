@@ -18,8 +18,7 @@ printf 'global_fps_limit = 999\nhud = on\n' > \
     "$state/config/frame-pacer/frame-pacer.conf"
 chmod 600 "$state/config/frame-pacer/frame-pacer.conf"
 
-run_probe()
-{
+run_probe() {
     architecture=$1
     executable=$2
     architecture_state="$state/$architecture"

@@ -17,30 +17,29 @@
 #define FRAME_PACER_HUD_TEXT_Y_UNITS 6U
 #define FRAME_PACER_HUD_PANEL_RIGHT_PADDING_UNITS 4U
 #define FRAME_PACER_HUD_PANEL_BOTTOM_PADDING_UNITS 3U
-#define FRAME_PACER_HUD_WIDTH_UNITS                                      \
-    (FRAME_PACER_HUD_TEXT_X_UNITS +                                     \
-     FRAME_PACER_HUD_LINE_CHARACTERS_MAX *                              \
-         FRAME_PACER_HUD_CHARACTER_ADVANCE_UNITS +                      \
+#define FRAME_PACER_HUD_WIDTH_UNITS                                            \
+    (FRAME_PACER_HUD_TEXT_X_UNITS +                                            \
+     FRAME_PACER_HUD_LINE_CHARACTERS_MAX *                                     \
+         FRAME_PACER_HUD_CHARACTER_ADVANCE_UNITS +                             \
      FRAME_PACER_HUD_PANEL_RIGHT_PADDING_UNITS)
-#define FRAME_PACER_HUD_HEIGHT_UNITS                                    \
-    (FRAME_PACER_HUD_TEXT_Y_UNITS +                                    \
-     FRAME_PACER_HUD_LINE_COUNT_MAX *                                  \
-         FRAME_PACER_HUD_LINE_ADVANCE_UNITS +                          \
+#define FRAME_PACER_HUD_HEIGHT_UNITS                                           \
+    (FRAME_PACER_HUD_TEXT_Y_UNITS +                                            \
+     FRAME_PACER_HUD_LINE_COUNT_MAX * FRAME_PACER_HUD_LINE_ADVANCE_UNITS +     \
      FRAME_PACER_HUD_PANEL_BOTTOM_PADDING_UNITS)
-#define FRAME_PACER_HUD_REFERENCE_WIDTH                                 \
-    ((FRAME_PACER_HUD_WIDTH_UNITS *                                    \
-      FRAME_PACER_HUD_REFERENCE_SCALE_NUMERATOR +                      \
-      FRAME_PACER_HUD_REFERENCE_SCALE_DENOMINATOR - 1U) /              \
+#define FRAME_PACER_HUD_REFERENCE_WIDTH                                        \
+    ((FRAME_PACER_HUD_WIDTH_UNITS *                                            \
+          FRAME_PACER_HUD_REFERENCE_SCALE_NUMERATOR +                          \
+      FRAME_PACER_HUD_REFERENCE_SCALE_DENOMINATOR - 1U) /                      \
      FRAME_PACER_HUD_REFERENCE_SCALE_DENOMINATOR)
-#define FRAME_PACER_HUD_REFERENCE_HEIGHT                                \
-    ((FRAME_PACER_HUD_HEIGHT_UNITS *                                   \
-      FRAME_PACER_HUD_REFERENCE_SCALE_NUMERATOR +                      \
-      FRAME_PACER_HUD_REFERENCE_SCALE_DENOMINATOR - 1U) /              \
+#define FRAME_PACER_HUD_REFERENCE_HEIGHT                                       \
+    ((FRAME_PACER_HUD_HEIGHT_UNITS *                                           \
+          FRAME_PACER_HUD_REFERENCE_SCALE_NUMERATOR +                          \
+      FRAME_PACER_HUD_REFERENCE_SCALE_DENOMINATOR - 1U) /                      \
      FRAME_PACER_HUD_REFERENCE_SCALE_DENOMINATOR)
-#define FRAME_PACER_HUD_MAX_VERTICES                                      \
-    (6U * (1U + FRAME_PACER_HUD_LINE_COUNT_MAX *                          \
-                 FRAME_PACER_HUD_LINE_CHARACTERS_MAX *                    \
-                 FRAME_PACER_FONT_LIT_PIXELS_MAX))
+#define FRAME_PACER_HUD_MAX_VERTICES                                           \
+    (6U * (1U + FRAME_PACER_HUD_LINE_COUNT_MAX *                               \
+                    FRAME_PACER_HUD_LINE_CHARACTERS_MAX *                      \
+                    FRAME_PACER_FONT_LIT_PIXELS_MAX))
 
 struct frame_pacer_hud_vertex {
     float position[2];
@@ -66,8 +65,9 @@ bool frame_pacer_hud_vertices_build(struct frame_pacer_hud_vertices *,
 /* The presentation backends supply their current extent so a proportional
  * scale can be selected relative to the 2560x1600 reference. */
 FRAME_PACER_HUD_VERTICES_INTERNAL bool
-frame_pacer_hud_vertices_build_for_extent(
-    struct frame_pacer_hud_vertices *, const struct frame_pacer_hud_text *,
-    uint32_t drawable_width, uint32_t drawable_height);
+frame_pacer_hud_vertices_build_for_extent(struct frame_pacer_hud_vertices *,
+                                          const struct frame_pacer_hud_text *,
+                                          uint32_t drawable_width,
+                                          uint32_t drawable_height);
 
 #endif

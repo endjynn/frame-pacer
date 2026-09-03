@@ -15,7 +15,7 @@
 static void create_log(const char *directory, const char *name, time_t second)
 {
     char path[1024];
-    struct timespec times[2] = { { .tv_sec = second }, { .tv_sec = second } };
+    struct timespec times[2] = {{.tv_sec = second}, {.tv_sec = second}};
     int fd;
 
     assert(snprintf(path, sizeof(path), "%s/%s", directory, name) <
@@ -47,8 +47,7 @@ static void runtime_log_lifecycle(void)
     assert(mkdtemp(directory));
     assert(!setenv("XDG_STATE_HOME", directory, 1));
     assert(!setenv("FRAME_PACER_LOG", "1", 1));
-    assert(frame_pacer_runtime_log_activate(&log, "frame-pacer-test-",
-                                            "s\n"));
+    assert(frame_pacer_runtime_log_activate(&log, "frame-pacer-test-", "s\n"));
     runtime_log_write(&log, "payload\n");
     assert(frame_pacer_runtime_log_bytes(&log) == 2 + 8);
     frame_pacer_runtime_log_close(&log);
@@ -134,7 +133,7 @@ static void active_log_is_always_retained(void)
 
         assert(snprintf(name, sizeof(name), "frame-pacer-active-%u.log",
                         index + 1000) > 0);
-        create_log(log_directory, name, (time_t)(100 + index));
+        create_log(log_directory, name, 100 + (time_t)index);
     }
     assert(!setenv("XDG_STATE_HOME", directory, 1));
     assert(!setenv("FRAME_PACER_LOG", "1", 1));
@@ -142,8 +141,8 @@ static void active_log_is_always_retained(void)
                                             "startup\n"));
     runtime_log_write(&log, "active\n");
     frame_pacer_runtime_log_close(&log);
-    assert(snprintf(path, sizeof(path), "%s/%s", log_directory,
-                    active_name) > 0);
+    assert(snprintf(path, sizeof(path), "%s/%s", log_directory, active_name) >
+           0);
     assert(!access(path, F_OK));
     stream = opendir(log_directory);
     assert(stream);
@@ -156,7 +155,8 @@ static void active_log_is_always_retained(void)
     stream = opendir(log_directory);
     assert(stream);
     while ((entry = readdir(stream))) {
-        if (entry->d_name[0] == '.') continue;
+        if (entry->d_name[0] == '.')
+            continue;
         assert(snprintf(path, sizeof(path), "%s/%s", log_directory,
                         entry->d_name) > 0);
         assert(!unlink(path));
@@ -187,7 +187,7 @@ static void concurrent_activation_writes_one_header(void)
 {
     struct frame_pacer_runtime_log log =
         FRAME_PACER_RUNTIME_LOG_INITIALIZER(64);
-    struct activation_context context = { .log = &log };
+    struct activation_context context = {.log = &log};
     char directory[] = "/tmp/frame-pacer-concurrent-log.XXXXXX";
     char log_directory[1024], path[1024], text[64] = {0};
     pthread_t threads[16];
@@ -207,9 +207,8 @@ static void concurrent_activation_writes_one_header(void)
 
     assert(snprintf(log_directory, sizeof(log_directory), "%s/frame-pacer",
                     directory) > 0);
-    assert(snprintf(path, sizeof(path),
-                    "%s/frame-pacer-concurrent-%ld.log", log_directory,
-                    (long)getpid()) > 0);
+    assert(snprintf(path, sizeof(path), "%s/frame-pacer-concurrent-%ld.log",
+                    log_directory, (long)getpid()) > 0);
     file = fopen(path, "re");
     assert(file);
     assert(fread(text, 1, sizeof(text), file) == 16);
@@ -271,7 +270,7 @@ int main(void)
     for (index = 0; index < 12; index++) {
         assert(snprintf(name, sizeof(name), "frame-pacer-%u.log", index) <
                (int)sizeof(name));
-        create_log(directory, name, (time_t)(100 + index));
+        create_log(directory, name, 100 + (time_t)index);
     }
     create_log(directory, "frame-pacer-gl-keep.log", 200);
     frame_pacer_log_retention_prune(directory, "frame-pacer-");
@@ -285,27 +284,26 @@ int main(void)
                         index) < (int)sizeof(name));
         assert(!access(name, F_OK));
     }
-    assert(snprintf(name, sizeof(name), "%s/frame-pacer-gl-keep.log", directory) <
-           (int)sizeof(name));
+    assert(snprintf(name, sizeof(name), "%s/frame-pacer-gl-keep.log",
+                    directory) < (int)sizeof(name));
     assert(!access(name, F_OK));
     for (index = 2; index < 12; index++) {
         assert(snprintf(name, sizeof(name), "%s/frame-pacer-%u.log", directory,
                         index) < (int)sizeof(name));
         assert(!unlink(name));
     }
-    assert(snprintf(name, sizeof(name), "%s/frame-pacer-gl-keep.log", directory) <
-           (int)sizeof(name));
+    assert(snprintf(name, sizeof(name), "%s/frame-pacer-gl-keep.log",
+                    directory) < (int)sizeof(name));
     assert(!unlink(name));
     for (index = 0; index < 3; ++index) {
         assert(snprintf(name, sizeof(name), "frame-pacer-partial-%u.log",
                         index) < (int)sizeof(name));
-        create_log(directory, name, (time_t)(300 - index));
+        create_log(directory, name, 300 - (time_t)index);
     }
     frame_pacer_log_retention_prune(directory, "frame-pacer-partial-");
     for (index = 0; index < 3; ++index) {
-        assert(snprintf(name, sizeof(name),
-                        "%s/frame-pacer-partial-%u.log", directory, index) <
-               (int)sizeof(name));
+        assert(snprintf(name, sizeof(name), "%s/frame-pacer-partial-%u.log",
+                        directory, index) < (int)sizeof(name));
         assert(!access(name, F_OK));
         assert(!unlink(name));
     }

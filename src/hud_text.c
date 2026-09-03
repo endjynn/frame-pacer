@@ -69,8 +69,10 @@ void frame_pacer_hud_text_format(
     char use[5], temperature[5], quota[5], fps_column[5], limit_column[5];
     const struct frame_pacer_metrics_snapshot unavailable = {0};
 
-    if (!text) return;
-    if (!metrics) metrics = &unavailable;
+    if (!text)
+        return;
+    if (!metrics)
+        metrics = &unavailable;
 
     format_metric(metrics->available, FRAME_PACER_METRIC_GPU_USE,
                   metrics->gpu_use_percent, use, '%');

@@ -32,7 +32,8 @@ void frame_pacer_nvml_protocol_encode(
     const struct frame_pacer_nvml_message *message)
 {
     memset(output, 0, FRAME_PACER_NVML_PROTOCOL_SIZE);
-    if (!message) return;
+    if (!message)
+        return;
     put_u32(output, FRAME_PACER_NVML_PROTOCOL_MAGIC);
     put_u16(output + 4, FRAME_PACER_NVML_PROTOCOL_VERSION);
     put_u16(output + 6, FRAME_PACER_NVML_PROTOCOL_SIZE);
@@ -42,9 +43,10 @@ void frame_pacer_nvml_protocol_encode(
     put_u32(output + 20, message->sample.gpu_temp_celsius);
 }
 
-bool frame_pacer_nvml_protocol_decode(
-    const unsigned char *input, size_t size, uint32_t previous_sequence,
-    bool have_previous, struct frame_pacer_nvml_message *message)
+bool frame_pacer_nvml_protocol_decode(const unsigned char *input, size_t size,
+                                      uint32_t previous_sequence,
+                                      bool have_previous,
+                                      struct frame_pacer_nvml_message *message)
 {
     uint32_t sequence, available, use, temperature;
 
@@ -59,8 +61,7 @@ bool frame_pacer_nvml_protocol_decode(
     temperature = get_u32(input + 20);
     if (!sequence ||
         (have_previous && (int32_t)(sequence - previous_sequence) <= 0) ||
-        (available & ~(FRAME_PACER_NVML_GPU_USE |
-                       FRAME_PACER_NVML_GPU_TEMP)) ||
+        (available & ~(FRAME_PACER_NVML_GPU_USE | FRAME_PACER_NVML_GPU_TEMP)) ||
         use > 100 || temperature > 200)
         return false;
     memset(message, 0, sizeof(*message));

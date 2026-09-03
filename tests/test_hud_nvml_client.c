@@ -13,29 +13,30 @@
 
 static void wait_briefly(void)
 {
-    const struct timespec delay = { .tv_nsec = 10000000L };
+    const struct timespec delay = {.tv_nsec = 10000000L};
     struct timespec remaining = delay;
 
-    while (nanosleep(&remaining, &remaining) && errno == EINTR) {}
+    while (nanosleep(&remaining, &remaining) && errno == EINTR) {
+    }
 }
 
-#if !defined(FRAME_PACER_TEST_EXPECT_FAILURE) && \
+#if !defined(FRAME_PACER_TEST_EXPECT_FAILURE) &&                               \
     !defined(FRAME_PACER_TEST_TARGET_EXIT)
 static atomic_bool publishing;
 
 static void *publish_snapshots(void *unused)
 {
     static const struct frame_pacer_nvml_message messages[] = {
-        { .sequence = 1,
-          .sample = { .available = FRAME_PACER_NVML_GPU_USE |
-                                   FRAME_PACER_NVML_GPU_TEMP,
-                      .gpu_use_percent = 37,
-                      .gpu_temp_celsius = 64 } },
-        { .sequence = 2,
-          .sample = { .available = FRAME_PACER_NVML_GPU_USE |
-                                   FRAME_PACER_NVML_GPU_TEMP,
-                      .gpu_use_percent = 83,
-                      .gpu_temp_celsius = 105 } },
+        {.sequence = 1,
+         .sample = {.available =
+                        FRAME_PACER_NVML_GPU_USE | FRAME_PACER_NVML_GPU_TEMP,
+                    .gpu_use_percent = 37,
+                    .gpu_temp_celsius = 64}},
+        {.sequence = 2,
+         .sample = {.available =
+                        FRAME_PACER_NVML_GPU_USE | FRAME_PACER_NVML_GPU_TEMP,
+                    .gpu_use_percent = 83,
+                    .gpu_temp_celsius = 105}},
     };
     unsigned int iteration;
 
@@ -54,16 +55,17 @@ static void test_coherent_publication(void)
     atomic_store_explicit(&publishing, true, memory_order_relaxed);
     assert(!pthread_create(&writer, 0, publish_snapshots, 0));
     while (atomic_load_explicit(&publishing, memory_order_acquire)) {
-        if (!frame_pacer_nvml_client_snapshot(&snapshot)) continue;
-        if (!snapshot.sample.available) continue;
+        if (!frame_pacer_nvml_client_snapshot(&snapshot))
+            continue;
+        if (!snapshot.sample.available)
+            continue;
         assert(snapshot.sample.available ==
                (FRAME_PACER_NVML_GPU_USE | FRAME_PACER_NVML_GPU_TEMP));
-        assert((snapshot.sequence == 1 &&
-                snapshot.sample.gpu_use_percent == 37 &&
-                snapshot.sample.gpu_temp_celsius == 64) ||
-               (snapshot.sequence == 2 &&
-                snapshot.sample.gpu_use_percent == 83 &&
-                snapshot.sample.gpu_temp_celsius == 105));
+        assert(
+            (snapshot.sequence == 1 && snapshot.sample.gpu_use_percent == 37 &&
+             snapshot.sample.gpu_temp_celsius == 64) ||
+            (snapshot.sequence == 2 && snapshot.sample.gpu_use_percent == 83 &&
+             snapshot.sample.gpu_temp_celsius == 105));
     }
     assert(!pthread_join(writer, 0));
 }
@@ -81,17 +83,18 @@ int main(void)
 
         assert(target >= 0);
         if (!target) {
-            struct timespec delay = { .tv_nsec = 50000000L };
+            struct timespec delay = {.tv_nsec = 50000000L};
 
-            while (nanosleep(&delay, &delay) && errno == EINTR) {}
+            while (nanosleep(&delay, &delay) && errno == EINTR) {
+            }
             _exit(0);
         }
         assert(frame_pacer_nvml_client_acquire((unsigned int)target,
                                                "0000:01:00.0"));
         assert(waitpid(target, &status, 0) == target);
         assert(WIFEXITED(status) && WEXITSTATUS(status) == 0);
-        for (iteration = 0; iteration < 200 &&
-                            frame_pacer_nvml_client_test_attempts() < 3;
+        for (iteration = 0;
+             iteration < 200 && frame_pacer_nvml_client_test_attempts() < 3;
              ++iteration)
             wait_briefly();
         assert(frame_pacer_nvml_client_test_attempts() == 3);
@@ -106,12 +109,13 @@ int main(void)
 #elif defined(FRAME_PACER_TEST_EXPECT_FAILURE)
     assert(frame_pacer_nvml_client_acquire((unsigned int)getpid(),
                                            "0000:01:00.0"));
-    for (iteration = 0; iteration < 200 &&
-                        frame_pacer_nvml_client_test_attempts() < 3;
+    for (iteration = 0;
+         iteration < 200 && frame_pacer_nvml_client_test_attempts() < 3;
          ++iteration)
         wait_briefly();
     assert(frame_pacer_nvml_client_test_attempts() == 3);
-    for (iteration = 0; iteration < 20; ++iteration) wait_briefly();
+    for (iteration = 0; iteration < 20; ++iteration)
+        wait_briefly();
     assert(frame_pacer_nvml_client_test_attempts() == 3);
     assert(!frame_pacer_nvml_client_snapshot(&snapshot) ||
            !snapshot.sample.available);
@@ -144,7 +148,7 @@ int main(void)
 #endif
     frame_pacer_nvml_client_release();
     assert(frame_pacer_nvml_client_test_child() < 0);
-#if !defined(FRAME_PACER_TEST_EXPECT_FAILURE) && \
+#if !defined(FRAME_PACER_TEST_EXPECT_FAILURE) &&                               \
     !defined(FRAME_PACER_TEST_TARGET_EXIT)
     test_coherent_publication();
 #endif

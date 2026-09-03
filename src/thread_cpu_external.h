@@ -9,7 +9,7 @@
 struct frame_pacer_systemd;
 
 #if defined(__GNUC__)
-#define FRAME_PACER_THREAD_CPU_EXTERNAL_INTERNAL \
+#define FRAME_PACER_THREAD_CPU_EXTERNAL_INTERNAL                               \
     __attribute__((visibility("hidden")))
 #else
 #define FRAME_PACER_THREAD_CPU_EXTERNAL_INTERNAL

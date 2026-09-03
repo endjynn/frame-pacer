@@ -1,6 +1,7 @@
 #include <windows.h>
 
-int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR command, int show)
+int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR command,
+                    int show)
 {
     HMODULE module;
     (void)instance;

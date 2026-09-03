@@ -21,8 +21,7 @@ fi
 runtime=
 for candidate in \
     "$HOME/.steam/debian-installation/steamapps/common/SteamLinuxRuntime_4/_v2-entry-point" \
-    "$HOME/.steam/root/steamapps/common/SteamLinuxRuntime_4/_v2-entry-point"
-do
+    "$HOME/.steam/root/steamapps/common/SteamLinuxRuntime_4/_v2-entry-point"; do
     if test -x "$candidate"; then
         runtime=$candidate
         break

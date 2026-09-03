@@ -4,7 +4,6 @@
 #include "hud_drm_fdinfo.h"
 #include "hud_nvml_provider.h"
 
-#include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -35,7 +34,6 @@ struct frame_pacer_metrics_snapshot {
 };
 
 struct frame_pacer_metrics {
-    pthread_mutex_t mutex;
     bool initialized;
     uint64_t cpu_total;
     uint64_t cpu_idle;
@@ -60,18 +58,23 @@ struct frame_pacer_metrics {
     struct frame_pacer_nvml_provider nvml;
 };
 
+/* Single-owner sampler. The HUD cache worker owns this state and publishes
+ * snapshots under its separate cache lock. Join the worker before destruction.
+ * Standalone callers must likewise serialize access and lifetime. */
 void frame_pacer_metrics_init(struct frame_pacer_metrics *,
                               const char *nvml_library,
                               unsigned int process_id);
 void frame_pacer_metrics_destroy(struct frame_pacer_metrics *);
 void frame_pacer_metrics_sample(struct frame_pacer_metrics *,
                                 struct frame_pacer_metrics_snapshot *);
-__attribute__((visibility("hidden")))
-void frame_pacer_metrics_reset_utilization(struct frame_pacer_metrics *);
-bool frame_pacer_metrics_parse_cpu(const char *line, uint64_t *total, uint64_t *idle);
+__attribute__((visibility("hidden"))) void
+frame_pacer_metrics_reset_utilization(struct frame_pacer_metrics *);
+bool frame_pacer_metrics_parse_cpu(const char *line, uint64_t *total,
+                                   uint64_t *idle);
 bool frame_pacer_metrics_parse_cpu_stat(const char *line, const char *key,
                                         uint64_t *value);
-bool frame_pacer_metrics_parse_render_node(const char *target, char *node, size_t node_size);
+bool frame_pacer_metrics_parse_render_node(const char *target, char *node,
+                                           size_t node_size);
 
 #ifdef FRAME_PACER_TEST
 void frame_pacer_metrics_test_prune_thread_cpu_slots(
@@ -79,11 +82,12 @@ void frame_pacer_metrics_test_prune_thread_cpu_slots(
 bool frame_pacer_metrics_test_parse_temperature(const char *, unsigned int *);
 bool frame_pacer_metrics_test_parse_gpu_vendor(const char *, unsigned int *);
 bool frame_pacer_metrics_test_parse_pci_bus_id(const char *, char *, size_t);
-void frame_pacer_metrics_test_set_gpu_identity(
-    struct frame_pacer_metrics *, const char *render_node,
-    unsigned int vendor, const char *pci_bus_id);
-bool frame_pacer_metrics_test_find_amd_temperature(
-    struct frame_pacer_metrics *, const char *drm_root);
+void frame_pacer_metrics_test_set_gpu_identity(struct frame_pacer_metrics *,
+                                               const char *render_node,
+                                               unsigned int vendor,
+                                               const char *pci_bus_id);
+bool frame_pacer_metrics_test_find_amd_temperature(struct frame_pacer_metrics *,
+                                                   const char *drm_root);
 #endif
 
 #endif

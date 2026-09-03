@@ -33,14 +33,13 @@ enum frame_pacer_hud_resource_status {
 
 enum frame_pacer_hud_resource_status frame_pacer_hud_create_image_views(
     struct frame_pacer_hud_image_views *resources,
-    const struct frame_pacer_hud_vulkan_provider *provider,
-    VkDevice device, VkSwapchainKHR swapchain, VkFormat format,
-    VkImageUsageFlags image_usage);
+    const struct frame_pacer_hud_vulkan_provider *provider, VkDevice device,
+    VkSwapchainKHR swapchain, VkFormat format, VkImageUsageFlags image_usage);
 
 void frame_pacer_hud_destroy_image_views(
     struct frame_pacer_hud_image_views *resources,
-    const struct frame_pacer_hud_vulkan_provider *provider,
-    VkDevice device, const VkAllocationCallbacks *allocator);
+    const struct frame_pacer_hud_vulkan_provider *provider, VkDevice device,
+    const VkAllocationCallbacks *allocator);
 
 const char *frame_pacer_hud_resource_status_string(
     enum frame_pacer_hud_resource_status status);

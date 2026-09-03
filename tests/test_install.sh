@@ -7,15 +7,14 @@ layer_dir="$prefix/share/vulkan/implicit_layer.d"
 runtime_dir="$prefix/lib/frame-pacer"
 config="$test_root/config/frame-pacer/frame-pacer.conf"
 
-cleanup()
-{
+cleanup() {
     rm -rf -- "$test_root"
 }
 trap cleanup EXIT HUP INT TERM
 
 mkdir -p "${config%/*}" "$runtime_dir"
-printf 'global_fps_limit = 60\n' > "$config"
-printf 'keep\n' > "$runtime_dir/unrelated.txt"
+printf 'global_fps_limit = 60\n' >"$config"
+printf 'keep\n' >"$runtime_dir/unrelated.txt"
 
 if make install PREFIX=/ >/dev/null 2>&1; then
     echo 'install accepted the filesystem root as PREFIX' >&2
@@ -40,8 +39,7 @@ for path in \
     lib/libframe_pacer_gl.so \
     lib/libframe_pacer_gl_shim.so \
     lib/x86_64-linux-gnu/libframe_pacer_gl.so \
-    lib/x86_64-linux-gnu/libframe_pacer_gl_shim.so
-do
+    lib/x86_64-linux-gnu/libframe_pacer_gl_shim.so; do
     test -x "$runtime_dir/$path"
     file "$runtime_dir/$path" | grep -q 'ELF 64-bit'
 done
@@ -49,8 +47,7 @@ for path in \
     lib32/libframe_pacer_gl.so \
     lib32/libframe_pacer_gl_shim.so \
     lib/i386-linux-gnu/libframe_pacer_gl.so \
-    lib/i386-linux-gnu/libframe_pacer_gl_shim.so
-do
+    lib/i386-linux-gnu/libframe_pacer_gl_shim.so; do
     test -x "$runtime_dir/$path"
     file "$runtime_dir/$path" | grep -q 'ELF 32-bit'
 done
@@ -64,7 +61,7 @@ jq -e '.layer.name == "VK_LAYER_ENDJYNN_frame_pacer_i386" and
 
 # Reinstallation replaces owned runtime files but preserves configuration and
 # unrelated neighboring content.
-printf 'old\n' > "$runtime_dir/x86_64/libVkLayer_frame_pacer.so"
+printf 'old\n' >"$runtime_dir/x86_64/libVkLayer_frame_pacer.so"
 make install PREFIX="$prefix"
 file "$runtime_dir/x86_64/libVkLayer_frame_pacer.so" | grep -q 'ELF 64-bit'
 test "$(cat "$config")" = 'global_fps_limit = 60'

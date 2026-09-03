@@ -33,7 +33,8 @@ static bool helper_executable(const char *path)
            !access(path, X_OK);
 }
 
-static bool helper_path_from_library(const char *library, char *out, size_t size)
+static bool helper_path_from_library(const char *library, char *out,
+                                     size_t size)
 {
     static const char helper[] = "/frame-pacer-thread-cpu-controller";
     char absolute[PATH_MAX], directory[PATH_MAX];
@@ -41,9 +42,11 @@ static bool helper_path_from_library(const char *library, char *out, size_t size
     char *slash;
     unsigned int depth;
 
-    if (!library || !*library || !out || !size) return false;
+    if (!library || !*library || !out || !size)
+        return false;
     if (library[0] != '/') {
-        if (!realpath(library, absolute)) return false;
+        if (!realpath(library, absolute))
+            return false;
         library = absolute;
     }
     filename = strrchr(library, '/');
@@ -64,7 +67,8 @@ static bool helper_path_from_library(const char *library, char *out, size_t size
         if (written > 0 && (size_t)written < size && helper_executable(out))
             return true;
         slash = strrchr(directory, '/');
-        if (!slash || slash == directory) break;
+        if (!slash || slash == directory)
+            break;
         *slash = '\0';
     }
     return false;
@@ -123,23 +127,26 @@ bool frame_pacer_thread_cpu_external_write(const char *path, bool enabled,
     size_t text_length;
     bool ok;
 
-    if (!path || !frame_pacer_thread_cpu_format_state(
-                     text, sizeof(text), enabled, quota))
+    if (!path || !frame_pacer_thread_cpu_format_state(text, sizeof(text),
+                                                      enabled, quota))
         return false;
     text_length = strlen(text);
     temporary_length = snprintf(temporary, sizeof(temporary), "%s.tmp-%ld",
                                 path, (long)getpid());
-    if (temporary_length < 0 ||
-        (size_t)temporary_length >= sizeof(temporary))
+    if (temporary_length < 0 || (size_t)temporary_length >= sizeof(temporary))
         return false;
     (void)unlink(temporary);
-    fd = open(temporary,
-              O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600);
-    if (fd < 0) return false;
+    fd = open(temporary, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+              0600);
+    if (fd < 0)
+        return false;
     ok = write_all(fd, text, text_length) && !fchmod(fd, 0600) && !fsync(fd);
-    if (close(fd)) ok = false;
-    if (ok) ok = !rename(temporary, path);
-    if (!ok) (void)unlink(temporary);
+    if (close(fd))
+        ok = false;
+    if (ok)
+        ok = !rename(temporary, path);
+    if (!ok)
+        (void)unlink(temporary);
     return ok;
 }
 
@@ -149,11 +156,13 @@ static bool read_owned_file(const char *path, char *out, size_t size)
     size_t offset = 0;
     int fd;
 
-    if (!path || !out || !size) return false;
+    if (!path || !out || !size)
+        return false;
     fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
     if (fd < 0 || fstat(fd, &before) || !S_ISREG(before.st_mode) ||
         before.st_uid != geteuid() || before.st_nlink != 1) {
-        if (fd >= 0) (void)close(fd);
+        if (fd >= 0)
+            (void)close(fd);
         return false;
     }
     while (offset < size) {
@@ -168,10 +177,13 @@ static bool read_owned_file(const char *path, char *out, size_t size)
             return false;
         }
     }
-    if (offset == size || fstat(fd, &after) || close(fd) ||
-        before.st_dev != after.st_dev || before.st_ino != after.st_ino ||
-        before.st_uid != after.st_uid || before.st_mode != after.st_mode ||
-        before.st_nlink != after.st_nlink || before.st_size != after.st_size ||
+    bool valid = fstat(fd, &after) == 0;
+    if (close(fd))
+        valid = false;
+    if (offset >= size || !valid || before.st_dev != after.st_dev ||
+        before.st_ino != after.st_ino || before.st_uid != after.st_uid ||
+        before.st_mode != after.st_mode || before.st_nlink != after.st_nlink ||
+        before.st_size != after.st_size ||
         before.st_mtim.tv_sec != after.st_mtim.tv_sec ||
         before.st_mtim.tv_nsec != after.st_mtim.tv_nsec)
         return false;
@@ -196,9 +208,11 @@ void frame_pacer_thread_cpu_external_wait_off(const char *state)
     unsigned int attempt;
     int written;
 
-    if (!state) return;
+    if (!state)
+        return;
     written = snprintf(status, sizeof(status), "%s.status", state);
-    if (written < 0 || (size_t)written >= sizeof(status)) return;
+    if (written < 0 || (size_t)written >= sizeof(status))
+        return;
     for (attempt = 0; attempt < 20; ++attempt) {
         struct timespec delay = {.tv_nsec = 50000000L};
 
@@ -214,11 +228,14 @@ static void remove_protocol_paths(const char *state)
     char path[1240];
     int written;
 
-    if (!state || !*state) return;
+    if (!state || !*state)
+        return;
     written = snprintf(path, sizeof(path), "%s.status", state);
-    if (written >= 0 && (size_t)written < sizeof(path)) (void)unlink(path);
+    if (written >= 0 && (size_t)written < sizeof(path))
+        (void)unlink(path);
     written = snprintf(path, sizeof(path), "%s.lock", state);
-    if (written >= 0 && (size_t)written < sizeof(path)) (void)unlink(path);
+    if (written >= 0 && (size_t)written < sizeof(path))
+        (void)unlink(path);
     (void)unlink(state);
 }
 
@@ -227,7 +244,8 @@ void frame_pacer_thread_cpu_external_reap(
 {
     pid_t result;
 
-    if (!quota || quota->external_pid <= 0) return;
+    if (!quota || quota->external_pid <= 0)
+        return;
     do {
         result = waitpid(quota->external_pid, 0, WNOHANG);
     } while (result < 0 && errno == EINTR);
@@ -268,21 +286,22 @@ static bool prepare(struct frame_pacer_thread_cpu_quota *quota,
         goto fail;
     written = snprintf(request->pid, sizeof(request->pid), "%ju",
                        (uintmax_t)getpid());
-    if (written < 0 || (size_t)written >= sizeof(request->pid)) goto fail;
+    if (written < 0 || (size_t)written >= sizeof(request->pid))
+        goto fail;
     if (quota->cgroup_proc[0]) {
         size_t suffix = strlen("/frame-pacer-thread-cpu");
         size_t length = strlen(quota->cgroup_proc);
 
-        if (length <= suffix || length - suffix > (size_t)INT_MAX ||
-            (written = snprintf(request->scope, sizeof(request->scope),
-                                "%.*s", (int)(length - suffix),
-                                quota->cgroup_proc)) < 0 ||
-            (size_t)written >= sizeof(request->scope))
+        if (length <= suffix || length - suffix > (size_t)INT_MAX)
+            goto fail;
+        written = snprintf(request->scope, sizeof(request->scope), "%.*s",
+                           (int)(length - suffix), quota->cgroup_proc);
+        if (written < 0 || (size_t)written >= sizeof(request->scope))
             goto fail;
     } else {
         written = snprintf(request->scope, sizeof(request->scope),
-                           "/user.slice/user-%ju.slice/%s",
-                           (uintmax_t)getuid(), scope_name);
+                           "/user.slice/user-%ju.slice/%s", (uintmax_t)getuid(),
+                           scope_name);
         if (written < 0 || (size_t)written >= sizeof(request->scope))
             goto fail;
     }
@@ -304,11 +323,13 @@ bool frame_pacer_thread_cpu_external_start_service(
     bool started;
     int written;
 
-    if (!prepare(quota, scope_name, wanted, &request)) return false;
+    if (!prepare(quota, scope_name, wanted, &request))
+        return false;
     written = snprintf(unit, sizeof(unit),
                        "frame-pacer-thread-cpu-controller-u%ju-p%ju.service",
                        (uintmax_t)getuid(), (uintmax_t)getpid());
-    if (written < 0 || (size_t)written >= sizeof(unit)) goto fail;
+    if (written < 0 || (size_t)written >= sizeof(unit))
+        goto fail;
     arguments[0] = request.helper;
     arguments[1] = "--pid";
     arguments[2] = request.pid;
@@ -317,8 +338,8 @@ bool frame_pacer_thread_cpu_external_start_service(
     arguments[5] = quota->external_state;
     arguments[6] = "--owned-scope";
     arguments[7] = 0;
-    started = frame_pacer_systemd_start_service(
-        systemd, unit, request.helper, arguments);
+    started = frame_pacer_systemd_start_service(systemd, unit, request.helper,
+                                                arguments);
     if (started || request.state_existed) {
         quota->external = true;
         return true;
@@ -338,17 +359,19 @@ bool frame_pacer_thread_cpu_external_start_native(
     pid_t process_id;
     int result;
 
-    if (failure_stage) *failure_stage = 0;
+    if (failure_stage)
+        *failure_stage = 0;
     if (quota && quota->external_pid > 0) {
         frame_pacer_thread_cpu_external_reap(quota);
         if (quota->external_pid > 0) {
             quota->external = true;
-            return frame_pacer_thread_cpu_external_write(
-                quota->external_state, true, wanted);
+            return frame_pacer_thread_cpu_external_write(quota->external_state,
+                                                         true, wanted);
         }
     }
     if (!prepare(quota, scope_name, wanted, &request)) {
-        if (failure_stage) *failure_stage = "prepare native external controller";
+        if (failure_stage)
+            *failure_stage = "prepare native external controller";
         return false;
     }
     arguments[0] = request.helper;
@@ -372,7 +395,8 @@ bool frame_pacer_thread_cpu_external_start_native(
         (void)unlink(quota->external_state);
         quota->external_state[0] = '\0';
         errno = result;
-        if (failure_stage) *failure_stage = "spawn native external controller";
+        if (failure_stage)
+            *failure_stage = "spawn native external controller";
         return false;
     }
     quota->external_pid = process_id;
@@ -394,13 +418,14 @@ bool frame_pacer_thread_cpu_quota_test_runtime_helper_path(char *out,
 }
 
 bool frame_pacer_thread_cpu_quota_test_parse_confirmation(const char *text,
-                                                           uint32_t quota)
+                                                          uint32_t quota)
 {
     return frame_pacer_thread_cpu_parse_confirmation(text, quota);
 }
 
-bool frame_pacer_thread_cpu_quota_test_write_external_state(
-    const char *path, bool enabled, uint32_t quota)
+bool frame_pacer_thread_cpu_quota_test_write_external_state(const char *path,
+                                                            bool enabled,
+                                                            uint32_t quota)
 {
     return frame_pacer_thread_cpu_external_write(path, enabled, quota);
 }
