@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.0-beta.4 - 2026-09-11
+
+- Sharper, resolution-aware HUD text with a more compact layout and balanced padding.
+
 ## 0.1.0-beta.3 - 2026-09-03
 
 - Improved AMD GPU activity readings by avoiding double counting concurrent
