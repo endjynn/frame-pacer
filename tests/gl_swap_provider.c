@@ -34,6 +34,7 @@ static uintptr_t current_context = 1;
 static GLint framebuffer = 7, active_texture = 0x84C3, texture = 19,
              sampler = 23;
 static GLint bound_program = 29, vao = 31, array_buffer = 37;
+static GLint uploaded_width;
 static GLint viewport[4] = {41, 43, 1920, 1200};
 static GLint scissor_box[4] = {47, 53, 1800, 1000};
 static GLint color_mask[4] = {1, 0, 1, 0};
@@ -343,6 +344,49 @@ void glBindSampler(GLuint unit, GLuint value)
     if (!unit)
         sampler = (GLint)value;
 }
+void glGenTextures(GLsizei count, GLuint *textures)
+{
+    static GLuint next = 100;
+    while (count--)
+        *textures++ = next++;
+}
+void glDeleteTextures(GLsizei count, const GLuint *textures)
+{
+    (void)count;
+    (void)textures;
+}
+void glPixelStorei(GLenum name, GLint value)
+{
+    (void)name;
+    (void)value;
+}
+void glTexParameteri(GLenum target, GLenum name, GLint value)
+{
+    (void)target;
+    (void)name;
+    (void)value;
+}
+void glTexImage2D(GLenum target, GLint level, GLint internal_format,
+                  GLsizei width, GLsizei height, GLint border, GLenum format,
+                  GLenum type, const void *pixels)
+{
+    (void)target;
+    (void)level;
+    (void)internal_format;
+    (void)height;
+    (void)border;
+    (void)format;
+    (void)type;
+    (void)pixels;
+    uploaded_width = width;
+}
+void glGetTexLevelParameteriv(GLenum target, GLint level, GLenum name,
+                              GLint *value)
+{
+    (void)target;
+    (void)level;
+    *value = name == GL_TEXTURE_WIDTH ? uploaded_width : 0;
+}
 void glBindFramebuffer(GLenum target, GLuint value)
 {
     if (target == 0x8CA9)
@@ -497,10 +541,10 @@ void glBufferData(GLenum target, GLsizeiptr size, const void *data,
 
     (void)target;
     (void)usage;
-    /* Six vertices with six floats each comprise the leading panel quad. */
-    if (values && size >= 36 * (GLsizeiptr)sizeof(*values)) {
-        hud_width = values[6];
-        hud_height = values[13];
+    /* Six vertices with eight floats each comprise the leading panel quad. */
+    if (values && size >= 48 * (GLsizeiptr)sizeof(*values)) {
+        hud_width = values[8];
+        hud_height = values[17];
     }
 }
 void glEnableVertexAttribArray(GLuint index)

@@ -22,7 +22,7 @@ struct frame_pacer_hud_pipeline {
 bool frame_pacer_hud_create_pipeline(
     struct frame_pacer_hud_pipeline *,
     const struct frame_pacer_hud_pipeline_provider *, VkDevice, VkRenderPass,
-    const uint32_t *, size_t, const uint32_t *, size_t);
+    VkDescriptorSetLayout, const uint32_t *, size_t, const uint32_t *, size_t);
 void frame_pacer_hud_destroy_pipeline(
     struct frame_pacer_hud_pipeline *,
     const struct frame_pacer_hud_pipeline_provider *, VkDevice,

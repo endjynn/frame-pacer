@@ -40,7 +40,8 @@ struct frame_pacer_gl_hud_resource {
     void *context;
     void *display;
     enum frame_pacer_gl_context_api api;
-    GLuint program, vao, vbo;
+    GLuint program, vao, vbo, texture;
+    const struct frame_pacer_font_atlas *atlas;
     GLint viewport_uniform;
     bool available;
     struct frame_pacer_gl_hud_resource *next;
@@ -148,19 +149,27 @@ static bool create_resources(struct frame_pacer_gl_hud_renderer *renderer,
 {
     static const char native_vertex[] =
         "#version 130\n"
-        "in vec2 position; in vec4 color; out vec4 pass_color; uniform vec2 "
+        "in vec2 position; in vec4 color; in vec2 uv; out vec2 pass_uv; out "
+        "vec4 pass_color; uniform vec2 "
         "viewport;\n"
         "void main(){ gl_Position=vec4(position.x/viewport.x*2.0-1.0,"
-        "position.y/viewport.y*-2.0+1.0,0.0,1.0); pass_color=color; }\n";
+        "position.y/viewport.y*-2.0+1.0,0.0,1.0); pass_color=color; "
+        "pass_uv=uv; }\n";
     static const char wined3d_vertex[] =
         "#version 130\n"
-        "in vec2 position; in vec4 color; out vec4 pass_color; uniform vec2 "
+        "in vec2 position; in vec4 color; in vec2 uv; out vec2 pass_uv; out "
+        "vec4 pass_color; uniform vec2 "
         "viewport;\n"
         "void main(){ gl_Position=vec4(position.x/viewport.x*2.0-1.0,"
-        "position.y/viewport.y*2.0-1.0,0.0,1.0); pass_color=color; }\n";
-    static const char fragment[] = "#version 130\n"
-                                   "in vec4 pass_color; out vec4 output_color; "
-                                   "void main(){ output_color=pass_color; }\n";
+        "position.y/viewport.y*2.0-1.0,0.0,1.0); pass_color=color; pass_uv=uv; "
+        "}\n";
+    static const char fragment[] =
+        "#version 130\n"
+        "in vec4 pass_color; in vec2 pass_uv; uniform sampler2D atlas; out "
+        "vec4 output_color; "
+        "void main(){ float coverage=pass_uv.x<0.0 ? 1.0 : "
+        "texture(atlas,pass_uv).r; "
+        "output_color=vec4(pass_color.rgb,pass_color.a*coverage); }\n";
     struct frame_pacer_gl_hud_resource *resource;
     GLuint vertex = 0, fragment_shader = 0;
     GLint ok = 0;
@@ -200,6 +209,7 @@ static bool create_resources(struct frame_pacer_gl_hud_renderer *renderer,
     gl->gl_attach_shader(resource->program, fragment_shader);
     gl->gl_bind_attrib_location(resource->program, 0, "position");
     gl->gl_bind_attrib_location(resource->program, 1, "color");
+    gl->gl_bind_attrib_location(resource->program, 2, "uv");
     gl->gl_link_program(resource->program);
     gl->gl_get_program_iv(resource->program, GL_LINK_STATUS_, &ok);
     gl->gl_delete_shader(vertex);
@@ -230,6 +240,10 @@ static bool create_resources(struct frame_pacer_gl_hud_renderer *renderer,
     gl->gl_vertex_attrib_pointer(1, 4, GL_FLOAT, GL_FALSE,
                                  (GLsizei)sizeof(struct frame_pacer_hud_vertex),
                                  (const void *)(2 * sizeof(float)));
+    gl->gl_enable_vertex_attrib_array(2);
+    gl->gl_vertex_attrib_pointer(2, 2, GL_FLOAT, GL_FALSE,
+                                 (GLsizei)sizeof(struct frame_pacer_hud_vertex),
+                                 (const void *)(6 * sizeof(float)));
     resource->next = renderer->resources;
     renderer->resources = resource;
     resource->available = true;
@@ -252,6 +266,53 @@ fail:
     renderer->resources = resource;
     *out = resource;
     return false;
+}
+
+static bool upload_atlas(const struct frame_pacer_gl_dispatch *gl,
+                         struct frame_pacer_gl_hud_resource *resource,
+                         const struct frame_pacer_font_atlas *atlas)
+{
+    /* Upload only on a size change. Save unpack state here, not on every frame.
+     * Byte R8 data is unaffected by swap-bytes/LSB-first or 3D image strides.
+     */
+    static const GLenum unpack_names[] = {
+        GL_UNPACK_ALIGNMENT, GL_UNPACK_ROW_LENGTH, GL_UNPACK_SKIP_PIXELS,
+        GL_UNPACK_SKIP_ROWS};
+    GLint unpack[4], buffer = 0, uploaded_width = 0;
+    GLuint texture = 0;
+    if (resource->atlas == atlas)
+        return true;
+    gl->gl_gen_textures(1, &texture);
+    if (!texture)
+        return false;
+    gl->gl_get_integer(GL_PIXEL_UNPACK_BUFFER_BINDING, &buffer);
+    for (unsigned int i = 0; i < 4; ++i) {
+        gl->gl_get_integer(unpack_names[i], &unpack[i]);
+        gl->gl_pixel_store(unpack_names[i], i == 0 ? 1 : 0);
+    }
+    gl->gl_bind_buffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    gl->gl_bind_texture(GL_TEXTURE_2D, texture);
+    gl->gl_tex_parameter(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    gl->gl_tex_parameter(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    gl->gl_tex_parameter(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    gl->gl_tex_parameter(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    gl->gl_tex_image(GL_TEXTURE_2D, 0, GL_R8, atlas->width, atlas->height, 0,
+                     GL_RED, GL_UNSIGNED_BYTE,
+                     frame_pacer_font_atlas_pixels(atlas));
+    /* Query allocation without draining the application's GL error queue. */
+    gl->gl_get_tex_level(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &uploaded_width);
+    gl->gl_bind_buffer(GL_PIXEL_UNPACK_BUFFER, (GLuint)buffer);
+    for (unsigned int i = 0; i < 4; ++i)
+        gl->gl_pixel_store(unpack_names[i], unpack[i]);
+    if (uploaded_width != atlas->width) {
+        gl->gl_delete_textures(1, &texture);
+        return false;
+    }
+    if (resource->texture)
+        gl->gl_delete_textures(1, &resource->texture);
+    resource->texture = texture;
+    resource->atlas = atlas;
+    return true;
 }
 
 static void save_state(const struct frame_pacer_gl_dispatch *gl,
@@ -380,13 +441,15 @@ void frame_pacer_gl_hud_render(struct frame_pacer_gl_hud_renderer *renderer,
     save_state(gl, &state);
     if (!frame_pacer_hud_vertices_build_for_extent(renderer->vertices, text,
                                                    width, height) ||
-        !create_resources(renderer, gl, api, display, context, &resource)) {
+        !create_resources(renderer, gl, api, display, context, &resource) ||
+        !upload_atlas(gl, resource, renderer->vertices->atlas)) {
         restore_state(gl, &state);
         goto out;
     }
     gl->gl_bind_framebuffer(GL_DRAW_FRAMEBUFFER_, 0);
     gl->gl_active_texture(GL_TEXTURE0_);
     gl->gl_bind_sampler(0, 0);
+    gl->gl_bind_texture(GL_TEXTURE_2D, resource->texture);
     gl->gl_viewport(0, 0, (GLsizei)width, (GLsizei)height);
     gl->gl_scissor(0, 0, (GLsizei)width, (GLsizei)height);
     gl->gl_disable(GL_DEPTH_TEST);

@@ -88,7 +88,7 @@ for required in \
     i386/libframe_pacer_gl_shim.so \
     frame-pacer-thread-cpu-controller \
     VkLayer_frame_pacer_implicit.json.in \
-    VERSION; do
+    VERSION LICENSE-JetBrainsMono.txt; do
     [ -f "$payload_dir/$required" ] && [ ! -L "$payload_dir/$required" ] ||
         fail "payload is missing $required"
 done
@@ -115,6 +115,7 @@ atomic_install "$payload_dir/i386/libVkLayer_frame_pacer.so" \
 atomic_install "$payload_dir/frame-pacer-thread-cpu-controller" \
     "$runtime_dir/frame-pacer-thread-cpu-controller" 0755
 atomic_install "$payload_dir/VERSION" "$runtime_dir/VERSION" 0644
+atomic_install "$payload_dir/LICENSE-JetBrainsMono.txt" "$runtime_dir/LICENSE-JetBrainsMono.txt" 0644
 
 for destination in lib lib/x86_64-linux-gnu; do
     atomic_install "$payload_dir/x86_64/libframe_pacer_gl.so" \

@@ -19,7 +19,7 @@ for required in \
     i386/libframe_pacer_gl_shim.so \
     frame-pacer-thread-cpu-controller \
     VkLayer_frame_pacer_implicit.json.in \
-    VERSION; do
+    VERSION LICENSE-JetBrainsMono.txt; do
     [ -f "$payload/$required" ] && [ ! -L "$payload/$required" ] ||
         fail "install payload is missing $required"
 done
@@ -56,6 +56,7 @@ install -m 0755 "$root/packaging/uninstall.sh" "$package_dir/uninstall.sh"
 install -m 0644 "$payload/VkLayer_frame_pacer_implicit.json.in" \
     "$package_dir/payload/VkLayer_frame_pacer_implicit.json.in"
 install -m 0644 "$payload/VERSION" "$package_dir/payload/VERSION"
+install -m 0644 "$payload/LICENSE-JetBrainsMono.txt" "$package_dir/payload/LICENSE-JetBrainsMono.txt"
 install -m 0755 "$payload/frame-pacer-thread-cpu-controller" \
     "$package_dir/payload/frame-pacer-thread-cpu-controller"
 

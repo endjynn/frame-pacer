@@ -31,7 +31,7 @@ NVML_SRC := \
 	src/hud_nvml_provider.c
 HUD_SRC := \
 	src/hud_drm_fdinfo.c \
-	src/hud_font.c \
+	src/hud_font_atlas.c src/hud_font_data.S \
 	src/hud_fps.c \
 	src/hud_metrics.c \
 	src/hud_metrics_cache.c \
@@ -54,12 +54,14 @@ VULKAN_SRC := \
 	src/hud_vulkan_device.c \
 	src/hud_vulkan_draw_resources.c \
 	src/hud_vulkan_pipeline.c \
+	src/hud_vulkan_texture.c \
 	src/hud_vulkan_vertex_buffer.c \
 	src/hud_vulkan_record.c \
 	src/hud_vulkan_present.c
 GL_SRC := src/gl_pacer_interposer.c src/gl_pacer_dispatch.c \
 	src/gl_hud_renderer.c $(PACER_SRC) $(LOG_RETENTION_SRC) $(HUD_SRC)
 HDRS := $(wildcard src/*.h)
+HUD_FONT_ASSETS := assets/fonts/hud/hud-atlas.inc assets/fonts/hud/hud-atlas.bin
 VULKAN_ARTIFACTS := \
 	build/x86_64/libVkLayer_frame_pacer.so \
 	build/i386/libVkLayer_frame_pacer.so \
@@ -115,15 +117,15 @@ check-hud-image: build/generated-frame-pacer-hud.png
 	cmp $< docs/images/frame-pacer-hud.png
 build/generated-frame-pacer-hud.png: build/render-hud-image
 	./build/render-hud-image $@
-build/render-hud-image: tests/render_hud_image.c src/hud_text.c src/hud_text.h src/hud_metrics.h src/pacer_limit.h src/hud_vertices.c src/hud_vertices.h src/hud_font.c src/hud_font.h
+build/render-hud-image: tests/render_hud_image.c src/hud_text.c src/hud_text.h src/hud_metrics.h src/pacer_limit.h src/hud_vertices.c src/hud_vertices.h src/hud_font_atlas.c src/hud_font_atlas.h src/hud_font_data.S assets/fonts/hud/hud-atlas.inc assets/fonts/hud/hud-atlas.bin
 	mkdir -p $(@D)
-	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/render_hud_image.c src/hud_text.c src/hud_vertices.c src/hud_font.c
+	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/render_hud_image.c src/hud_text.c src/hud_vertices.c src/hud_font_atlas.c src/hud_font_data.S
 install: install-payload
 	FRAME_PACER_PAYLOAD_DIR="$(abspath build/install-payload)" \
 		PREFIX="$(PREFIX)" DESTDIR="$(DESTDIR)" sh packaging/install.sh
 install-payload: build/install-payload/.ready
 build/install-payload/.ready: $(VULKAN_ARTIFACTS) $(GL_ARTIFACTS) $(CONTROLLER_ARTIFACT) \
-		VkLayer_frame_pacer_implicit.json.in VERSION
+		VkLayer_frame_pacer_implicit.json.in VERSION assets/fonts/jetbrains-mono/OFL.txt
 	rm -rf build/install-payload
 	install -d build/install-payload/x86_64 build/install-payload/i386
 	install -m 0755 build/x86_64/libVkLayer_frame_pacer.so \
@@ -137,6 +139,7 @@ build/install-payload/.ready: $(VULKAN_ARTIFACTS) $(GL_ARTIFACTS) $(CONTROLLER_A
 	install -m 0755 $(CONTROLLER_ARTIFACT) build/install-payload/
 	install -m 0644 VkLayer_frame_pacer_implicit.json.in VERSION \
 		build/install-payload/
+	install -m 0644 assets/fonts/jetbrains-mono/OFL.txt build/install-payload/LICENSE-JetBrainsMono.txt
 	touch $@
 uninstall:
 	PREFIX="$(PREFIX)" DESTDIR="$(DESTDIR)" sh packaging/uninstall.sh
@@ -195,16 +198,16 @@ dxgi-forward-probe: build/windows/x86_64/dxgi.dll build/windows/dxgi-proxy-clien
 $(VERSION_HEADER): VERSION packaging/read-version.sh packaging/generate-version-header.sh
 	mkdir -p $(@D)
 	sh packaging/generate-version-header.sh VERSION $@
-build/x86_64/libVkLayer_frame_pacer.so: $(VULKAN_SRC) $(HDRS) build/hud_spv.h $(VERSION_HEADER)
+build/x86_64/libVkLayer_frame_pacer.so: $(VULKAN_SRC) $(HDRS) $(HUD_FONT_ASSETS) build/hud_spv.h $(VERSION_HEADER)
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -shared -Wl,-Bsymbolic -o $@ $(VULKAN_SRC) -ldl -pthread
-build/i386/libVkLayer_frame_pacer.so: $(VULKAN_SRC) $(HDRS) build/hud_spv.h build/hud_nvml_helper_image.h $(VERSION_HEADER)
+build/i386/libVkLayer_frame_pacer.so: $(VULKAN_SRC) $(HDRS) $(HUD_FONT_ASSETS) build/hud_spv.h build/hud_nvml_helper_image.h $(VERSION_HEADER)
 	mkdir -p $(@D)
 	$(CC) -m32 $(BUILD_CFLAGS) -shared -Wl,-Bsymbolic -o $@ $(VULKAN_SRC) -ldl -pthread
-build/x86_64/libframe_pacer_gl.so: $(GL_SRC) $(HDRS) $(VERSION_HEADER)
+build/x86_64/libframe_pacer_gl.so: $(GL_SRC) $(HDRS) $(HUD_FONT_ASSETS) $(VERSION_HEADER)
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -shared -Wl,-Bsymbolic -o $@ $(GL_SRC) -ldl -pthread
-build/i386/libframe_pacer_gl.so: $(GL_SRC) $(HDRS) build/hud_nvml_helper_image.h $(VERSION_HEADER)
+build/i386/libframe_pacer_gl.so: $(GL_SRC) $(HDRS) $(HUD_FONT_ASSETS) build/hud_nvml_helper_image.h $(VERSION_HEADER)
 	mkdir -p $(@D)
 	$(CC) -m32 $(BUILD_CFLAGS) -shared -Wl,-Bsymbolic -o $@ $(GL_SRC) -ldl -pthread
 build/x86_64/libframe_pacer_gl_shim.so: src/gl_pacer_shim.c
@@ -381,12 +384,34 @@ build/test_thread_cpu_protocol: tests/test_thread_cpu_protocol.c src/thread_cpu_
 build/test_state_directory: tests/test_state_directory.c $(STATE_DIRECTORY_SRC) src/state_directory.h
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_state_directory.c $(STATE_DIRECTORY_SRC)
-build/test_hud_font: tests/test_hud_font.c src/hud_font.c src/hud_font.h
+GL_HUD_PIXEL_TEST_SRC := tests/test_gl_hud_pixels.c src/gl_hud_renderer.c src/gl_pacer_dispatch.c src/hud_vertices.c src/hud_font_atlas.c src/hud_font_data.S
+VULKAN_HUD_PIXEL_TEST_SRC := tests/test_vulkan_hud_pixels.c src/hud_vertices.c src/hud_font_atlas.c src/hud_font_data.S src/hud_vulkan_texture.c src/hud_vulkan_pipeline.c src/hud_vulkan_record.c src/hud_vulkan_draw_resources.c src/hud_vulkan_vertex_buffer.c src/hud_vulkan_commands.c
+build/test-vulkan-hud-pixels: $(VULKAN_HUD_PIXEL_TEST_SRC) $(HDRS) $(HUD_FONT_ASSETS) build/hud_spv.h
+	@mkdir -p build
+	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ $(VULKAN_HUD_PIXEL_TEST_SRC) -lvulkan -lm
+build/test-vulkan-hud-pixels-i386: $(VULKAN_HUD_PIXEL_TEST_SRC) $(HDRS) $(HUD_FONT_ASSETS) build/hud_spv.h
+	@mkdir -p build
+	$(CC) -m32 $(BUILD_CFLAGS) -Isrc -o $@ $(VULKAN_HUD_PIXEL_TEST_SRC) -lvulkan -lm
+.PHONY: check-vulkan-hud-pixels
+check-vulkan-hud-pixels: build/test-vulkan-hud-pixels build/test-vulkan-hud-pixels-i386
+	./build/test-vulkan-hud-pixels
+	./build/test-vulkan-hud-pixels-i386
+build/test-gl-hud-pixels: $(GL_HUD_PIXEL_TEST_SRC) $(wildcard src/*.h) assets/fonts/hud/hud-atlas.inc assets/fonts/hud/hud-atlas.bin
+	@mkdir -p build
+	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ $(GL_HUD_PIXEL_TEST_SRC) -l:libGL.so.1 -l:libX11.so.6 -ldl -pthread
+build/test-gl-hud-pixels-i386: $(GL_HUD_PIXEL_TEST_SRC) $(wildcard src/*.h) assets/fonts/hud/hud-atlas.inc assets/fonts/hud/hud-atlas.bin
+	@mkdir -p build
+	$(CC) -m32 $(BUILD_CFLAGS) -Isrc -o $@ $(GL_HUD_PIXEL_TEST_SRC) -l:libGL.so.1 -l:libX11.so.6 -ldl -pthread
+.PHONY: check-gl-hud-pixels
+check-gl-hud-pixels: build/test-gl-hud-pixels build/test-gl-hud-pixels-i386
+	./build/test-gl-hud-pixels
+	./build/test-gl-hud-pixels-i386
+build/test_hud_font_atlas: tests/test_hud_font_atlas.c src/hud_font_atlas.c src/hud_font_atlas.h src/hud_font_data.S assets/fonts/hud/hud-atlas.inc assets/fonts/hud/hud-atlas.bin
+	@mkdir -p build
+	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_font_atlas.c src/hud_font_atlas.c src/hud_font_data.S
+build/test_hud_vertices: tests/test_hud_vertices.c src/hud_vertices.c src/hud_vertices.h src/hud_font_atlas.c src/hud_font_atlas.h src/hud_font_data.S assets/fonts/hud/hud-atlas.inc assets/fonts/hud/hud-atlas.bin
 	mkdir -p $(@D)
-	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_font.c src/hud_font.c
-build/test_hud_vertices: tests/test_hud_vertices.c src/hud_vertices.c src/hud_vertices.h src/hud_font.c src/hud_font.h
-	mkdir -p $(@D)
-	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_vertices.c src/hud_vertices.c src/hud_font.c
+	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_vertices.c src/hud_vertices.c src/hud_font_atlas.c src/hud_font_data.S
 build/test_hud_vulkan_resources: tests/test_hud_vulkan_resources.c src/hud_vulkan_resources.c src/hud_vulkan_resources.h
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_vulkan_resources.c src/hud_vulkan_resources.c
@@ -405,16 +430,19 @@ build/test_hud_vulkan_draw_resources: tests/test_hud_vulkan_draw_resources.c src
 build/test_hud_vulkan_pipeline: tests/test_hud_vulkan_pipeline.c src/hud_vulkan_pipeline.c src/hud_vulkan_pipeline.h src/hud_vertices.h
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_vulkan_pipeline.c src/hud_vulkan_pipeline.c
+build/test_hud_vulkan_texture: tests/test_hud_vulkan_texture.c src/hud_vulkan_texture.c src/hud_vulkan_texture.h src/hud_font_atlas.c src/hud_font_atlas.h src/hud_font_data.S $(HUD_FONT_ASSETS)
+	@mkdir -p build
+	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_vulkan_texture.c src/hud_vulkan_texture.c src/hud_font_atlas.c src/hud_font_data.S
 build/test_hud_vulkan_vertex_buffer: tests/test_hud_vulkan_vertex_buffer.c src/hud_vulkan_vertex_buffer.c src/hud_vulkan_vertex_buffer.h
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_vulkan_vertex_buffer.c src/hud_vulkan_vertex_buffer.c
-build/test_hud_vulkan_record: tests/test_hud_vulkan_record.c src/hud_vulkan_record.c src/hud_vulkan_record.h
+build/test_hud_vulkan_record: tests/test_hud_vulkan_record.c src/hud_vulkan_record.c src/hud_vulkan_record.h src/hud_vulkan_texture.c src/hud_vulkan_texture.h src/hud_font_atlas.c src/hud_font_data.S assets/fonts/hud/hud-atlas.inc assets/fonts/hud/hud-atlas.bin
 	mkdir -p $(@D)
-	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_vulkan_record.c src/hud_vulkan_record.c
+	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_vulkan_record.c src/hud_vulkan_record.c src/hud_vulkan_texture.c src/hud_font_atlas.c src/hud_font_data.S
 build/test_hud_vulkan_present: tests/test_hud_vulkan_present.c src/hud_vulkan_present.c src/hud_vulkan_present.h
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_vulkan_present.c src/hud_vulkan_present.c
-build/test_frame_pacer_layer: tests/test_frame_pacer_layer.c $(VULKAN_SRC) $(HDRS) build/hud_spv.h $(VERSION_HEADER)
+build/test_frame_pacer_layer: tests/test_frame_pacer_layer.c $(VULKAN_SRC) $(HDRS) $(HUD_FONT_ASSETS) build/hud_spv.h $(VERSION_HEADER)
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -DFRAME_PACER_TEST -Isrc -o $@ tests/test_frame_pacer_layer.c $(VULKAN_SRC) -ldl -pthread
 metrics-probe: build/hud-metrics-probe
@@ -447,25 +475,25 @@ build/smoke-device: tests/smoke_device.c
 build/smoke-device-i386: tests/smoke_device.c
 	mkdir -p $(@D)
 	$(CC) -m32 $(BUILD_CFLAGS) -o $@ tests/smoke_device.c -lvulkan
-build/vulkan-present-probe: tests/vulkan_present_probe.c src/hud_vertices.h src/hud_text.h src/hud_font.h
+build/vulkan-present-probe: tests/vulkan_present_probe.c tests/present_benchmark.h tests/present_extent.h
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ $< -lvulkan -l:libX11.so.6
-build/vulkan-present-probe-i386: tests/vulkan_present_probe.c src/hud_vertices.h src/hud_text.h src/hud_font.h
+build/vulkan-present-probe-i386: tests/vulkan_present_probe.c tests/present_benchmark.h tests/present_extent.h
 	mkdir -p $(@D)
 	$(CC) -m32 $(BUILD_CFLAGS) -Isrc -o $@ $< -lvulkan -l:libX11.so.6
 vulkan-present-probe: build/vulkan-present-probe build/vulkan-present-probe-i386
 run-vulkan-present-probe: vulkan-present-probe $(VULKAN_ARTIFACTS)
 	sh ./tests/test_vulkan_present.sh
-build/glx-present-probe: tests/glx_present_probe.c src/hud_vertices.h src/hud_text.h src/hud_font.h
+build/glx-present-probe: tests/glx_present_probe.c tests/present_benchmark.h tests/present_extent.h
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ $< -l:libGL.so.1 -l:libX11.so.6
-build/glx-present-probe-i386: tests/glx_present_probe.c src/hud_vertices.h src/hud_text.h src/hud_font.h
+build/glx-present-probe-i386: tests/glx_present_probe.c tests/present_benchmark.h tests/present_extent.h
 	mkdir -p $(@D)
 	$(CC) -m32 $(BUILD_CFLAGS) -Isrc -o $@ $< -l:libGL.so.1 -l:libX11.so.6
 glx-present-probe: build/glx-present-probe build/glx-present-probe-i386
 run-glx-present-probe: glx-present-probe $(GL_ARTIFACTS) $(GL_RUNTIME_ARTIFACTS)
 	sh ./tests/test_glx_present.sh
-build/egl-present-probe: tests/egl_present_probe.c src/hud_vertices.h src/hud_text.h src/hud_font.h
+build/egl-present-probe: tests/egl_present_probe.c tests/present_extent.h
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ $< -l:libEGL.so.1 -l:libGL.so.1 -l:libX11.so.6
 egl-present-probe: build/egl-present-probe
@@ -486,7 +514,7 @@ UNIT_TESTS := \
 	build/test_hud_metrics \
 	build/test_hud_metrics_cache \
 	build/test_hud_text \
-	build/test_hud_font \
+	build/test_hud_font_atlas \
 	build/test_hud_vertices \
 	build/test_hud_vulkan_resources \
 	build/test_hud_swapchain_policy \
@@ -494,6 +522,7 @@ UNIT_TESTS := \
 	build/test_hud_vulkan_device \
 	build/test_hud_vulkan_draw_resources \
 	build/test_hud_vulkan_pipeline \
+	build/test_hud_vulkan_texture \
 	build/test_hud_vulkan_vertex_buffer \
 	build/test_hud_vulkan_record \
 	build/test_hud_vulkan_present \
@@ -525,6 +554,45 @@ benchmark-performance: build/benchmark-pacer-limit build/benchmark-gl-present \
 	build/benchmark-hud-metrics-cache build/x86_64/libframe_pacer_gl.so
 	sh ./tests/benchmark_performance.sh
 
+# Deterministic HUD text, including the optional fourth row, without activating
+# the thread quota controller or changing user/system configuration.
+HUD_BENCH_FIXTURE := tests/hud_benchmark_fixture.c
+HUD_BENCH_LINK := -shared -Wl,-Bsymbolic,--wrap=frame_pacer_hud_text_format
+build/font-benchmark/x86_64/libframe_pacer_gl.so: $(GL_SRC) $(HDRS) $(HUD_BENCH_FIXTURE) $(VERSION_HEADER)
+	mkdir -p $(@D)
+	$(CC) $(BUILD_CFLAGS) -Isrc $(HUD_BENCH_LINK) -o $@ $(GL_SRC) $(HUD_BENCH_FIXTURE) -ldl -pthread
+build/font-benchmark/i386/libframe_pacer_gl.so: $(GL_SRC) $(HDRS) $(HUD_BENCH_FIXTURE) $(VERSION_HEADER) build/hud_nvml_helper_image.h
+	mkdir -p $(@D)
+	$(CC) -m32 $(BUILD_CFLAGS) -Isrc $(HUD_BENCH_LINK) -o $@ $(GL_SRC) $(HUD_BENCH_FIXTURE) -ldl -pthread
+build/font-benchmark/x86_64/libVkLayer_frame_pacer.so: $(VULKAN_SRC) $(HDRS) $(HUD_BENCH_FIXTURE) $(VERSION_HEADER) build/hud_spv.h
+	mkdir -p $(@D)
+	$(CC) $(BUILD_CFLAGS) -Isrc $(HUD_BENCH_LINK) -o $@ $(VULKAN_SRC) $(HUD_BENCH_FIXTURE) -ldl -pthread
+build/font-benchmark/i386/libVkLayer_frame_pacer.so: $(VULKAN_SRC) $(HDRS) $(HUD_BENCH_FIXTURE) $(VERSION_HEADER) build/hud_spv.h build/hud_nvml_helper_image.h
+	mkdir -p $(@D)
+	$(CC) -m32 $(BUILD_CFLAGS) -Isrc $(HUD_BENCH_LINK) -o $@ $(VULKAN_SRC) $(HUD_BENCH_FIXTURE) -ldl -pthread
+.PHONY: hud-benchmark-build check-font-assets check-hud-benchmark-comparison
+build/font-benchmark/x86_64/libframe_pacer_gl.so \
+build/font-benchmark/i386/libframe_pacer_gl.so \
+build/font-benchmark/x86_64/libVkLayer_frame_pacer.so \
+build/font-benchmark/i386/libVkLayer_frame_pacer.so: $(HUD_FONT_ASSETS)
+build/font-benchmark/x86_64/libframe_pacer_gl_shim.so: build/x86_64/libframe_pacer_gl_shim.so
+	mkdir -p $(@D)
+	cp $< $@
+build/font-benchmark/i386/libframe_pacer_gl_shim.so: build/i386/libframe_pacer_gl_shim.so
+	mkdir -p $(@D)
+	cp $< $@
+hud-benchmark-build: vulkan-present-probe glx-present-probe \
+	build/font-benchmark/x86_64/libframe_pacer_gl_shim.so \
+	build/font-benchmark/i386/libframe_pacer_gl_shim.so \
+	build/font-benchmark/x86_64/libframe_pacer_gl.so \
+	build/font-benchmark/i386/libframe_pacer_gl.so \
+	build/font-benchmark/x86_64/libVkLayer_frame_pacer.so \
+	build/font-benchmark/i386/libVkLayer_frame_pacer.so
+check-font-assets:
+	python3 tests/test_font_assets.py
+check-hud-benchmark-comparison:
+	python3 tests/test_hud_benchmark_comparison.py
+
 check: all hud-shaders $(GL_ARTIFACTS) $(GL_RUNTIME_ARTIFACTS) \
 	build/test-gl-pacer \
 	build/test-gl-pacer-i386 \
@@ -536,7 +604,7 @@ check: all hud-shaders $(GL_ARTIFACTS) $(GL_RUNTIME_ARTIFACTS) \
 	build/test-hud-nvml-client-target-exit-i386 \
 	build/test-hud-metrics-external-i386 \
 	build/hud-nvml-helper-probe-i386 \
-	check-unit check-shell check-docs check-workflows check-hud-image \
+	check-unit check-shell check-docs check-workflows check-hud-image check-font-assets check-hud-benchmark-comparison \
 	check-hot-path-stack check-abi
 	./build/test-hud-nvml-client-i386
 	./build/test-hud-nvml-client-retry-i386

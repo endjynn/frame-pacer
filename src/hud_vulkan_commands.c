@@ -50,6 +50,25 @@ static const char *const required_commands[] = {
     [FRAME_PACER_HUD_COMMAND_SET_VIEWPORT] = "vkCmdSetViewport",
     [FRAME_PACER_HUD_COMMAND_SET_SCISSOR] = "vkCmdSetScissor",
     [FRAME_PACER_HUD_COMMAND_PUSH_CONSTANTS] = "vkCmdPushConstants",
+    [FRAME_PACER_HUD_COMMAND_CREATE_IMAGE] = "vkCreateImage",
+    [FRAME_PACER_HUD_COMMAND_DESTROY_IMAGE] = "vkDestroyImage",
+    [FRAME_PACER_HUD_COMMAND_GET_IMAGE_MEMORY_REQUIREMENTS] =
+        "vkGetImageMemoryRequirements",
+    [FRAME_PACER_HUD_COMMAND_BIND_IMAGE_MEMORY] = "vkBindImageMemory",
+    [FRAME_PACER_HUD_COMMAND_CREATE_SAMPLER] = "vkCreateSampler",
+    [FRAME_PACER_HUD_COMMAND_DESTROY_SAMPLER] = "vkDestroySampler",
+    [FRAME_PACER_HUD_COMMAND_CREATE_DESCRIPTOR_SET_LAYOUT] =
+        "vkCreateDescriptorSetLayout",
+    [FRAME_PACER_HUD_COMMAND_DESTROY_DESCRIPTOR_SET_LAYOUT] =
+        "vkDestroyDescriptorSetLayout",
+    [FRAME_PACER_HUD_COMMAND_CREATE_DESCRIPTOR_POOL] = "vkCreateDescriptorPool",
+    [FRAME_PACER_HUD_COMMAND_DESTROY_DESCRIPTOR_POOL] =
+        "vkDestroyDescriptorPool",
+    [FRAME_PACER_HUD_COMMAND_ALLOCATE_DESCRIPTOR_SETS] =
+        "vkAllocateDescriptorSets",
+    [FRAME_PACER_HUD_COMMAND_UPDATE_DESCRIPTOR_SETS] = "vkUpdateDescriptorSets",
+    [FRAME_PACER_HUD_COMMAND_COPY_BUFFER_TO_IMAGE] = "vkCmdCopyBufferToImage",
+    [FRAME_PACER_HUD_COMMAND_BIND_DESCRIPTOR_SETS] = "vkCmdBindDescriptorSets",
 };
 
 _Static_assert(sizeof(required_commands) / sizeof(required_commands[0]) ==

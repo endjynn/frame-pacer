@@ -34,6 +34,7 @@ test -x "$runtime_dir/frame-pacer-thread-cpu-controller"
 test ! -e "$runtime_dir/frame-pacer-nvml-helper"
 test "$(stat -c %a "$runtime_dir/frame-pacer-thread-cpu-controller")" = 755
 test "$(cat "$runtime_dir/VERSION")" = "$(cat VERSION)"
+cmp assets/fonts/jetbrains-mono/OFL.txt "$runtime_dir/LICENSE-JetBrainsMono.txt"
 
 for path in \
     lib/libframe_pacer_gl.so \
@@ -74,6 +75,7 @@ test ! -e "$layer_dir/VkLayer_frame_pacer.i386.json"
 test ! -e "$runtime_dir/x86_64/libVkLayer_frame_pacer.so"
 test ! -e "$runtime_dir/i386/libVkLayer_frame_pacer.so"
 test ! -e "$runtime_dir/frame-pacer-thread-cpu-controller"
+test ! -e "$runtime_dir/LICENSE-JetBrainsMono.txt"
 test ! -e "$runtime_dir/lib/libframe_pacer_gl_shim.so"
 test ! -e "$runtime_dir/lib32/libframe_pacer_gl_shim.so"
 test "$(cat "$config")" = 'global_fps_limit = 60'

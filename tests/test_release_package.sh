@@ -62,6 +62,7 @@ printf '%s\n' \
     "$package/install.sh" \
     "$package/payload/" \
     "$package/payload/VERSION" \
+    "$package/payload/LICENSE-JetBrainsMono.txt" \
     "$package/payload/VkLayer_frame_pacer_implicit.json.in" \
     "$package/payload/frame-pacer-thread-cpu-controller" \
     "$package/payload/i386/" \

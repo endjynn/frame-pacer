@@ -1,0 +1,17 @@
+{
+  "font": "JetBrains Mono Medium",
+  "font_version": "2.304",
+  "font_sha256": "31c92d01a8a08528b718a43addf0ad3df0af2ca4b7b3290a452f70f358e14d3d",
+  "freetype_version": "2.14.3",
+  "freetype_archive_sha256": "36bc4f1cc413335368ee656c42afca65c5a3987e8768cc28cf11ba775e785a5f",
+  "load_flags": "FT_LOAD_RENDER | FT_LOAD_TARGET_NORMAL",
+  "sizes": [
+    8,
+    64
+  ],
+  "format": "R8_UNORM",
+  "padding": 1,
+  "atlas_sha256": "3e437540c89315a8ad26f55b8eb9450215292963de29c1915a1e7112eabdcbfa",
+  "metadata_sha256": "c687b7866e816d49c1a2b6ae8855d8f4d69c79a02e68e92932dad68af5a51add",
+  "c_metadata_sha256": "cf253696d03f798f2a9c0b998607eb0eee5a529babf5e0a41362ea065473690b"
+}

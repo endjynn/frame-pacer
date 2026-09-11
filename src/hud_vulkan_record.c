@@ -13,7 +13,9 @@ bool frame_pacer_hud_record(
     const struct frame_pacer_hud_record_provider *p, VkCommandBuffer command,
     VkImage image, VkFramebuffer framebuffer, VkRenderPass pass,
     const struct frame_pacer_hud_pipeline *pipeline,
-    const struct frame_pacer_hud_vertex_buffer *vertices, VkExtent2D extent,
+    const struct frame_pacer_hud_vertex_buffer *vertices,
+    struct frame_pacer_hud_texture *texture,
+    const struct frame_pacer_hud_commands *commands, VkExtent2D extent,
     uint32_t vertex_count)
 {
     const VkCommandBufferBeginInfo begin = {
@@ -28,7 +30,8 @@ bool frame_pacer_hud_record(
     VkImageMemoryBarrier to_color = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
         .srcAccessMask = VK_ACCESS_MEMORY_READ_BIT,
-        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+                         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
         .oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
         .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
@@ -54,17 +57,24 @@ bool frame_pacer_hud_record(
 
     if (!valid(p) || !command || !image || !framebuffer || !pass || !pipeline ||
         !pipeline->pipeline || !pipeline->layout || !vertices ||
-        !vertices->buffer || !extent.width || !extent.height || !vertex_count)
+        !vertices->buffer || !texture || !texture->descriptor ||
+        !texture->atlas || !commands || !extent.width || !extent.height ||
+        !vertex_count)
         return false;
     if (p->reset_command_buffer(command, 0) != VK_SUCCESS ||
         p->begin_command_buffer(command, &begin) != VK_SUCCESS)
         return false;
+    frame_pacer_hud_record_texture_upload(texture, commands, command);
     p->pipeline_barrier(command, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, 0,
                         0, 0, 1, &to_color);
     p->begin_render_pass(command, &render, VK_SUBPASS_CONTENTS_INLINE);
     p->bind_pipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
                      pipeline->pipeline);
+    ((PFN_vkCmdBindDescriptorSets)
+         commands->functions[FRAME_PACER_HUD_COMMAND_BIND_DESCRIPTOR_SETS])(
+        command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->layout, 0, 1,
+        &texture->descriptor, 0, NULL);
     p->set_viewport(command, 0, 1, &viewport);
     p->set_scissor(command, 0, 1, &scissor);
     p->push_constants(command, pipeline->layout, VK_SHADER_STAGE_VERTEX_BIT, 0,
@@ -79,5 +89,8 @@ bool frame_pacer_hud_record(
     p->pipeline_barrier(command, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
                         VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, 0, 0, 0, 1,
                         &to_present);
-    return p->end_command_buffer(command) == VK_SUCCESS;
+    if (p->end_command_buffer(command) != VK_SUCCESS)
+        return false;
+    texture->uploaded = true;
+    return true;
 }

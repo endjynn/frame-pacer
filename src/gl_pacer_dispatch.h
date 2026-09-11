@@ -31,6 +31,14 @@ typedef void (*frame_pacer_gl_blend_equation_separate_fn)(GLenum, GLenum);
 typedef GLboolean (*frame_pacer_gl_is_enabled_fn)(GLenum);
 typedef void (*frame_pacer_gl_active_texture_fn)(GLenum);
 typedef void (*frame_pacer_gl_bind_texture_fn)(GLenum, GLuint);
+typedef void (*frame_pacer_gl_gen_textures_fn)(GLsizei, GLuint *);
+typedef void (*frame_pacer_gl_delete_textures_fn)(GLsizei, const GLuint *);
+typedef void (*frame_pacer_gl_pixel_store_fn)(GLenum, GLint);
+typedef void (*frame_pacer_gl_tex_parameter_fn)(GLenum, GLenum, GLint);
+typedef void (*frame_pacer_gl_tex_image_fn)(GLenum, GLint, GLint, GLsizei,
+                                            GLsizei, GLint, GLenum, GLenum,
+                                            const void *);
+typedef void (*frame_pacer_gl_get_tex_level_fn)(GLenum, GLint, GLenum, GLint *);
 typedef void (*frame_pacer_gl_bind_sampler_fn)(GLuint, GLuint);
 typedef void (*frame_pacer_gl_bind_framebuffer_fn)(GLenum, GLuint);
 typedef void (*frame_pacer_gl_viewport_fn)(GLint, GLint, GLsizei, GLsizei);
@@ -99,6 +107,12 @@ struct frame_pacer_gl_dispatch {
     frame_pacer_gl_is_enabled_fn gl_is_enabled;
     frame_pacer_gl_active_texture_fn gl_active_texture;
     frame_pacer_gl_bind_texture_fn gl_bind_texture;
+    frame_pacer_gl_gen_textures_fn gl_gen_textures;
+    frame_pacer_gl_delete_textures_fn gl_delete_textures;
+    frame_pacer_gl_pixel_store_fn gl_pixel_store;
+    frame_pacer_gl_tex_parameter_fn gl_tex_parameter;
+    frame_pacer_gl_tex_image_fn gl_tex_image;
+    frame_pacer_gl_get_tex_level_fn gl_get_tex_level;
     frame_pacer_gl_bind_sampler_fn gl_bind_sampler;
     frame_pacer_gl_bind_framebuffer_fn gl_bind_framebuffer;
     frame_pacer_gl_viewport_fn gl_viewport;

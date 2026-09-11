@@ -23,6 +23,7 @@ struct frame_pacer_vulkan_hud_swapchain {
     VkFormat format;
     struct frame_pacer_hud_draw_resources draw_resources;
     struct frame_pacer_hud_pipeline pipeline;
+    struct frame_pacer_hud_texture texture;
     struct frame_pacer_hud_vertex_buffer vertex_buffer;
     struct frame_pacer_hud_vertices vertices;
     bool draw_setup_attempted;
@@ -89,6 +90,8 @@ static void destroy_swapchain(struct frame_pacer_vulkan_hud_swapchain *item)
         return;
     frame_pacer_hud_destroy_pipeline(
         &item->pipeline, &item->device->hud.pipeline, item->device->handle, 0);
+    frame_pacer_hud_destroy_texture(&item->texture, &item->device->hud.commands,
+                                    item->device->handle);
     frame_pacer_hud_destroy_vertex_buffer(&item->vertex_buffer,
                                           &item->device->hud.vertex_buffer,
                                           item->device->handle, 0);
@@ -193,9 +196,19 @@ void frame_pacer_vulkan_hud_create_draw_resources(
             "frame-pacer: HUD draw resources unavailable swapchain=%" PRIx64
             "; fail-open\n",
             (uint64_t)item->handle);
+    } else if (!item->device->hud.has_memory_properties ||
+               !frame_pacer_hud_create_texture(
+                   &item->texture, &item->device->hud.commands,
+                   item->device->handle, &item->device->hud.memory_properties,
+                   frame_pacer_font_atlas_for_extent(item->extent.width,
+                                                     item->extent.height))) {
+        hud->log("frame-pacer: HUD atlas unavailable swapchain=%" PRIx64
+                 "; fail-open\n",
+                 (uint64_t)item->handle);
     } else if (!frame_pacer_hud_create_pipeline(
                    &item->pipeline, &item->device->hud.pipeline,
                    item->device->handle, item->draw_resources.render_pass,
+                   item->texture.layout,
                    (const uint32_t *)build_shaders_hud_vert_spv,
                    sizeof(build_shaders_hud_vert_spv),
                    (const uint32_t *)build_shaders_hud_frag_spv,
@@ -249,7 +262,8 @@ static bool record_overlay(void *context, uint32_t image_index)
         item->image_views.images[image_index],
         item->draw_resources.framebuffers[image_index],
         item->draw_resources.render_pass, &item->pipeline, &item->vertex_buffer,
-        item->extent, item->vertices.count);
+        &item->texture, &item->device->hud.commands, item->extent,
+        item->vertices.count);
 }
 
 const VkPresentInfoKHR *frame_pacer_vulkan_hud_prepare_present(

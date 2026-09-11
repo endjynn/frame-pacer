@@ -3,6 +3,16 @@
 The frame-pacer HUD appears in the top-left corner and scales automatically
 with the game's rendering resolution.
 
+Text uses embedded JetBrains Mono Medium glyphs, antialiased at their native
+pixel size. No font installation is needed. Size follows output height, with
+a preferred minimum of 14 pixels. The compact background fits the visible text
+with equal padding on all four sides, preserving fixed character spacing and
+line spacing. Very narrow windows use smaller native
+sizes; the HUD is omitted if even the smallest panel cannot fit.
+
+Scaling the whole game image afterward (for example, stretching a 1440×900
+output to a larger display) also scales the HUD and can still soften it.
+
 ![frame-pacer HUD](images/frame-pacer-hud.png)
 
 ## Reading the HUD

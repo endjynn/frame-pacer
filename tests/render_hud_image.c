@@ -100,49 +100,10 @@ static void encode_png(struct bytes *png, const unsigned char *pixels,
     static const unsigned char signature[8] = {137, 80, 78, 71, 13, 10, 26, 10};
     struct bytes raw = {0}, compressed = {0};
     unsigned char header[13] = {0};
-    unsigned char rgba[256][4], palette[256 * 3], transparency[256];
-    unsigned char *indices, *packed;
-    uint32_t palette_count = 0, row, checksum;
-    unsigned int bit_depth;
-    size_t pixel_count, pixel_index, row_size;
+    uint32_t row, checksum;
     size_t offset;
-
-    if (!width || !height || (size_t)width > SIZE_MAX / height)
+    if (!width || !height || (size_t)width > SIZE_MAX / height / 4)
         exit(1);
-    pixel_count = (size_t)width * height;
-    indices = malloc(pixel_count);
-    if (!indices)
-        exit(1);
-    for (pixel_index = 0; pixel_index < pixel_count; ++pixel_index) {
-        const unsigned char *pixel = pixels + pixel_index * 4;
-        uint32_t palette_index;
-
-        for (palette_index = 0; palette_index < palette_count; ++palette_index)
-            if (!memcmp(rgba[palette_index], pixel, 4))
-                break;
-        if (palette_index == palette_count) {
-            if (palette_count == 256)
-                exit(1);
-            memcpy(rgba[palette_count], pixel, 4);
-            palette[palette_count * 3] = pixel[0];
-            palette[palette_count * 3 + 1] = pixel[1];
-            palette[palette_count * 3 + 2] = pixel[2];
-            transparency[palette_count] = pixel[3];
-            ++palette_count;
-        }
-        indices[pixel_index] = (unsigned char)palette_index;
-    }
-    bit_depth = palette_count <= 2    ? 1
-                : palette_count <= 4  ? 2
-                : palette_count <= 16 ? 4
-                                      : 8;
-    if ((size_t)width > (SIZE_MAX - 7) / bit_depth)
-        exit(1);
-    row_size = ((size_t)width * bit_depth + 7) / 8;
-    packed = calloc(row_size, 1);
-    if (!packed)
-        exit(1);
-
     append(png, signature, sizeof(signature));
     header[0] = (unsigned char)(width >> 24);
     header[1] = (unsigned char)(width >> 16);
@@ -152,25 +113,13 @@ static void encode_png(struct bytes *png, const unsigned char *pixels,
     header[5] = (unsigned char)(height >> 16);
     header[6] = (unsigned char)(height >> 8);
     header[7] = (unsigned char)height;
-    header[8] = (unsigned char)bit_depth;
-    header[9] = 3;
+    header[8] = 8;
+    header[9] = 6;
     chunk(png, "IHDR", header, sizeof(header));
-    chunk(png, "PLTE", palette, (size_t)palette_count * 3);
-    chunk(png, "tRNS", transparency, palette_count);
     for (row = 0; row < height; ++row) {
         const unsigned char filter = 0;
-        uint32_t column;
-
-        memset(packed, 0, row_size);
-        for (column = 0; column < width; ++column) {
-            size_t bit = (size_t)column * bit_depth;
-            unsigned int shift = 8U - bit_depth - (unsigned int)(bit % 8);
-
-            packed[bit / 8] |=
-                (unsigned char)(indices[(size_t)row * width + column] << shift);
-        }
         append(&raw, &filter, 1);
-        append(&raw, packed, row_size);
+        append(&raw, pixels + (size_t)row * width * 4, (size_t)width * 4);
     }
     {
         const unsigned char zlib_header[2] = {0x78, 0x01};
@@ -195,8 +144,6 @@ static void encode_png(struct bytes *png, const unsigned char *pixels,
     append_u32(&compressed, checksum);
     chunk(png, "IDAT", compressed.data, compressed.size);
     chunk(png, "IEND", 0, 0);
-    free(packed);
-    free(indices);
     free(compressed.data);
     free(raw.data);
 }
@@ -212,8 +159,8 @@ static unsigned char channel(float value)
 
 int main(int argc, char **argv)
 {
-    const uint32_t width = FRAME_PACER_HUD_REFERENCE_WIDTH;
-    const uint32_t height = FRAME_PACER_HUD_REFERENCE_HEIGHT;
+    const struct frame_pacer_font_atlas *atlas;
+    uint32_t width, height;
     struct frame_pacer_metrics_snapshot metrics = {
         .available = FRAME_PACER_METRIC_GPU_USE | FRAME_PACER_METRIC_GPU_TEMP |
                      FRAME_PACER_METRIC_CPU_USE | FRAME_PACER_METRIC_CPU_TEMP |
@@ -227,20 +174,25 @@ int main(int argc, char **argv)
     struct frame_pacer_hud_text text;
     struct frame_pacer_hud_vertices *vertices;
     struct bytes png = {0};
-    unsigned char *pixels;
+    unsigned char *pixels = NULL;
     FILE *file;
     uint32_t index;
     int result = 1;
 
     if (argc != 2)
         return 64;
-    pixels = calloc((size_t)width * height, 4);
     vertices = calloc(1, sizeof(*vertices));
-    if (!pixels || !vertices)
+    if (!vertices)
         goto cleanup;
     frame_pacer_hud_text_format(&text, &metrics, true, 999, 999, true, true,
                                 50);
-    if (!frame_pacer_hud_vertices_build(vertices, &text))
+    if (!frame_pacer_hud_vertices_build_for_extent(vertices, &text, 2560, 1600))
+        goto cleanup;
+    atlas = vertices->atlas;
+    width = (uint32_t)vertices->data[1].position[0];
+    height = (uint32_t)vertices->data[2].position[1];
+    pixels = calloc((size_t)width * height, 4);
+    if (!pixels)
         goto cleanup;
     for (index = 0; index < vertices->count; index += 6) {
         const struct frame_pacer_hud_vertex *quad = &vertices->data[index];
@@ -260,9 +212,22 @@ int main(int argc, char **argv)
             for (x = x0; x < x1; ++x) {
                 unsigned char *pixel = &pixels[((size_t)y * width + x) * 4];
 
-                pixel[0] = channel(quad[0].color[0]);
-                pixel[1] = channel(quad[0].color[1]);
-                pixel[2] = channel(quad[0].color[2]);
+                float coverage = 1.0f;
+                if (quad[0].uv[0] >= 0) {
+                    unsigned int atlas_x =
+                        (unsigned int)(quad[0].uv[0] * atlas->width + 0.5f) +
+                        x - x0;
+                    unsigned int atlas_y =
+                        (unsigned int)(quad[0].uv[1] * atlas->height + 0.5f) +
+                        y - y0;
+                    coverage = frame_pacer_font_atlas_pixels(
+                                   atlas)[atlas_y * atlas->width + atlas_x] /
+                               255.0f;
+                }
+                for (unsigned int component = 0; component < 3; ++component)
+                    pixel[component] =
+                        channel(quad[0].color[component] * coverage +
+                                pixel[component] / 255.0f * (1.0f - coverage));
                 pixel[3] = 255;
             }
     }

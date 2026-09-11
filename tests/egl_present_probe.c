@@ -3,7 +3,7 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 
-#include "hud_vertices.h"
+#include "present_extent.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -71,9 +71,9 @@ int main(void)
         };
 
         window = XCreateWindow(x_display, RootWindow(x_display, visual->screen),
-                               0, 0, FRAME_PACER_HUD_REFERENCE_WIDTH + 32U,
-                               FRAME_PACER_HUD_REFERENCE_HEIGHT + 32U, 0,
-                               visual->depth, InputOutput, visual->visual,
+                               0, 0, PRESENT_CONTENT_WIDTH + 32U,
+                               PRESENT_CONTENT_HEIGHT + 32U, 0, visual->depth,
+                               InputOutput, visual->visual,
                                CWColormap | CWEventMask, &attributes);
     }
     if (!window)
@@ -90,8 +90,8 @@ int main(void)
     }
     if (!eglQuerySurface(display, surface, EGL_WIDTH, &surface_width) ||
         !eglQuerySurface(display, surface, EGL_HEIGHT, &surface_height) ||
-        surface_width < (EGLint)FRAME_PACER_HUD_REFERENCE_WIDTH ||
-        surface_height < (EGLint)FRAME_PACER_HUD_REFERENCE_HEIGHT) {
+        surface_width < (EGLint)PRESENT_CONTENT_WIDTH ||
+        surface_height < (EGLint)PRESENT_CONTENT_HEIGHT) {
         fputs("EGL surface cannot contain the complete HUD\n", stderr);
         goto cleanup;
     }

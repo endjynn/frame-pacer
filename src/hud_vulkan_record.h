@@ -5,6 +5,7 @@
 #include "hud_vulkan_pipeline.h"
 #include "hud_vulkan_resources.h"
 #include "hud_vulkan_vertex_buffer.h"
+#include "hud_vulkan_texture.h"
 #include <stdbool.h>
 
 struct frame_pacer_hud_record_provider {
@@ -27,6 +28,8 @@ bool frame_pacer_hud_record(struct frame_pacer_hud_record_provider const *,
                             VkRenderPass,
                             const struct frame_pacer_hud_pipeline *,
                             const struct frame_pacer_hud_vertex_buffer *,
-                            VkExtent2D, uint32_t vertex_count);
+                            struct frame_pacer_hud_texture *,
+                            const struct frame_pacer_hud_commands *, VkExtent2D,
+                            uint32_t vertex_count);
 
 #endif

@@ -45,6 +45,7 @@ rm -f -- \
     "$runtime_dir/i386/libVkLayer_frame_pacer.so" \
     "$runtime_dir/frame-pacer-thread-cpu-controller" \
     "$runtime_dir/VERSION" \
+    "$runtime_dir/LICENSE-JetBrainsMono.txt" \
     "$runtime_dir/lib/libframe_pacer_gl.so" \
     "$runtime_dir/lib/libframe_pacer_gl_shim.so" \
     "$runtime_dir/lib32/libframe_pacer_gl.so" \

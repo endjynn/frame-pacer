@@ -100,6 +100,16 @@ Additional checks are available when relevant:
 | `make run-thread-cpu-quota-controller-integration` | Exercise live CPU-limit changes and cleanup. |
 | `make run-thread-cpu-quota-controller-integration-i386` | Exercise the same lifecycle from an i386 client. |
 | `make docs-hud-image` | Regenerate the documented HUD image. |
+| `make check-font-assets` | Verify pinned font provenance and generated atlas integrity. |
+| `make check-gl-hud-pixels` | Compare OpenGL HUD output with reference pixels on both architectures. |
+| `make check-vulkan-hud-pixels` | Compare Vulkan HUD output, cached uploads, and presentation formats on both architectures. |
+
+The README and HUD guide share `docs/images/frame-pacer-hud.png`. Its generator
+uses the runtime layout at 2560×1600, including the selected font atlas and exact
+panel bounds. Regenerate it after font, sizing, padding, or color changes, then
+run `make check-hud-image`. See the [font asset guide](../assets/fonts/hud/README.md)
+for the optional offline generation workflow and the
+[HUD benchmark report](benchmarks/hud-font/README.md) for performance evidence.
 
 Analyzer, sanitizer, TSan, and coverage targets replace `build/` to avoid
 mixing incompatible instrumentation. Live presentation and controller probes

@@ -12,7 +12,7 @@ TARGETS = ["check", "benchmark-performance", "vulkan-present-probe",
            "glx-present-probe", "egl-present-probe", "metrics-probe", "pci-probe",
            "thread-cpu-quota-probe", "thread-cpu-quota-controller-integration",
            "thread-cpu-quota-controller-integration-i386", "winepath-probe",
-           "dxgi-forward-probe"]
+           "dxgi-forward-probe", "hud-benchmark-build", "check-gl-hud-pixels", "check-vulkan-hud-pixels"]
 
 
 def commands(text):
@@ -30,7 +30,7 @@ def commands(text):
                 skip = False
             elif arg == "-o":
                 skip = True
-            elif arg in files or arg in {"-shared", "-pie", "-municode"}:
+            elif arg in files or arg.endswith((".S", ".s")) or arg in {"-shared", "-pie", "-municode"}:
                 continue
             elif arg.startswith(("-Wl,", "-l", "-L")):
                 continue

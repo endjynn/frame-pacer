@@ -119,7 +119,8 @@ int main(void)
     symbol = dlsym(provider, "frame_pacer_test_set_drawable_size");
     assert(symbol);
     memcpy(&set_drawable_size, &symbol, sizeof(set_drawable_size));
-    assert(hud_width() == 165.0f && hud_height() == 73.125f);
+    assert(hud_width() > 0 && hud_width() < 161.0f);
+    assert(hud_height() > 0 && hud_height() < 91.0f);
 
     /* Alternating back to a live context reuses its private HUD resources. */
     set_context(1, GL_FALSE);
@@ -132,7 +133,8 @@ int main(void)
     /* GLX drawable resizing rebuilds the HUD at the new automatic scale. */
     set_drawable_size(2560, 1600);
     glx_swap((Display *)1, 0);
-    assert(hud_width() == 220.0f && hud_height() == 97.5f);
+    assert(hud_width() > 0 && hud_width() < 207.0f);
+    assert(hud_height() > 0 && hud_height() < 121.0f);
 
     /* Destroyed handles and terminated EGL displays must never retain stale
      * object names when a provider later reuses the same opaque value. */

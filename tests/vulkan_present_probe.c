@@ -1,9 +1,11 @@
+#define _POSIX_C_SOURCE 200809L
 #define VK_USE_PLATFORM_XLIB_KHR
 #include <vulkan/vulkan.h>
 
 #include <X11/Xlib.h>
 
-#include "hud_vertices.h"
+#include "present_extent.h"
+#include "present_benchmark.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -15,8 +17,63 @@ static int fail(const char *operation, VkResult result)
     return 1;
 }
 
+static VkResult clear_image(VkCommandBuffer command, VkImage image,
+                            VkQueue queue, VkSemaphore acquired,
+                            VkSemaphore ready)
+{
+    VkResult result = vkResetCommandBuffer(command, 0);
+    if (result != VK_SUCCESS)
+        return result;
+    const VkCommandBufferBeginInfo begin = {
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+    result = vkBeginCommandBuffer(command, &begin);
+    if (result != VK_SUCCESS)
+        return result;
+    VkImageMemoryBarrier barrier = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                             .levelCount = 1,
+                             .layerCount = 1}};
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1,
+                         &barrier);
+    const VkClearColorValue color = {.float32 = {0.1f, 0.2f, 0.3f, 1.0f}};
+    vkCmdClearColorImage(command, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                         &color, 1, &barrier.subresourceRange);
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = 0;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, NULL, 0,
+                         NULL, 1, &barrier);
+    result = vkEndCommandBuffer(command);
+    if (result != VK_SUCCESS)
+        return result;
+    const VkPipelineStageFlags stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    const VkSubmitInfo submit = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                                 .waitSemaphoreCount = 1,
+                                 .pWaitSemaphores = &acquired,
+                                 .pWaitDstStageMask = &stage,
+                                 .commandBufferCount = 1,
+                                 .pCommandBuffers = &command,
+                                 .signalSemaphoreCount = 1,
+                                 .pSignalSemaphores = &ready};
+    return vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE);
+}
+
 int main(void)
 {
+    struct present_benchmark benchmark;
+    benchmark_init(&benchmark, PRESENT_CONTENT_WIDTH + 32U,
+                   PRESENT_CONTENT_HEIGHT + 32U);
     const char *instance_extensions[] = {
         VK_KHR_SURFACE_EXTENSION_NAME,
         VK_KHR_XLIB_SURFACE_EXTENSION_NAME,
@@ -39,6 +96,10 @@ int main(void)
     VkDevice device = VK_NULL_HANDLE;
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
     VkSemaphore acquired = VK_NULL_HANDLE;
+    VkSemaphore ready = VK_NULL_HANDLE;
+    VkCommandPool command_pool = VK_NULL_HANDLE;
+    VkCommandBuffer command = VK_NULL_HANDLE;
+    VkImage *images = NULL;
     VkQueue queue = VK_NULL_HANDLE;
     Display *display = 0;
     Window window = 0;
@@ -53,18 +114,20 @@ int main(void)
     VkCompositeAlphaFlagBitsKHR composite_alpha =
         VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     uint32_t frame;
+    int resizing = 0;
 
     display = XOpenDisplay(0);
     if (!display) {
         fputs("X11 display unavailable\n", stderr);
         return 77;
     }
-    window =
-        XCreateSimpleWindow(display, DefaultRootWindow(display), 0, 0,
-                            FRAME_PACER_HUD_REFERENCE_WIDTH + 32U,
-                            FRAME_PACER_HUD_REFERENCE_HEIGHT + 32U, 0, 0, 0);
+    window = XCreateSimpleWindow(display, DefaultRootWindow(display), 0, 0,
+                                 benchmark.width, benchmark.height, 0, 0, 0);
     if (!window)
         goto cleanup;
+    XSetWindowAttributes window_settings = {.override_redirect = True};
+    XChangeWindowAttributes(display, window, CWOverrideRedirect,
+                            &window_settings);
     XMapWindow(display, window);
     XSync(display, False);
 
@@ -161,6 +224,7 @@ int main(void)
         }
     }
     vkGetDeviceQueue(device, queue_family, 0, &queue);
+resize_setup:
     result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical, surface,
                                                        &capabilities);
     if (result != VK_SUCCESS) {
@@ -183,12 +247,27 @@ int main(void)
         goto cleanup;
     }
     extent = capabilities.currentExtent;
-    if (extent.width == UINT32_MAX) {
-        extent.width = FRAME_PACER_HUD_REFERENCE_WIDTH + 32U;
-        extent.height = FRAME_PACER_HUD_REFERENCE_HEIGHT + 32U;
+    if (getenv("FRAME_PACER_BENCH_FRAMES")) {
+        VkPhysicalDeviceProperties properties;
+        vkGetPhysicalDeviceProperties(physical, &properties);
+        fprintf(stderr,
+                "vk_device=%s\nvk_driver_version=%u\nvk_device_type=%u\n",
+                properties.deviceName, properties.driverVersion,
+                (unsigned int)properties.deviceType);
     }
-    if (extent.width < FRAME_PACER_HUD_REFERENCE_WIDTH ||
-        extent.height < FRAME_PACER_HUD_REFERENCE_HEIGHT) {
+    if (extent.width == UINT32_MAX) {
+        extent.width = benchmark.width;
+        extent.height = benchmark.height;
+    }
+    if (extent.width != benchmark.width || extent.height != benchmark.height ||
+        !(capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT)) {
+        fputs("Vulkan probe requires exact extent and transfer-destination "
+              "images\n",
+              stderr);
+        goto cleanup;
+    }
+    if (extent.width < PRESENT_CONTENT_WIDTH ||
+        extent.height < PRESENT_CONTENT_HEIGHT) {
         fputs("Vulkan swapchain cannot contain the complete HUD\n", stderr);
         goto cleanup;
     }
@@ -200,6 +279,28 @@ int main(void)
     }
     {
         uint32_t image_count = capabilities.minImageCount + 1;
+        VkPresentModeKHR mode = VK_PRESENT_MODE_FIFO_KHR;
+        if (getenv("FRAME_PACER_BENCH_FRAMES")) {
+            uint32_t mode_count = 0;
+            VkPresentModeKHR *modes;
+            if (vkGetPhysicalDeviceSurfacePresentModesKHR(
+                    physical, surface, &mode_count, 0) != VK_SUCCESS)
+                goto cleanup;
+            modes = calloc(mode_count, sizeof(*modes));
+            if (!modes)
+                goto cleanup;
+            result = vkGetPhysicalDeviceSurfacePresentModesKHR(
+                physical, surface, &mode_count, modes);
+            if (result == VK_SUCCESS)
+                for (uint32_t index = 0; index < mode_count; ++index)
+                    if (modes[index] == VK_PRESENT_MODE_IMMEDIATE_KHR)
+                        mode = modes[index];
+            free(modes);
+            if (result != VK_SUCCESS || mode != VK_PRESENT_MODE_IMMEDIATE_KHR) {
+                fputs("Benchmark requires immediate presentation\n", stderr);
+                goto cleanup;
+            }
+        }
         VkSwapchainCreateInfoKHR swapchain_info = {
             .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
             .surface = surface,
@@ -207,11 +308,12 @@ int main(void)
             .imageColorSpace = formats[0].colorSpace,
             .imageExtent = extent,
             .imageArrayLayers = 1,
-            .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+            .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                          VK_IMAGE_USAGE_TRANSFER_DST_BIT,
             .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
             .preTransform = capabilities.currentTransform,
             .compositeAlpha = composite_alpha,
-            .presentMode = VK_PRESENT_MODE_FIFO_KHR,
+            .presentMode = mode,
             .clipped = VK_TRUE,
         };
 
@@ -235,13 +337,43 @@ int main(void)
             exit_code = fail("vkCreateSemaphore", result);
             goto cleanup;
         }
+        result = vkCreateSemaphore(device, &semaphore_info, 0, &ready);
+        if (result != VK_SUCCESS)
+            goto cleanup;
+        const VkCommandPoolCreateInfo pool_info = {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+            .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+            .queueFamilyIndex = queue_family};
+        if (vkCreateCommandPool(device, &pool_info, NULL, &command_pool) !=
+            VK_SUCCESS)
+            goto cleanup;
+        const VkCommandBufferAllocateInfo allocation = {
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool = command_pool,
+            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = 1};
+        if (vkAllocateCommandBuffers(device, &allocation, &command) !=
+            VK_SUCCESS)
+            goto cleanup;
+        uint32_t count = 0;
+        if (vkGetSwapchainImagesKHR(device, swapchain, &count, NULL) !=
+                VK_SUCCESS ||
+            !count)
+            goto cleanup;
+        images = calloc(count, sizeof(*images));
+        if (!images || vkGetSwapchainImagesKHR(device, swapchain, &count,
+                                               images) != VK_SUCCESS)
+            goto cleanup;
     }
-    for (frame = 0; frame < 2; ++frame) {
+    for (frame = benchmark.count; frame < benchmark.frames; ++frame) {
+        if (!resizing)
+            benchmark_begin(&benchmark);
+        resizing = 0;
         uint32_t image_index;
         VkPresentInfoKHR present_info = {
             .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
             .waitSemaphoreCount = 1,
-            .pWaitSemaphores = &acquired,
+            .pWaitSemaphores = &ready,
             .swapchainCount = 1,
             .pSwapchains = &swapchain,
             .pImageIndices = &image_index,
@@ -251,6 +383,12 @@ int main(void)
                                        VK_NULL_HANDLE, &image_index);
         if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
             exit_code = fail("vkAcquireNextImageKHR", result);
+            goto cleanup;
+        }
+        result =
+            clear_image(command, images[image_index], queue, acquired, ready);
+        if (result != VK_SUCCESS) {
+            exit_code = fail("clear_image", result);
             goto cleanup;
         }
         result = vkQueuePresentKHR(queue, &present_info);
@@ -263,7 +401,28 @@ int main(void)
             exit_code = fail("vkQueueWaitIdle", result);
             goto cleanup;
         }
+        benchmark_end(&benchmark);
+        if (benchmark_resize_due(&benchmark)) {
+            benchmark_begin(&benchmark);
+            benchmark_resize(&benchmark);
+            XResizeWindow(display, window, benchmark.width, benchmark.height);
+            XSync(display, False);
+            vkDestroySemaphore(device, acquired, NULL);
+            vkDestroySemaphore(device, ready, NULL);
+            vkDestroyCommandPool(device, command_pool, NULL);
+            vkDestroySwapchainKHR(device, swapchain, NULL);
+            free(images);
+            free(formats);
+            acquired = ready = VK_NULL_HANDLE;
+            command_pool = VK_NULL_HANDLE;
+            swapchain = VK_NULL_HANDLE;
+            images = NULL;
+            formats = NULL;
+            resizing = 1;
+            goto resize_setup;
+        }
     }
+    benchmark_report(&benchmark);
     exit_code = 0;
 
 cleanup:
@@ -271,6 +430,11 @@ cleanup:
         (void)vkDeviceWaitIdle(device);
     if (acquired)
         vkDestroySemaphore(device, acquired, 0);
+    if (ready)
+        vkDestroySemaphore(device, ready, 0);
+    if (command_pool)
+        vkDestroyCommandPool(device, command_pool, 0);
+    free(images);
     if (swapchain)
         vkDestroySwapchainKHR(device, swapchain, 0);
     if (device)

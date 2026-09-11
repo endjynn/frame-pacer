@@ -60,6 +60,12 @@ static bool load_hud_dispatch(struct frame_pacer_gl_dispatch *dispatch,
     LOAD_GL(gl_is_enabled, "glIsEnabled");
     LOAD_GL(gl_active_texture, "glActiveTexture");
     LOAD_GL(gl_bind_texture, "glBindTexture");
+    LOAD_GL(gl_gen_textures, "glGenTextures");
+    LOAD_GL(gl_delete_textures, "glDeleteTextures");
+    LOAD_GL(gl_pixel_store, "glPixelStorei");
+    LOAD_GL(gl_tex_parameter, "glTexParameteri");
+    LOAD_GL(gl_tex_image, "glTexImage2D");
+    LOAD_GL(gl_get_tex_level, "glGetTexLevelParameteriv");
     LOAD_GL(gl_bind_sampler, "glBindSampler");
     LOAD_GL(gl_bind_framebuffer, "glBindFramebuffer");
     LOAD_GL(gl_viewport, "glViewport");
@@ -98,6 +104,9 @@ static bool load_hud_dispatch(struct frame_pacer_gl_dispatch *dispatch,
            dispatch->gl_blend_func_separate &&
            dispatch->gl_blend_equation_separate && dispatch->gl_is_enabled &&
            dispatch->gl_active_texture && dispatch->gl_bind_texture &&
+           dispatch->gl_gen_textures && dispatch->gl_delete_textures &&
+           dispatch->gl_pixel_store && dispatch->gl_tex_parameter &&
+           dispatch->gl_tex_image && dispatch->gl_get_tex_level &&
            dispatch->gl_bind_sampler && dispatch->gl_bind_framebuffer &&
            dispatch->gl_viewport && dispatch->gl_scissor &&
            dispatch->gl_color_mask && dispatch->gl_create_shader &&

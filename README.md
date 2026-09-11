@@ -10,7 +10,7 @@ Works with Vulkan, Proton, GLX, and EGL games.
 > The maintainer reviews the work and remains responsible for every technical
 > decision and release.
 
-![frame-pacer HUD](https://raw.githubusercontent.com/endjynn/frame-pacer/main/docs/images/frame-pacer-hud.png)
+![frame-pacer HUD](docs/images/frame-pacer-hud.png)
 
 ## Install
 

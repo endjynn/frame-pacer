@@ -32,6 +32,8 @@ static VkResult VKAPI_CALL create_layout(VkDevice device,
     (void)device;
     (void)allocator;
     assert(info->pushConstantRangeCount == 1);
+    assert(info->setLayoutCount == 1);
+    assert(info->pSetLayouts[0] == (VkDescriptorSetLayout)(uintptr_t)9);
     *layout = (VkPipelineLayout)(uintptr_t)7;
     return next_result();
 }
@@ -46,6 +48,11 @@ create_pipeline(VkDevice device, VkPipelineCache cache, uint32_t count,
     (void)allocator;
     assert(count == 1);
     assert(info->stageCount == 2);
+    assert(info->pVertexInputState->vertexAttributeDescriptionCount == 3);
+    assert(info->pVertexInputState->pVertexAttributeDescriptions[2].location ==
+           2);
+    assert(info->pVertexInputState->pVertexAttributeDescriptions[2].format ==
+           VK_FORMAT_R32G32_SFLOAT);
     *pipeline = (VkPipeline)(uintptr_t)8;
     return next_result();
 }
@@ -94,17 +101,19 @@ int main(void)
     uint32_t spv = 0;
 
     calls = destroys = fail_at = 0;
-    assert(frame_pacer_hud_create_pipeline(&pipeline, &provider, device,
-                                           render_pass, &spv, sizeof(spv), &spv,
-                                           sizeof(spv)));
+    assert(frame_pacer_hud_create_pipeline(
+        &pipeline, &provider, device, render_pass,
+        (VkDescriptorSetLayout)(uintptr_t)9, &spv, sizeof(spv), &spv,
+        sizeof(spv)));
     frame_pacer_hud_destroy_pipeline(&pipeline, &provider, device, 0);
     assert(destroys == 4);
 
     calls = destroys = 0;
     fail_at = 3;
-    assert(!frame_pacer_hud_create_pipeline(&pipeline, &provider, device,
-                                            render_pass, &spv, sizeof(spv),
-                                            &spv, sizeof(spv)));
+    assert(!frame_pacer_hud_create_pipeline(
+        &pipeline, &provider, device, render_pass,
+        (VkDescriptorSetLayout)(uintptr_t)9, &spv, sizeof(spv), &spv,
+        sizeof(spv)));
     assert(destroys == 3);
     return 0;
 }

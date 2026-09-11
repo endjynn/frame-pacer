@@ -143,6 +143,19 @@ static void VKAPI_CALL push_constants(VkCommandBuffer command,
     ++calls;
 }
 
+static void VKAPI_CALL bind_descriptors(
+    VkCommandBuffer command, VkPipelineBindPoint point, VkPipelineLayout layout,
+    uint32_t first, uint32_t count, const VkDescriptorSet *sets,
+    uint32_t dynamic_count, const uint32_t *offsets)
+{
+    (void)command;
+    (void)offsets;
+    assert(point == VK_PIPELINE_BIND_POINT_GRAPHICS);
+    assert(layout && first == 0 && count == 1 && sets[0]);
+    assert(dynamic_count == 0);
+    ++calls;
+}
+
 static const struct frame_pacer_hud_record_provider provider = {
     .reset_command_buffer = reset_command_buffer,
     .begin_command_buffer = begin_command_buffer,
@@ -172,17 +185,24 @@ int main(void)
     const VkFramebuffer framebuffer = (VkFramebuffer)(uintptr_t)3;
     const VkRenderPass render_pass = (VkRenderPass)(uintptr_t)4;
     const VkExtent2D extent = {1280, 720};
+    struct frame_pacer_hud_texture texture = {
+        .descriptor = (VkDescriptorSet)(uintptr_t)5,
+        .atlas = frame_pacer_font_atlas_at_size(14),
+        .uploaded = true};
+    struct frame_pacer_hud_commands commands = {0};
+    commands.functions[FRAME_PACER_HUD_COMMAND_BIND_DESCRIPTOR_SETS] =
+        (PFN_vkVoidFunction)bind_descriptors;
 
     calls = barriers = draws = 0;
     fail_begin = false;
     assert(frame_pacer_hud_record(&provider, command, image, framebuffer,
-                                  render_pass, &pipeline, &vertices, extent,
-                                  6));
+                                  render_pass, &pipeline, &vertices, &texture,
+                                  &commands, extent, 6));
     assert(barriers == 2 && draws == 1);
 
     fail_begin = true;
     assert(!frame_pacer_hud_record(&provider, command, image, framebuffer,
-                                   render_pass, &pipeline, &vertices, extent,
-                                   6));
+                                   render_pass, &pipeline, &vertices, &texture,
+                                   &commands, extent, 6));
     return 0;
 }

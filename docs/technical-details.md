@@ -90,6 +90,40 @@ deltas; 100% represents one fully used logical core.
 
 ## HUD telemetry
 
+### Font rendering
+
+Both Vulkan and OpenGL use the same embedded JetBrains Mono Medium coverage
+atlases and pixel-aligned layout. The font is rasterized offline, not while a
+game runs. Normal builds need no font library, font download, or image decoder.
+See [font asset generation](../assets/fonts/hud/README.md) for pinned inputs,
+reproducibility checks, and the separate SIL Open Font License notice.
+
+The selected integer font size is viewport height × 23 / 1600, rounded to the
+nearest integer and normally clamped to 14–60 pixels. If the full four-row
+panel cannot fit, smaller native sizes down to 8 pixels are tried. Character
+advance and line spacing come from the font, with ink overhang included only
+in panel bounds. Toggling the optional row does not change the selected size.
+The background fits the visible glyph bounds with identical padding on all four
+sides: 10 pixels per 24 pixels of font size, scaled proportionally and rounded
+up to whole pixels (10 pixels at the 23-pixel reference size). Font advances
+and baseline spacing are unchanged; unused font ascent/descent space is not
+added to the outer padding. The box can adjust slightly as the displayed ink
+bounds change.
+
+Each visible glyph uses one quad; the maximum four-row HUD needs 318 vertices
+including its background. Glyph coverage is sampled from an R8 texture with
+nearest filtering at native size and blended using straight alpha. The raw
+embedded atlas set contains 1,280,256 bytes; only the selected atlas is uploaded
+per GL context or Vulkan swapchain. Vulkan also retains its upload buffer until
+swapchain teardown. GPU allocation alignment and driver metadata add overhead.
+
+OpenGL restores application state, including pixel-unpack state around uploads.
+Vulkan records its first atlas upload in the overlay submission and reuses the
+sampled image afterward. Resource-creation failure skips the HUD without
+stopping presentation; there is no alternate bitmap rendering path.
+
+### Sampling
+
 CPU use comes from `/proc/stat`, and CPU temperature uses a suitable hwmon
 sensor when available. GPU selection starts with the DRM render device opened
 by the game.

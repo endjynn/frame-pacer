@@ -32,9 +32,9 @@ void frame_pacer_hud_destroy_pipeline(
 bool frame_pacer_hud_create_pipeline(
     struct frame_pacer_hud_pipeline *resources,
     const struct frame_pacer_hud_pipeline_provider *provider, VkDevice device,
-    VkRenderPass render_pass, const uint32_t *vertex_code,
-    size_t vertex_code_size, const uint32_t *fragment_code,
-    size_t fragment_code_size)
+    VkRenderPass render_pass, VkDescriptorSetLayout descriptor_layout,
+    const uint32_t *vertex_code, size_t vertex_code_size,
+    const uint32_t *fragment_code, size_t fragment_code_size)
 {
     const VkPushConstantRange push_constant = {
         .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
@@ -52,6 +52,8 @@ bool frame_pacer_hud_create_pipeline(
     };
     const VkPipelineLayoutCreateInfo layout_info = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 1,
+        .pSetLayouts = &descriptor_layout,
         .pushConstantRangeCount = 1,
         .pPushConstantRanges = &push_constant,
     };
@@ -71,7 +73,7 @@ bool frame_pacer_hud_create_pipeline(
         .stride = sizeof(struct frame_pacer_hud_vertex),
         .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
     };
-    const VkVertexInputAttributeDescription attributes[2] = {
+    const VkVertexInputAttributeDescription attributes[3] = {
         {
             .location = 0,
             .format = VK_FORMAT_R32G32_SFLOAT,
@@ -82,12 +84,17 @@ bool frame_pacer_hud_create_pipeline(
             .format = VK_FORMAT_R32G32B32A32_SFLOAT,
             .offset = offsetof(struct frame_pacer_hud_vertex, color),
         },
+        {
+            .location = 2,
+            .format = VK_FORMAT_R32G32_SFLOAT,
+            .offset = offsetof(struct frame_pacer_hud_vertex, uv),
+        },
     };
     const VkPipelineVertexInputStateCreateInfo vertex_input = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .vertexBindingDescriptionCount = 1,
         .pVertexBindingDescriptions = &binding,
-        .vertexAttributeDescriptionCount = 2,
+        .vertexAttributeDescriptionCount = 3,
         .pVertexAttributeDescriptions = attributes,
     };
     const VkPipelineInputAssemblyStateCreateInfo input_assembly = {
@@ -152,8 +159,8 @@ bool frame_pacer_hud_create_pipeline(
     VkShaderModule fragment_module = VK_NULL_HANDLE;
 
     if (!resources || !valid_provider(provider) || !render_pass ||
-        !vertex_code || !fragment_code || !vertex_code_size ||
-        !fragment_code_size)
+        !descriptor_layout || !vertex_code || !fragment_code ||
+        !vertex_code_size || !fragment_code_size)
         return false;
 
     memset(resources, 0, sizeof(*resources));
