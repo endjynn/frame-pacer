@@ -1,5 +1,23 @@
 # Development
 
+## Evidence-based changes
+
+Do not change code without verifiable evidence supporting the change. In
+particular, do not guess at fixes: reproduce the reported failure or collect
+concrete diagnostic evidence before modifying production behavior.
+
+Record the observations, reproduction conditions, and relevant logs, traces,
+sanitizer findings, or failing tests. Distinguish hypotheses from confirmed
+causes and explain how the evidence supports the proposed fix. A suspicious
+code path or stability improvement with frame-pacer disabled is a lead, not
+proof of a particular root cause.
+
+If the evidence is insufficient, investigate further. Targeted diagnostic
+instrumentation and reproduction tests are appropriate; speculative runtime
+changes are not. Verify a supported fix against the original failure and add
+an automated regression check. Unrelated passing tests are not sufficient to
+declare the issue resolved.
+
 ## Standard checks
 
 ### Formatting and static analysis

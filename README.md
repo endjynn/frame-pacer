@@ -103,8 +103,3 @@ it.
 - [Troubleshooting](https://github.com/endjynn/frame-pacer/blob/main/docs/troubleshooting.md)
 - [Technical details](https://github.com/endjynn/frame-pacer/blob/main/docs/technical-details.md)
 - [Contributing](https://github.com/endjynn/frame-pacer/blob/main/CONTRIBUTING.md)
-
-## Acknowledgements
-
-Frame-pacer is inspired by [MangoHud](https://github.com/flightlessmango/MangoHud)
-and the work of its maintainers and contributors.

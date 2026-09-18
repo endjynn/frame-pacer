@@ -11,6 +11,22 @@ repository.
 - Do not stop at a manual verification gate when further safe, automated work
   can complete the task.
 
+## Evidence before code changes
+
+- Do not make code changes without verifiable evidence supporting the change.
+  Do not guess at fixes or implement speculative hardening as a bug fix.
+- Before changing production code to fix a reported failure, establish the
+  defect with a reproducible failing test, diagnostic trace, sanitizer report,
+  or equivalent concrete evidence. Record how that evidence connects the
+  defect to the proposed change; suspicion and correlation are not proof.
+- Keep observations, hypotheses, and confirmed causes clearly distinguished.
+  When evidence is insufficient, gather diagnostics and build a reproduction
+  instead of changing runtime behavior.
+- Diagnostic instrumentation and reproduction tests must target an observed
+  failure and must not quietly introduce a speculative production fix.
+- Validate fixes against the original failure and add an automated regression
+  check. Passing unrelated tests alone does not prove the reported issue fixed.
+
 ## Refactoring authority
 
 - Full and total destructive refactoring is authorized within this Git
@@ -31,6 +47,15 @@ repository.
   inaccurate documentation affected by the change.
 - Preserve required current functionality through the clean implementation
   and automated tests, not by retaining obsolete code.
+
+## Release notes
+
+- Keep release notes and the version changelog sections used to generate them
+  short and user-focused: a brief overview of notable changes, not an
+  exhaustive inventory.
+- Use a few concise bullets. Omit implementation details, test inventories,
+  and routine development or administrative changes unless they materially
+  affect users.
 
 ## GitHub access
 
