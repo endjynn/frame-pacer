@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.0-beta.5 - 2026-09-18
+
+- Fixed crashes during Alt-Tab and resolution changes in games such as Raft.
+- Improved Vulkan diagnostic logging for troubleshooting display changes.
+
 ## 0.1.0-beta.4 - 2026-09-11
 
 - Sharper, resolution-aware HUD text with a more compact layout and balanced padding.
