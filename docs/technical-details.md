@@ -50,11 +50,13 @@ changes only when a value, source, match, status, or diagnostic changes—not fo
 comments, whitespace, or timestamp-only edits. Vulkan, GLX, and EGL use a
 shared bounded formatter and separate atomic report slots, so an opted-in log
 contains at most one complete effective report per revision and active backend.
-The report is a single write of at most 511 bytes.
+The report payload is at most 511 bytes, with a timestamp/thread prefix added
+by the logger and emitted in the same write when the operating system accepts
+the whole record.
 
 Opting into logging makes a process eligible for a log but does not create one
 during routine layer or interposer initialization. The logger activates when a
-Vulkan swapchain establishes rendering intent, on the first presentation or
+Vulkan swapchain creation is attempted, on the first presentation or
 pacing attempt, or on a directly diagnosable initialization failure. Its
 startup header is written before the descriptor is published, so concurrent
 activation cannot place another event before that header.

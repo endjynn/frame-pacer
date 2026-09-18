@@ -84,7 +84,7 @@ Logs are written to `~/.local/state/frame-pacer`, or below
 `$XDG_STATE_HOME/frame-pacer` when `XDG_STATE_HOME` is set. Remove
 `FRAME_PACER_LOG=1` after collecting the log.
 
-A PID log is created only when that process creates Vulkan presentation
+A PID log is created only when that process attempts to create Vulkan presentation
 resources, attempts frame presentation or pacing, or encounters an actionable
 frame-pacer initialization failure. Wine/Proton helpers that merely load the
 Vulkan layer do not create routine logs. A launcher and its child game can
@@ -104,9 +104,26 @@ configuration is not mode `600`, while `config=malformed`,
 changed the effective configuration.
 
 Logs record important state changes and failures, not every successful frame.
+Each event (except the final log-size-cap notice) includes `wall` (Unix time
+in seconds), `mono` (monotonic seconds),
+and the emitting Linux `tid`. Fractional seconds have nine digits; this is a
+timestamp format, not a guarantee of nanosecond measurement accuracy. Use
+`wall` to correlate Steam/system logs and `mono` for elapsed intervals.
+
+Vulkan logs include swapchain creation attempts and results, requested extent,
+old/new handles, image count, format, presentation mode, and image usage. HUD
+teardown records entry to each resource group and an overall completion marker;
+swapchain and device destruction have begin/end markers. An unmatched begin
+marker identifies the last recorded boundary, not necessarily the cause of
+failure. Handles may be reused, so interpret them within their lifecycle.
+Presentation failures identify the queue, first swapchain/image, wait count,
+and whether the HUD replaced the presentation wait list. These diagnostics do
+not query fence status, add GPU waits, or change resource destruction order.
+
 Vulkan submit fallback is reported when it starts and ends, while repeated
 identical presentation failures are reported once until the result changes.
-The final shutdown line reports the number of presentations or swaps.
+The final shutdown line reports the number of presentation calls or swaps;
+it is a library-destructor marker, not proof of a successful game shutdown.
 
 Effective-configuration reports deliberately omit configuration paths, home
 directories, command lines, and process ancestry. Other diagnostic messages

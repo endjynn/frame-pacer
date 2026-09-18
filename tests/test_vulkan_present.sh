@@ -39,6 +39,7 @@ run_probe() {
     grep -q 'HUD image resources ready' "$log"
     grep -q 'HUD command resources ready' "$log"
     grep -q 'HUD overlay submitted' "$log"
+    python3 tests/check_vulkan_lifecycle_log.py "$log"
     grep -q 'shutdown presents=2' "$log"
     if grep -Eq ' first=| now=| deadline=| eintr=| cap=|present result=|fallback count=' "$log"; then
         echo 'Vulkan log contains routine per-frame output' >&2
@@ -48,4 +49,19 @@ run_probe() {
 
 run_probe x86_64 "$root/build/vulkan-present-probe"
 run_probe i386 "$root/build/vulkan-present-probe-i386"
+for architecture in x86_64 i386; do
+    executable="$root/build/vulkan-present-probe"
+    if [ "$architecture" = i386 ]; then
+        executable="$executable-i386"
+    fi
+    overlap_state="$state/overlap-$architecture"
+    mkdir -p "$overlap_state"
+    XDG_CONFIG_HOME="$state/config" XDG_STATE_HOME="$overlap_state" \
+        FRAME_PACER_LOG=1 FRAME_PACER_TEST_OVERLAP=1 \
+        VK_LAYER_PATH="$root/build/$architecture/layer" \
+        VK_INSTANCE_LAYERS=VK_LAYER_ENDJYNN_frame_pacer "$executable"
+    log=$(find "$overlap_state/frame-pacer" -type f -name 'frame-pacer-[0-9]*.log')
+    python3 tests/check_vulkan_overlap_log.py "$log"
+    grep -q 'shutdown presents=10 ' "$log"
+done
 echo 'Vulkan presentation probes passed for x86_64 and i386'

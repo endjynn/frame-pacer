@@ -281,7 +281,7 @@ build/test_effective_config_report: tests/test_effective_config_report.c src/eff
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_effective_config_report.c src/effective_config_report.c src/pacer_limit.c -pthread
 build/test_log_retention: tests/test_log_retention.c $(LOG_RETENTION_SRC) src/log_retention.h $(STATE_DIRECTORY_SRC) src/state_directory.h
 	mkdir -p $(@D)
-	$(CC) $(BUILD_CFLAGS) -DFRAME_PACER_LOG_LIMIT=64U -Isrc -o $@ tests/test_log_retention.c $(LOG_RETENTION_SRC) $(STATE_DIRECTORY_SRC) -pthread
+	$(CC) $(BUILD_CFLAGS) -DFRAME_PACER_LOG_LIMIT=512U -Isrc -o $@ tests/test_log_retention.c $(LOG_RETENTION_SRC) $(STATE_DIRECTORY_SRC) -pthread
 build/benchmark-pacer-limit: tests/benchmark_pacer_limit.c src/pacer_limit.c src/pacer_limit.h $(LOG_RETENTION_SRC) src/log_retention.h $(STATE_DIRECTORY_SRC) src/state_directory.h
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/benchmark_pacer_limit.c src/pacer_limit.c $(LOG_RETENTION_SRC) $(STATE_DIRECTORY_SRC) -pthread
@@ -412,6 +412,9 @@ build/test_hud_font_atlas: tests/test_hud_font_atlas.c src/hud_font_atlas.c src/
 build/test_hud_vertices: tests/test_hud_vertices.c src/hud_vertices.c src/hud_vertices.h src/hud_font_atlas.c src/hud_font_atlas.h src/hud_font_data.S assets/fonts/hud/hud-atlas.inc assets/fonts/hud/hud-atlas.bin
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_vertices.c src/hud_vertices.c src/hud_font_atlas.c src/hud_font_data.S
+build/test_vulkan_hud_lifetime: tests/test_vulkan_hud_lifetime.c $(filter-out src/frame_pacer_layer.c,$(VULKAN_SRC)) build/hud_spv.h
+	mkdir -p $(@D)
+	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_vulkan_hud_lifetime.c $(filter-out src/frame_pacer_layer.c,$(VULKAN_SRC)) -ldl -pthread
 build/test_hud_vulkan_resources: tests/test_hud_vulkan_resources.c src/hud_vulkan_resources.c src/hud_vulkan_resources.h
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -Isrc -o $@ tests/test_hud_vulkan_resources.c src/hud_vulkan_resources.c
@@ -517,6 +520,7 @@ UNIT_TESTS := \
 	build/test_hud_font_atlas \
 	build/test_hud_vertices \
 	build/test_hud_vulkan_resources \
+	build/test_vulkan_hud_lifetime \
 	build/test_hud_swapchain_policy \
 	build/test_hud_vulkan_commands \
 	build/test_hud_vulkan_device \

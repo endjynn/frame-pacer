@@ -69,6 +69,77 @@ static VkResult clear_image(VkCommandBuffer command, VkImage image,
     return vkQueueSubmit(queue, 1, &submit, VK_NULL_HANDLE);
 }
 
+/* Keep the primary swapchain alive while repeatedly presenting and destroying
+ * a second surface's swapchain. Queue idle isolates host ownership from GPU
+ * completion concerns; the next primary frame exercises the surviving HUD. */
+static int overlap_probe(Display *display, VkInstance instance, VkDevice device,
+                         VkQueue queue, VkCommandBuffer command,
+                         VkSemaphore acquired, VkSemaphore ready,
+                         VkSwapchainCreateInfoKHR info)
+{
+    Window window = XCreateSimpleWindow(display, DefaultRootWindow(display), 0,
+                                        0, info.imageExtent.width,
+                                        info.imageExtent.height, 0, 0, 0);
+    VkSurfaceKHR surface = VK_NULL_HANDLE;
+    VkSwapchainKHR swapchain = VK_NULL_HANDLE;
+    int status = 1;
+    if (!window)
+        return status;
+    XSetWindowAttributes settings = {.override_redirect = True};
+    XChangeWindowAttributes(display, window, CWOverrideRedirect, &settings);
+    XMapWindow(display, window);
+    XSync(display, False);
+    const VkXlibSurfaceCreateInfoKHR surface_info = {
+        .sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR,
+        .dpy = display,
+        .window = window};
+    if (vkCreateXlibSurfaceKHR(instance, &surface_info, NULL, &surface) !=
+        VK_SUCCESS)
+        goto cleanup;
+    info.surface = surface;
+    for (unsigned int cycle = 0; cycle < 8; ++cycle) {
+        VkImage images[8];
+        uint32_t count = 8, index;
+        if (vkCreateSwapchainKHR(device, &info, NULL, &swapchain) != VK_SUCCESS)
+            goto cleanup;
+        if (vkGetSwapchainImagesKHR(device, swapchain, &count, images) !=
+            VK_SUCCESS)
+            goto cleanup;
+        VkResult result = vkAcquireNextImageKHR(
+            device, swapchain, UINT64_MAX, acquired, VK_NULL_HANDLE, &index);
+        if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+            goto cleanup;
+        if (clear_image(command, images[index], queue, acquired, ready) !=
+            VK_SUCCESS)
+            goto cleanup;
+        const VkPresentInfoKHR present = {
+            .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = &ready,
+            .swapchainCount = 1,
+            .pSwapchains = &swapchain,
+            .pImageIndices = &index};
+        result = vkQueuePresentKHR(queue, &present);
+        if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+            goto cleanup;
+        if (vkQueueWaitIdle(queue) != VK_SUCCESS)
+            goto cleanup;
+        vkDestroySwapchainKHR(device, swapchain, NULL);
+        swapchain = VK_NULL_HANDLE;
+    }
+    status = 0;
+cleanup:
+    (void)vkDeviceWaitIdle(device);
+    if (swapchain)
+        vkDestroySwapchainKHR(device, swapchain, NULL);
+    if (surface)
+        vkDestroySurfaceKHR(instance, surface, NULL);
+    XDestroyWindow(display, window);
+    if (status)
+        fputs("overlapping swapchain probe failed\n", stderr);
+    return status;
+}
+
 int main(void)
 {
     struct present_benchmark benchmark;
@@ -115,6 +186,7 @@ int main(void)
         VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     uint32_t frame;
     int resizing = 0;
+    VkSwapchainCreateInfoKHR overlap_info = {0};
 
     display = XOpenDisplay(0);
     if (!display) {
@@ -321,6 +393,7 @@ resize_setup:
             image_count > capabilities.maxImageCount)
             image_count = capabilities.maxImageCount;
         swapchain_info.minImageCount = image_count;
+        overlap_info = swapchain_info;
         result = vkCreateSwapchainKHR(device, &swapchain_info, 0, &swapchain);
         if (result != VK_SUCCESS) {
             exit_code = fail("vkCreateSwapchainKHR", result);
@@ -402,6 +475,10 @@ resize_setup:
             goto cleanup;
         }
         benchmark_end(&benchmark);
+        if (frame == 0 && getenv("FRAME_PACER_TEST_OVERLAP") &&
+            overlap_probe(display, instance, device, queue, command, acquired,
+                          ready, overlap_info))
+            goto cleanup;
         if (benchmark_resize_due(&benchmark)) {
             benchmark_begin(&benchmark);
             benchmark_resize(&benchmark);

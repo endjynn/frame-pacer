@@ -56,6 +56,7 @@ take_swapchain(struct frame_pacer_vulkan_hud *hud, VkSwapchainKHR swapchain)
             struct frame_pacer_vulkan_hud_swapchain *found = *link;
 
             *link = found->next;
+            found->next = 0;
             return found;
         }
         link = &(*link)->next;
@@ -88,20 +89,42 @@ static void destroy_swapchain(struct frame_pacer_vulkan_hud_swapchain *item)
 {
     if (!item)
         return;
+    item->owner->log("frame-pacer: HUD destroy begin swapchain=%" PRIx64
+                     " extent=%ux%u images=%u submitted=%u disabled=%u\n",
+                     (uint64_t)item->handle, item->extent.width,
+                     item->extent.height, item->image_views.count,
+                     item->submitted, item->disabled);
+    item->owner->log(
+        "frame-pacer: HUD destroy stage=pipeline swapchain=%" PRIx64 "\n",
+        (uint64_t)item->handle);
     frame_pacer_hud_destroy_pipeline(
         &item->pipeline, &item->device->hud.pipeline, item->device->handle, 0);
+    item->owner->log("frame-pacer: HUD destroy stage=texture swapchain=%" PRIx64
+                     "\n",
+                     (uint64_t)item->handle);
     frame_pacer_hud_destroy_texture(&item->texture, &item->device->hud.commands,
                                     item->device->handle);
+    item->owner->log(
+        "frame-pacer: HUD destroy stage=vertex-buffer swapchain=%" PRIx64 "\n",
+        (uint64_t)item->handle);
     frame_pacer_hud_destroy_vertex_buffer(&item->vertex_buffer,
                                           &item->device->hud.vertex_buffer,
                                           item->device->handle, 0);
+    item->owner->log(
+        "frame-pacer: HUD destroy stage=draw-resources swapchain=%" PRIx64 "\n",
+        (uint64_t)item->handle);
     frame_pacer_hud_destroy_draw_resources(&item->draw_resources,
                                            &item->device->hud.draw,
                                            item->device->handle, 0);
+    item->owner->log(
+        "frame-pacer: HUD destroy stage=image-views swapchain=%" PRIx64 "\n",
+        (uint64_t)item->handle);
     frame_pacer_hud_destroy_image_views(&item->image_views,
                                         &item->device->hud.resources,
                                         item->device->handle, 0);
     frame_pacer_fps_destroy(&item->fps);
+    item->owner->log("frame-pacer: HUD destroy end swapchain=%" PRIx64 "\n",
+                     (uint64_t)item->handle);
     free(item);
 }
 
@@ -161,8 +184,9 @@ void frame_pacer_vulkan_hud_create_swapchain_resources(
     hud->swapchains = item;
     frame_pacer_vulkan_registry_unlock(hud->registry);
     hud->log("frame-pacer: HUD image resources ready swapchain=%" PRIx64
-             " images=%u\n",
-             (uint64_t)swapchain, item->image_views.count);
+             " images=%u extent=%ux%u format=%d\n",
+             (uint64_t)swapchain, item->image_views.count, item->extent.width,
+             item->extent.height, item->format);
 }
 
 void frame_pacer_vulkan_hud_create_draw_resources(

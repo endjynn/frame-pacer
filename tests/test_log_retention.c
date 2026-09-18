@@ -4,6 +4,7 @@
 #include <assert.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -41,7 +42,7 @@ static void runtime_log_lifecycle(void)
     struct frame_pacer_runtime_log log =
         FRAME_PACER_RUNTIME_LOG_INITIALIZER(16);
     char directory[] = "/tmp/frame-pacer-runtime-log.XXXXXX";
-    char log_directory[1024], path[1024], text[32];
+    char log_directory[1024], path[1024], text[512] = {0};
     FILE *file;
 
     assert(mkdtemp(directory));
@@ -49,7 +50,8 @@ static void runtime_log_lifecycle(void)
     assert(!setenv("FRAME_PACER_LOG", "1", 1));
     assert(frame_pacer_runtime_log_activate(&log, "frame-pacer-test-", "s\n"));
     runtime_log_write(&log, "payload\n");
-    assert(frame_pacer_runtime_log_bytes(&log) == 2 + 8);
+    size_t bytes = (size_t)frame_pacer_runtime_log_bytes(&log);
+    assert(bytes > 2 + 8 && bytes < sizeof(text));
     frame_pacer_runtime_log_close(&log);
     assert(snprintf(log_directory, sizeof(log_directory), "%s/frame-pacer",
                     directory) > 0);
@@ -57,9 +59,19 @@ static void runtime_log_lifecycle(void)
                     log_directory, (long)getpid()) > 0);
     file = fopen(path, "re");
     assert(file);
-    assert(fread(text, 1, sizeof(text), file) == 2 + 8);
+    assert(fread(text, 1, sizeof(text), file) == bytes);
     assert(!fclose(file));
-    assert(!memcmp(text, "s\npayload\n", 2 + 8));
+    int64_t wall, mono;
+    long wall_ns, mono_ns, tid;
+    int consumed = 0;
+    assert(sscanf(text,
+                  "[wall=%" SCNd64 ".%ld mono=%" SCNd64 ".%ld tid=%ld] %n",
+                  &wall, &wall_ns, &mono, &mono_ns, &tid, &consumed) == 5);
+    assert(wall > 0 && mono > 0 && tid == (long)gettid());
+    assert(wall_ns >= 0 && wall_ns < 1000000000L);
+    assert(mono_ns >= 0 && mono_ns < 1000000000L);
+    assert(!strncmp(text + consumed, "s\n[wall=", 8));
+    assert(strstr(text + consumed, "] payload\n"));
     assert(!unlink(path));
     assert(snprintf(path, sizeof(path), "%s/.frame-pacer-log-retention.lock",
                     log_directory) > 0);
@@ -76,7 +88,7 @@ static void runtime_log_never_exceeds_cap(void)
     struct frame_pacer_runtime_log log =
         FRAME_PACER_RUNTIME_LOG_INITIALIZER(64);
     char directory[] = "/tmp/frame-pacer-runtime-cap.XXXXXX";
-    char log_directory[1024], path[1024], text[80] = {0};
+    char log_directory[1024], path[1024], text[1024] = {0};
     struct stat status;
     FILE *file;
 
@@ -85,23 +97,25 @@ static void runtime_log_never_exceeds_cap(void)
     assert(!setenv("FRAME_PACER_LOG", "1", 1));
     assert(frame_pacer_runtime_log_activate(&log, "frame-pacer-cap-",
                                             "startup\n"));
-    runtime_log_write(&log, "0123456789");
-    runtime_log_write(&log, "abcdefghij");
+    for (unsigned int i = 0; i < 20; ++i)
+        runtime_log_write(&log, "0123456789\n");
     assert(log.capped);
-    assert(frame_pacer_runtime_log_bytes(&log) == 8 + sizeof(cap) - 1);
+    uint64_t bytes = frame_pacer_runtime_log_bytes(&log);
+    assert(bytes <= 512 && bytes >= sizeof(cap) - 1);
     runtime_log_write(&log, "must not be written");
+    assert(frame_pacer_runtime_log_bytes(&log) == bytes);
     frame_pacer_runtime_log_close(&log);
     assert(snprintf(log_directory, sizeof(log_directory), "%s/frame-pacer",
                     directory) > 0);
     assert(snprintf(path, sizeof(path), "%s/frame-pacer-cap-%ld.log",
                     log_directory, (long)getpid()) > 0);
-    assert(!stat(path, &status) && status.st_size <= 64);
+    assert(!stat(path, &status) && status.st_size <= 512);
     file = fopen(path, "re");
     assert(file);
     assert(fread(text, 1, sizeof(text), file) == (size_t)status.st_size);
     assert(!fclose(file));
-    assert(!memcmp(text, "startup\n", 8));
-    assert(!memcmp(text + 8, cap, sizeof(cap) - 1));
+    assert(strstr(text, "] startup\n"));
+    assert(!memcmp(text + bytes - (sizeof(cap) - 1), cap, sizeof(cap) - 1));
     assert(!unlink(path));
     assert(snprintf(path, sizeof(path), "%s/.frame-pacer-log-retention.lock",
                     log_directory) > 0);
@@ -189,7 +203,7 @@ static void concurrent_activation_writes_one_header(void)
         FRAME_PACER_RUNTIME_LOG_INITIALIZER(64);
     struct activation_context context = {.log = &log};
     char directory[] = "/tmp/frame-pacer-concurrent-log.XXXXXX";
-    char log_directory[1024], path[1024], text[64] = {0};
+    char log_directory[1024], path[1024], text[512] = {0};
     pthread_t threads[16];
     FILE *file;
     size_t index;
@@ -211,9 +225,11 @@ static void concurrent_activation_writes_one_header(void)
                     log_directory, (long)getpid()) > 0);
     file = fopen(path, "re");
     assert(file);
-    assert(fread(text, 1, sizeof(text), file) == 16);
+    assert(fread(text, 1, sizeof(text) - 1, file) > 16);
     assert(!fclose(file));
-    assert(!memcmp(text, "startup\npayload\n", 16));
+    char *header = strstr(text, "] startup\n");
+    assert(header && !strstr(header + 1, "] startup\n"));
+    assert(strstr(header, "] payload\n"));
     assert(!unlink(path));
     assert(snprintf(path, sizeof(path), "%s/.frame-pacer-log-retention.lock",
                     log_directory) > 0);

@@ -477,19 +477,33 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateSwapchainKHR(
         log_failure("frame-pacer: create swapchain has no downstream target\n");
         return VK_ERROR_INITIALIZATION_FAILED;
     }
+    /* Capture entry without initializing pacing earlier than before. */
+    init_log();
+    if (info)
+        logmsg("frame-pacer: swapchain create begin device=%p surface=%" PRIx64
+               " old=%" PRIx64 " extent=%ux%u min_images=%u format=%d "
+               "colorspace=%d mode=%d usage=0x%x flags=0x%x\n",
+               (void *)device, (uint64_t)info->surface,
+               (uint64_t)info->oldSwapchain, info->imageExtent.width,
+               info->imageExtent.height, info->minImageCount, info->imageFormat,
+               info->imageColorSpace, info->presentMode, info->imageUsage,
+               info->flags);
     outcome = frame_pacer_hud_create_swapchain(
         item->hud.get_surface_capabilities, create, item->physical_device,
         device, info, allocator, out);
+    logmsg(
+        "frame-pacer: swapchain create end device=%p swapchain=%" PRIx64
+        " result=%d augmented=%u retried=%u\n",
+        (void *)device,
+        (uint64_t)(outcome.result == VK_SUCCESS && out ? *out : VK_NULL_HANDLE),
+        outcome.result, outcome.color_attachment_enabled,
+        outcome.retried_original);
     if (outcome.retried_original)
         logmsg("frame-pacer: HUD augmented swapchain request failed; original "
                "request retried\n");
-    if (outcome.result == VK_SUCCESS && out && *out) {
+    if (outcome.result == VK_SUCCESS && info && out && *out) {
         VkSwapchainCreateInfoKHR effective = *info;
 
-        /* A successfully created swapchain is authoritative rendering intent.
-         * Activate before recording its HUD resources so the retained log has
-         * a complete rendering lifecycle without logging instance-only helpers.
-         */
         activate_presentation_log();
         if (outcome.color_attachment_enabled)
             effective.imageUsage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
@@ -505,6 +519,9 @@ vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain,
     struct frame_pacer_vulkan_device *item;
     struct frame_pacer_vulkan_hud_swapchain *hud;
     PFN_vkDestroySwapchainKHR destroy;
+    logmsg("frame-pacer: swapchain destroy begin device=%p swapchain=%" PRIx64
+           "\n",
+           (void *)device, (uint64_t)swapchain);
     frame_pacer_vulkan_registry_lock(&registry);
     item = frame_pacer_vulkan_registry_find_device(&registry, device);
     destroy = item ? item->destroy_swapchain : 0;
@@ -513,6 +530,9 @@ vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain,
     frame_pacer_vulkan_hud_destroy_swapchain_list(hud);
     if (destroy)
         destroy(device, swapchain, allocator);
+    logmsg("frame-pacer: swapchain destroy end device=%p swapchain=%" PRIx64
+           "\n",
+           (void *)device, (uint64_t)swapchain);
 }
 VKAPI_ATTR void VKAPI_CALL
 vkDestroyDevice(VkDevice device, const VkAllocationCallbacks *allocator)
@@ -520,6 +540,8 @@ vkDestroyDevice(VkDevice device, const VkAllocationCallbacks *allocator)
     struct frame_pacer_vulkan_device *item;
     struct frame_pacer_vulkan_hud_swapchain *hud;
     PFN_vkDestroyDevice destroy;
+
+    logmsg("frame-pacer: device destroy begin device=%p\n", (void *)device);
 
     frame_pacer_vulkan_registry_lock(&registry);
     item = frame_pacer_vulkan_registry_find_device(&registry, device);
@@ -536,6 +558,7 @@ vkDestroyDevice(VkDevice device, const VkAllocationCallbacks *allocator)
     }
     if (destroy)
         destroy(device, allocator);
+    logmsg("frame-pacer: device destroy end device=%p\n", (void *)device);
 }
 static void pace_submit_fallback(VkQueue queue)
 {
@@ -562,7 +585,8 @@ static void pace_submit_fallback(VkQueue queue)
     if (entered) {
         activate_presentation_log();
         logmsg("frame-pacer: Vulkan submit fallback entered; presentation "
-               "quiet\n");
+               "quiet queue=%p submits_since_present=%" PRIu64 "\n",
+               (void *)queue, queue_submits);
     }
     pace();
 }
@@ -624,12 +648,23 @@ VKAPI_ATTR VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue,
         frame_pacer_vulkan_hud_note_present(&vulkan_hud, info, accepted_ns);
         frame_pacer_vulkan_registry_unlock(&registry);
         if (resumed)
-            logmsg("frame-pacer: submit fallback ended; present resumed\n");
+            logmsg("frame-pacer: submit fallback ended; present resumed "
+                   "queue=%p\n",
+                   (void *)queue);
     }
     (void)__atomic_add_fetch(&presents, 1, __ATOMIC_RELAXED);
     if (frame_pacer_runtime_log_active(&runtime_log) &&
         should_log_present_failure(result))
-        logmsg("frame-pacer: present failed result=%d\n", result);
+        logmsg("frame-pacer: present failed result=%d queue=%p swapchains=%u"
+               " first_swapchain=%" PRIx64 " image=%u waits=%u hud=%u\n",
+               result, (void *)queue, info ? info->swapchainCount : 0,
+               (uint64_t)(info && info->swapchainCount && info->pSwapchains
+                              ? info->pSwapchains[0]
+                              : VK_NULL_HANDLE),
+               info && info->swapchainCount && info->pImageIndices
+                   ? info->pImageIndices[0]
+                   : UINT32_MAX,
+               forward ? forward->waitSemaphoreCount : 0, forward != info);
     return result;
 }
 

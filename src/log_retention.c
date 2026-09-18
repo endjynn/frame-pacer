@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <stdbool.h>
 #include <stdarg.h>
@@ -14,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #define FRAME_PACER_LOG_RETENTION 10
@@ -166,6 +168,8 @@ void frame_pacer_log_retention_prune(const char *directory, const char *prefix)
 static void write_locked(struct frame_pacer_runtime_log *log, int fd,
                          char *buffer, size_t bytes)
 {
+    char record[1200];
+    struct timespec wall = {0}, mono = {0};
     static const char cap[] =
         "frame-pacer: log cap reached; pacing continues\n";
     size_t offset = 0;
@@ -175,6 +179,19 @@ static void write_locked(struct frame_pacer_runtime_log *log, int fd,
         log->capped = true;
         return;
     }
+    (void)clock_gettime(CLOCK_REALTIME, &wall);
+    (void)clock_gettime(CLOCK_MONOTONIC, &mono);
+    int prefix =
+        snprintf(record, sizeof(record),
+                 "[wall=%" PRId64 ".%09ld mono=%" PRId64 ".%09ld tid=%ld] ",
+                 (int64_t)wall.tv_sec, wall.tv_nsec, (int64_t)mono.tv_sec,
+                 mono.tv_nsec, (long)gettid());
+    if (prefix < 0 || (size_t)prefix >= sizeof(record) ||
+        bytes > sizeof(record) - (size_t)prefix)
+        return;
+    memcpy(record + prefix, buffer, bytes);
+    bytes += (size_t)prefix;
+    buffer = record;
     remaining = (size_t)(FRAME_PACER_LOG_LIMIT - log->bytes);
     if (bytes > remaining || sizeof(cap) - 1 > remaining - bytes) {
         bytes = sizeof(cap) - 1 < remaining ? sizeof(cap) - 1 : remaining;

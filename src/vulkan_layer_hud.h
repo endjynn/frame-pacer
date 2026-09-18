@@ -50,7 +50,8 @@ frame_pacer_vulkan_hud_note_present(struct frame_pacer_vulkan_hud *hud,
                                     uint64_t accepted_ns);
 /* note_present and take_*_locked require hud->registry->lock.  Destruction is
  * deliberately performed after unlocking so Vulkan callbacks cannot reenter
- * the registry transaction. */
+ * the registry transaction. Single-swapchain extraction returns an isolated
+ * entry; device extraction returns only that device's owned list. */
 FRAME_PACER_VULKAN_INTERNAL struct frame_pacer_vulkan_hud_swapchain *
 frame_pacer_vulkan_hud_take_swapchain_locked(struct frame_pacer_vulkan_hud *hud,
                                              VkSwapchainKHR swapchain);
