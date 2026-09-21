@@ -20,6 +20,26 @@ declare the issue resolved.
 
 ## Standard checks
 
+### Confined NVIDIA telemetry helper
+
+The 32-bit helper probe passed on the host but failed under Ubuntu's installed
+`bwrap` AppArmor profile. Kernel audit events showed anonymous-image execution
+denied at the helper's initial, five-second and thirty-second startup attempts;
+the application continued rendering on NVIDIA. `aa-exec -p bwrap --
+build/hud-nvml-helper-probe-i386 PCI_ADDRESS` reproduced unavailable readings
+without running a game or changing security policy.
+
+On `EACCES` only, helper startup now uses the system x86_64 glibc interpreter
+to load the same sealed image. Normal direct execution remains unchanged.
+Descriptor isolation, filtered preload/audit environment, IPC, bounded retries
+and teardown remain shared between both startup paths. There is no per-frame
+change, helper file installation, background daemon or policy modification.
+
+`tests/test_hud_nvml_helper.sh` runs the real GPU probe and the helper lifecycle
+tests under the existing `bwrap` profile when available, plus normal host and
+Steam Runtime/UMU runtime probes. Unavailable optional confinement is reported
+as a skip, not a pass. No profile is installed or altered by these tests.
+
 ### Shader-worker exclusion regression
 
 Live Steam `fossilize_replay` workers were observed mapping the Vulkan layer

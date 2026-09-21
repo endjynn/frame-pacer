@@ -140,8 +140,8 @@ static bool spawn_helper(pid_t *child, int *client_socket)
     char **environment = 0;
     posix_spawn_file_actions_t actions;
     bool actions_initialized = false;
-    char *arguments[12];
-    int argument_count = 0;
+    char *arguments[13];
+    int argument_count = 1;
 
     *child = -1;
     *client_socket = -1;
@@ -191,8 +191,18 @@ static bool spawn_helper(pid_t *child, int *client_socket)
     arguments[argument_count++] = (char *)FRAME_PACER_TEST_REJECT_FD;
 #endif
     arguments[argument_count] = 0;
-    result = posix_spawn(child, "/proc/self/fd/3", &actions, 0, arguments,
+    result = posix_spawn(child, "/proc/self/fd/3", &actions, 0, arguments + 1,
                          environment);
+    if (result == EACCES) {
+        /* Some AppArmor profiles permit executable mappings but reject exec
+         * of an anonymous memfd. Use the x86_64 glibc interpreter already
+         * required by the embedded helper, retaining the same confinement,
+         * sealed image, descriptor isolation and filtered environment. */
+        arguments[0] = (char *)"/lib64/ld-linux-x86-64.so.2";
+        arguments[1] = (char *)"/proc/self/fd/3";
+        result = posix_spawn(child, arguments[0], &actions, 0, arguments,
+                             environment);
+    }
     if (result) {
         errno = result;
         *child = -1;

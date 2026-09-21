@@ -33,6 +33,15 @@ ls -l ~/.config/frame-pacer/frame-pacer.conf
 
 If the file is invalid or insecure, frame-pacer applies no FPS limit.
 
+## NVIDIA GPU values show `N/A` in a 32-bit application
+
+For NVIDIA on 32-bit applications, telemetry uses a transient 64-bit helper.
+If an AppArmor-confined runtime rejects direct execution of its sealed in-memory
+image, frame-pacer retries through the system's x86_64 glibc loader. This keeps
+the existing confinement and needs no policy changes or installed helper file.
+If the runtime also denies that path or lacks NVIDIA's management library,
+GPU readings remain safely unavailable; do not disable AppArmor to enable them.
+
 ## An AMD GPU value shows `N/A`
 
 GPU telemetry depends on counters and sensors exposed by the kernel driver.

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Fixed missing NVIDIA GPU readings in 32-bit applications under some
+  AppArmor-confined runtimes.
+
 ## 0.1.0-beta.5 - 2026-09-18
 
 - Fixed crashes during Alt-Tab and resolution changes in games such as Raft.

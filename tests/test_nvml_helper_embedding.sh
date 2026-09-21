@@ -4,6 +4,7 @@ set -eu
 helper=build/frame-pacer-nvml-helper
 
 file "$helper" | grep -q 'ELF 64-bit.*x86-64'
+readelf -l "$helper" | grep -Fq '[Requesting program interpreter: /lib64/ld-linux-x86-64.so.2]'
 test "$(stat -c %s "$helper")" -le 65536
 if readelf -S "$helper" | grep -q '\.debug'; then
     echo 'production NVML helper contains debug sections' >&2

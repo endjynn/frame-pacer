@@ -364,7 +364,9 @@ build/hud-nvml-helper-probe-i386: tests/hud_nvml_helper_probe.c src/hud_nvml_cli
 	$(CC) -m32 $(BUILD_CFLAGS) -Isrc -o $@ \
 		tests/hud_nvml_helper_probe.c src/hud_nvml_client.c \
 		src/hud_nvml_protocol.c -pthread
-run-nvml-helper-probe: build/hud-nvml-helper-probe-i386
+run-nvml-helper-probe: build/hud-nvml-helper-probe-i386 \
+	build/test-hud-nvml-client-i386 build/test-hud-nvml-client-retry-i386 \
+	build/test-hud-nvml-client-target-exit-i386
 	sh ./tests/test_hud_nvml_helper.sh
 build/test_hud_metrics: tests/test_hud_metrics.c src/hud_metrics.c src/hud_metrics.h $(NVML_SRC) src/hud_drm_fdinfo.c src/hud_drm_fdinfo.h build/test-nvml.so build/test-nvml-incomplete.so
 	mkdir -p $(@D)

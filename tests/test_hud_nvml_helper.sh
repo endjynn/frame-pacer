@@ -18,8 +18,23 @@ fi
 
 "$probe" "$pci"
 
+# Exercise the real policy that rejects anonymous memfd exec. Do not load or
+# modify a profile; hosts without this optional policy still run the baseline.
+if command -v aa-exec >/dev/null 2>&1 &&
+    aa-exec -p bwrap -- /bin/true 2>/dev/null; then
+    aa-exec -p bwrap -- "$probe" "$pci"
+    for test in build/test-hud-nvml-client-i386 \
+        build/test-hud-nvml-client-retry-i386 \
+        build/test-hud-nvml-client-target-exit-i386; do
+        aa-exec -p bwrap -- "$test"
+    done
+else
+    echo 'NVML helper AppArmor test skipped: bwrap profile unavailable'
+fi
+
 runtime=
 for candidate in \
+    "$HOME/.local/share/umu/steamrt4/_v2-entry-point" \
     "$HOME/.steam/debian-installation/steamapps/common/SteamLinuxRuntime_4/_v2-entry-point" \
     "$HOME/.steam/root/steamapps/common/SteamLinuxRuntime_4/_v2-entry-point"; do
     if test -x "$candidate"; then
@@ -35,7 +50,7 @@ fi
 
 "$runtime" --verb=run "$probe" "$pci"
 
-if pgrep -f '^frame-pacer-nvml-helper\(deleted\)\|^frame-pacer-nvml-helper ' >/dev/null 2>&1; then
+if pgrep -f '^frame-pacer-nvml-helper\(deleted\)\|^frame-pacer-nvml-helper \|^/lib64/ld-linux-x86-64.so.2 /proc/self/fd/3 --pid ' >/dev/null 2>&1; then
     echo 'transient NVML helper remained after probe teardown' >&2
     exit 1
 fi
