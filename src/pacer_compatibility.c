@@ -1,6 +1,15 @@
 #include "pacer_compatibility.h"
 
 #include <strings.h>
+#include <string.h>
+
+bool frame_pacer_compatibility_shader_worker(const char *executable)
+{
+    if (!executable)
+        return false;
+    const char *basename = strrchr(executable, '/');
+    return !strcmp(basename ? basename + 1 : executable, "fossilize_replay");
+}
 
 struct frame_pacer_compatibility_rule {
     const char *executable;

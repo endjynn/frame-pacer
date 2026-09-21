@@ -22,6 +22,7 @@ static unsigned int instance_destroys;
 static unsigned int instance_destroy_lookups;
 static unsigned int device_creates;
 static unsigned int device_destroys;
+static unsigned int memory_queries;
 static const char *missing_gipa;
 static const char *missing_gdpa;
 
@@ -81,6 +82,7 @@ static VKAPI_ATTR void VKAPI_CALL fake_get_memory_properties(
     VkPhysicalDevice physical, VkPhysicalDeviceMemoryProperties *properties)
 {
     assert(physical == fake_physical);
+    ++memory_queries;
     memset(properties, 0, sizeof(*properties));
 }
 
@@ -212,8 +214,48 @@ static VkDeviceCreateInfo device_info(VkLayerDeviceCreateInfo *loader,
     };
 }
 
-int main(void)
+static void shader_worker_passthrough(void)
 {
+    VkLayerInstanceCreateInfo loader;
+    VkLayerInstanceLink link;
+    VkInstanceCreateInfo info = instance_info(&loader, &link);
+    VkInstance instance;
+    VkDevice device;
+    VkLayerDeviceCreateInfo device_loader, data;
+    VkLayerDeviceLink device_link;
+    assert(vkCreateInstance(&info, NULL, &instance) == VK_SUCCESS);
+    VkDeviceCreateInfo create =
+        device_info(&device_loader, &data, &device_link);
+    assert(vkCreateDevice(fake_physical, &create, NULL, &device) == VK_SUCCESS);
+    assert(memory_queries == 0);
+    assert(frame_pacer_layer_test_queue_count() == 0);
+    const char *commands[] = {"vkQueueSubmit",        "vkQueueSubmit2",
+                              "vkQueueSubmit2KHR",    "vkQueuePresentKHR",
+                              "vkCreateSwapchainKHR", "vkDestroySwapchainKHR"};
+    for (size_t i = 0; i < sizeof(commands) / sizeof(commands[0]); ++i) {
+        assert(vkGetInstanceProcAddr(instance, commands[i]) ==
+               fake_gipa(instance, commands[i]));
+        assert(vkGetDeviceProcAddr(device, commands[i]) ==
+               fake_gdpa(device, commands[i]));
+        missing_gipa = commands[i];
+        missing_gdpa = commands[i];
+        assert(vkGetInstanceProcAddr(instance, commands[i]) == NULL);
+        assert(vkGetDeviceProcAddr(device, commands[i]) == NULL);
+        missing_gipa = missing_gdpa = NULL;
+    }
+    vkDestroyDevice(device, NULL);
+    vkDestroyInstance(instance, NULL);
+    assert(device_creates == 1 && device_destroys == 1);
+    assert(instance_creates == 1 && instance_destroys == 1);
+    assert(frame_pacer_layer_test_physical_device_count() == 0);
+}
+
+int main(int argc, char **argv)
+{
+    if (argc == 2 && !strcmp(argv[1], "--shader-worker")) {
+        shader_worker_passthrough();
+        return 0;
+    }
     VkLayerInstanceCreateInfo instance_loader;
     VkLayerInstanceLink instance_link;
     VkLayerDeviceCreateInfo device_loader;

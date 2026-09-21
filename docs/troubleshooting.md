@@ -67,10 +67,11 @@ When logging is disabled, frame-pacer bypasses effective-report collection and
 diagnostic formatting. The report machinery does not take locks or format
 messages on the presentation path.
 
-For Vulkan and Proton games, fully close Steam and run:
+For Vulkan and Proton games, add `FRAME_PACER_LOG=1` before the game's existing
+Steam launch options (preserve any wrappers or other arguments):
 
 ```sh
-FRAME_PACER_LOG=1 ENABLE_FRAME_PACER=1 steam
+FRAME_PACER_LOG=1 %command%
 ```
 
 For a GLX/EGL game, add `FRAME_PACER_LOG=1` before its existing per-game launch
@@ -102,6 +103,40 @@ configuration is not mode `600`, while `config=malformed`,
 `reason=invalid-value`, and `line=17` identify the exact bad line.
 `trigger=reload` means a live edit
 changed the effective configuration.
+
+### Steam shader processing
+
+The Vulkan layer bypasses rendering features when the native executable is
+exactly `fossilize_replay`, Steam's shader-processing worker. It forwards queue
+submission, presentation, and swapchain calls directly to the next layer,
+without initializing FPS pacing, the HUD or telemetry, configuration polling,
+or thread CPU control. This applies even when frame-pacer and logging are
+enabled globally; workers do not create frame-pacer logs.
+
+The loader can still map `libVkLayer_frame_pacer.so` into these workers. Its
+presence in `/proc/PID/maps` is not evidence that pacing is active: only minimal
+instance/device dispatch bookkeeping remains. Recognition uses `/proc/self/exe`,
+not a truncated process name, command-line arguments, or inherited game identity.
+Renamed copies of the worker are not automatically excluded.
+
+This exclusion does not repair shader databases or establish that frame-pacer
+caused Fossilize's `FOZ underflow, file truncated?` warnings. Existing workers
+retain their loaded library; a new worker process is needed to use an update.
+
+For shader-cache comparisons, keep the input databases, GPU/driver and worker
+count identical. Parallel replay can change file ordering, so compare parsed
+record sets (including duplicate counts), not just file hashes. Cache-directory
+restoration alone may not reschedule Steam's processing queue.
+
+On hybrid-GPU desktops, application-menu and autostart launches can handle
+`PrefersNonDefaultGPU` differently. Verify the actual worker GPU rather than
+Steam's startup GPU summary. Where available, `switcherooctl launch` can give
+both desktop entries the same discrete-GPU selection path; keep their commands
+aligned except for autostart's `-silent`. It can fall back if GPU selection is
+unavailable, so verify the result. Close Steam normally before editing its
+configuration, and use the normal shortcuts rather than ad-hoc session overrides.
+
+### Reading lifecycle logs
 
 Logs record important state changes and failures, not every successful frame.
 Each event (except the final log-size-cap notice) includes `wall` (Unix time

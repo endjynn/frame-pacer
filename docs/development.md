@@ -20,6 +20,28 @@ declare the issue resolved.
 
 ## Standard checks
 
+### Shader-worker exclusion regression
+
+Live Steam `fossilize_replay` workers were observed mapping the Vulkan layer
+on 2026-09-18. Before exclusion, the layer initialized HUD device state and
+returned its pacing/HUD wrappers to these processes. A copy of the real layer
+unit test named `fossilize_replay` reproduced this: its no-HUD-memory-query
+assertion failed before the bypass was implemented.
+
+`tests/test_shader_worker.sh` now checks native executable recognition, no HUD
+device queries or queue registration, direct downstream resolution of all
+submit/present/swapchain hooks through both Vulkan resolvers, preservation of
+unsupported-command null results, and balanced lifecycle cleanup. It runs in
+the unit suite, including sanitizer and i386 builds. The ordinary executable
+continues to exercise normal frame-pacer behaviour.
+
+`tests/test_vulkan_shader_worker.sh` additionally executes copied device and
+presentation probes under that native name using real Vulkan, explicit and
+implicit activation, logging enabled, and a configuration requesting HUD,
+FPS and CPU limits. Both architectures must complete without creating
+frame-pacer state files. Normal and overlapping-swapchain presentation probes
+remain enabled to catch regressions in actual game behaviour.
+
 ### Formatting and static analysis
 
 Set up the pinned development tools once (Linux x86_64, glibc 2.28 or newer):

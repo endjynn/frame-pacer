@@ -16,6 +16,7 @@
 #include <vulkan/vulkan.h>
 
 #include <inttypes.h>
+#include <limits.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -39,6 +40,25 @@ static pthread_once_t pacing_clock_once = PTHREAD_ONCE_INIT;
 static pthread_once_t log_once = PTHREAD_ONCE_INIT;
 static pthread_once_t presentation_log_once = PTHREAD_ONCE_INIT;
 static bool pacing_initialized;
+static pthread_once_t process_policy_once = PTHREAD_ONCE_INIT;
+static bool shader_worker;
+
+static void init_process_policy(void)
+{
+    char executable[PATH_MAX];
+    ssize_t length =
+        readlink("/proc/self/exe", executable, sizeof(executable) - 1);
+    if (length <= 0 || (size_t)length >= sizeof(executable) - 1)
+        return;
+    executable[length] = '\0';
+    shader_worker = frame_pacer_compatibility_shader_worker(executable);
+}
+
+static bool bypass_rendering(void)
+{
+    (void)pthread_once(&process_policy_once, init_process_policy);
+    return shader_worker;
+}
 
 static void logmsg(const char *format, ...);
 static void report_write(void *unused, const char *message);
@@ -206,6 +226,8 @@ static void init_log_once(void)
 
 static void init_log(void)
 {
+    if (bypass_rendering())
+        return;
     (void)pthread_once(&log_once, init_log_once);
 }
 
@@ -405,6 +427,14 @@ vkCreateDevice(VkPhysicalDevice physical, const VkDeviceCreateInfo *info,
     }
     item->handle = *device;
     item->gdpa = gdpa;
+    item->destroy_device =
+        (PFN_vkDestroyDevice)gdpa(*device, "vkDestroyDevice");
+    if (bypass_rendering()) {
+        /* Retain only loader dispatch ownership. No HUD, metrics, pacing,
+         * configuration, CPU controller, or queue registration for replay. */
+        frame_pacer_vulkan_registry_add_device(&registry, item, 0);
+        return VK_SUCCESS;
+    }
     item->set_loader_data = data ? data->u.pfnSetDeviceLoaderData : 0;
     item->present = (PFN_vkQueuePresentKHR)gdpa(*device, "vkQueuePresentKHR");
     item->submit = (PFN_vkQueueSubmit)gdpa(*device, "vkQueueSubmit");
@@ -415,8 +445,6 @@ vkCreateDevice(VkPhysicalDevice physical, const VkDeviceCreateInfo *info,
         (PFN_vkCreateSwapchainKHR)gdpa(*device, "vkCreateSwapchainKHR");
     item->destroy_swapchain =
         (PFN_vkDestroySwapchainKHR)gdpa(*device, "vkDestroySwapchainKHR");
-    item->destroy_device =
-        (PFN_vkDestroyDevice)gdpa(*device, "vkDestroyDevice");
     item->physical_device = physical;
     frame_pacer_hud_vulkan_device_init(
         &item->hud, *device, physical, gdpa,
@@ -553,7 +581,8 @@ vkDestroyDevice(VkDevice device, const VkAllocationCallbacks *allocator)
     frame_pacer_vulkan_registry_unlock(&registry);
     frame_pacer_vulkan_hud_destroy_swapchain_list(hud);
     if (item) {
-        frame_pacer_hud_vulkan_device_destroy(&item->hud);
+        if (!bypass_rendering())
+            frame_pacer_hud_vulkan_device_destroy(&item->hud);
         free(item);
     }
     if (destroy)
@@ -738,6 +767,10 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device,
         logmsg("frame-pacer: HUD gdpa vkGetDeviceProcAddr\n");
         return (PFN_vkVoidFunction)vkGetDeviceProcAddr;
     }
+    if (!strcmp(name, "vkDestroyDevice"))
+        return (PFN_vkVoidFunction)vkDestroyDevice;
+    if (bypass_rendering())
+        goto forward;
     if (!strcmp(name, "vkQueuePresentKHR")) {
         logmsg("frame-pacer: HUD gdpa vkQueuePresentKHR\n");
         return (PFN_vkVoidFunction)vkQueuePresentKHR;
@@ -752,9 +785,7 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device,
         return (PFN_vkVoidFunction)vkCreateSwapchainKHR;
     if (!strcmp(name, "vkDestroySwapchainKHR"))
         return (PFN_vkVoidFunction)vkDestroySwapchainKHR;
-    if (!strcmp(name, "vkDestroyDevice"))
-        return (PFN_vkVoidFunction)vkDestroyDevice;
-
+forward:
     frame_pacer_vulkan_registry_lock(&registry);
     item = frame_pacer_vulkan_registry_find_device(&registry, device);
     gdpa = item ? item->gdpa : 0;
@@ -785,6 +816,10 @@ vkGetInstanceProcAddr(VkInstance instance, const char *name)
     }
     if (!strcmp(name, "vkDestroyInstance"))
         return (PFN_vkVoidFunction)vkDestroyInstance;
+    if (!strcmp(name, "vkDestroyDevice"))
+        return (PFN_vkVoidFunction)vkDestroyDevice;
+    if (bypass_rendering())
+        goto forward;
     if (!strcmp(name, "vkQueuePresentKHR")) {
         logmsg("frame-pacer: HUD gipa vkQueuePresentKHR\n");
         return (PFN_vkVoidFunction)vkQueuePresentKHR;
@@ -799,9 +834,7 @@ vkGetInstanceProcAddr(VkInstance instance, const char *name)
         return (PFN_vkVoidFunction)vkCreateSwapchainKHR;
     if (!strcmp(name, "vkDestroySwapchainKHR"))
         return (PFN_vkVoidFunction)vkDestroySwapchainKHR;
-    if (!strcmp(name, "vkDestroyDevice"))
-        return (PFN_vkVoidFunction)vkDestroyDevice;
-
+forward:
     frame_pacer_vulkan_registry_lock(&registry);
     item = frame_pacer_vulkan_registry_find_instance(&registry, instance);
     gipa = item && item->gipa ? item->gipa : registry.fallback_gipa;

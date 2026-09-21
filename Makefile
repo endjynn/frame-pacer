@@ -540,6 +540,7 @@ SHELL_TESTS := $(wildcard tests/*.sh) $(wildcard packaging/*.sh) \
 
 check-unit: $(UNIT_TESTS)
 	@set -e; for test in $(UNIT_TESTS); do ./$$test; done
+	sh tests/test_shader_worker.sh build/test_frame_pacer_layer
 check-unit-i386:
 	@set -e; $(MAKE) clean; trap '$(MAKE) clean' EXIT HUP INT TERM; \
 		$(MAKE) check-unit CC='$(CC) -m32'; \

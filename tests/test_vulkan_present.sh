@@ -49,6 +49,8 @@ run_probe() {
 
 run_probe x86_64 "$root/build/vulkan-present-probe"
 run_probe i386 "$root/build/vulkan-present-probe-i386"
+sh tests/test_vulkan_shader_worker.sh x86_64 "$root/build/vulkan-present-probe"
+sh tests/test_vulkan_shader_worker.sh i386 "$root/build/vulkan-present-probe-i386"
 for architecture in x86_64 i386; do
     executable="$root/build/vulkan-present-probe"
     if [ "$architecture" = i386 ]; then

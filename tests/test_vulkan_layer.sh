@@ -45,6 +45,7 @@ printf 'Vulkan instance lifecycle probe (%s)\n' "$arch"
 run_probe "$instance_probe"
 printf 'Vulkan device lifecycle probe (%s)\n' "$arch"
 run_probe "$device_probe"
+sh tests/test_vulkan_shader_worker.sh "$arch" "$device_probe"
 
 test "$(find "$state" -type f -name 'frame-pacer-[0-9]*.log' | wc -l)" -eq 0
 
