@@ -58,10 +58,11 @@ For a GLX or EGL game, open the game's Steam properties and put this in
 **Launch Options**:
 
 ```text
-LD_PRELOAD="$HOME/.local/lib/frame-pacer/${LIB}/libframe_pacer_gl_shim.so" %command%
+LD_PRELOAD="$HOME/.local/lib/frame-pacer/\${LIB}/libframe_pacer_gl_shim.so" %command%
 ```
 
-Steam expands `${LIB}` for 64-bit and 32-bit games. If you installed with a
+Keep the backslash before `${LIB}`: the shell must pass that token literally
+so the loader can expand it for 64-bit and 32-bit games. If you installed with a
 custom `PREFIX`, replace `$HOME/.local` with that absolute path.
 
 This option belongs on one game, not on Steam itself. A Vulkan game does not

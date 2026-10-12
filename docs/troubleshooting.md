@@ -87,7 +87,7 @@ For a GLX/EGL game, add `FRAME_PACER_LOG=1` before its existing per-game launch
 option:
 
 ```text
-FRAME_PACER_LOG=1 LD_PRELOAD="$HOME/.local/lib/frame-pacer/${LIB}/libframe_pacer_gl_shim.so" %command%
+FRAME_PACER_LOG=1 LD_PRELOAD="$HOME/.local/lib/frame-pacer/\${LIB}/libframe_pacer_gl_shim.so" %command%
 ```
 
 Logs are written to `~/.local/state/frame-pacer`, or below

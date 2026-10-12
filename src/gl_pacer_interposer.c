@@ -4,6 +4,7 @@
 #include <GL/glx.h>
 #include "effective_config_report.h"
 #include "frame_pacer_version.h"
+#include "gl_dlsym.h"
 #include "gl_hud_renderer.h"
 #include "gl_pacer_dispatch.h"
 #include "hud_fps.h"
@@ -26,6 +27,8 @@
 #include <unistd.h>
 
 static pthread_once_t init_once = PTHREAD_ONCE_INIT;
+static pthread_once_t glx_once = PTHREAD_ONCE_INIT;
+static pthread_once_t egl_once = PTHREAD_ONCE_INIT;
 static pthread_once_t metrics_once = PTHREAD_ONCE_INIT;
 static pthread_once_t presentation_log_once = PTHREAD_ONCE_INIT;
 static void logmsg(const char *format, ...);
@@ -49,25 +52,20 @@ static void report_write(void *unused, const char *message)
 }
 static struct frame_pacer_fps_tracker fps_;
 static struct frame_pacer_hud_metrics_cache metrics_;
-static struct frame_pacer_gl_dispatch dispatch_;
+static struct frame_pacer_gl_dispatch glx_dispatch_;
+static struct frame_pacer_gl_dispatch egl_dispatch_;
+static void *libc_reference;
+static frame_pacer_dlsym_fn real_dlsym;
 static struct frame_pacer_hud_vertices hud_vertices_;
 static struct frame_pacer_gl_hud_renderer hud_renderer_ =
     FRAME_PACER_GL_HUD_RENDERER_INITIALIZER(&hud_vertices_, hud_log);
-#define next_glx_swap dispatch_.next_glx_swap
-#define next_egl_swap dispatch_.next_egl_swap
-#define next_egl_swap_damage_khr dispatch_.next_egl_swap_damage_khr
-#define next_egl_swap_damage_ext dispatch_.next_egl_swap_damage_ext
-#define real_dlsym dispatch_.real_dlsym
-#define next_glx_get_proc dispatch_.next_glx_get_proc
-#define next_egl_get_proc dispatch_.next_egl_get_proc
-#define next_egl_destroy_context dispatch_.next_egl_destroy_context
-#define next_egl_terminate dispatch_.next_egl_terminate
-#define next_glx_destroy_context dispatch_.next_glx_destroy_context
 static struct frame_pacer_runtime_log runtime_log =
     FRAME_PACER_RUNTIME_LOG_INITIALIZER(512);
 static uint64_t swaps;
 static unsigned int resolver_requests;
-static bool hud_available;
+/* Published availability for logging; readers never inspect a snapshot that
+ * another API's once-control could still be initializing. */
+static unsigned int available;
 static bool backend_initialized;
 static bool metrics_initialized;
 
@@ -105,6 +103,7 @@ static void init_presentation_log(void)
     char startup[512];
     bool enabled = frame_pacer_log_enabled();
     int length;
+    unsigned int capabilities = __atomic_load_n(&available, __ATOMIC_ACQUIRE);
 
     frame_pacer_limit_set_reporting_enabled(&limit_, enabled);
     if (!enabled)
@@ -113,8 +112,8 @@ static void init_presentation_log(void)
                       "frame-pacer: startup version=%s backend=opengl pid=%ld "
                       "architecture=%zu-bit dlsym=%d glx=%d egl=%d hud=%d\n",
                       FRAME_PACER_VERSION, (long)getpid(), sizeof(void *) * 8,
-                      real_dlsym != 0, next_glx_swap != 0, next_egl_swap != 0,
-                      hud_available);
+                      real_dlsym != 0, !!(capabilities & 1U),
+                      !!(capabilities & 2U), !!(capabilities & 4U));
     if (length < 0 || (size_t)length >= sizeof(startup))
         return;
     (void)frame_pacer_runtime_log_activate(&runtime_log, "frame-pacer-gl-",
@@ -134,16 +133,59 @@ static void begin_presentation(void)
 
 static void init(void)
 {
+    void *symbol;
+
+    libc_reference = dlopen("libc.so.6", RTLD_LAZY | RTLD_NOLOAD);
+    symbol = libc_reference
+                 ? dlvsym(libc_reference, "dlsym",
+                          sizeof(void *) == 8 ? "GLIBC_2.2.5" : "GLIBC_2.0")
+                 : 0;
+    _Static_assert(sizeof(real_dlsym) == sizeof(symbol),
+                   "unsupported function pointer representation");
+    memcpy(&real_dlsym, &symbol, sizeof(real_dlsym));
     frame_pacer_clock_init(&clock_);
     frame_pacer_limit_init(&limit_);
     frame_pacer_thread_cpu_quota_init(&thread_cpu_quota_);
     frame_pacer_thread_cpu_quota_set_logger(&thread_cpu_quota_,
                                             thread_cpu_quota_log);
     frame_pacer_fps_init(&fps_);
-    (void)frame_pacer_gl_dispatch_init(&dispatch_);
-    hud_available = dispatch_.hud_available;
     backend_initialized = true;
 }
+
+static void init_dispatch(struct frame_pacer_gl_dispatch *dispatch)
+{
+    unsigned int capabilities;
+
+    (void)pthread_once(&init_once, init);
+    (void)frame_pacer_gl_dispatch_init(dispatch);
+    capabilities = (dispatch->next_glx_swap ? 1U : 0U) |
+                   (dispatch->next_egl_swap ? 2U : 0U) |
+                   (dispatch->hud_available ? 4U : 0U);
+    (void)__atomic_fetch_or(&available, capabilities, __ATOMIC_RELEASE);
+}
+
+/* An API loaded later must not inherit the other API's earlier null entries.
+ * Each snapshot is initialized once on its own API's first use, then immutable.
+ */
+static void init_glx(void)
+{
+    init_dispatch(&glx_dispatch_);
+}
+
+static void init_egl(void)
+{
+    init_dispatch(&egl_dispatch_);
+}
+
+#define next_glx_swap glx_dispatch_.next_glx_swap
+#define next_egl_swap egl_dispatch_.next_egl_swap
+#define next_egl_swap_damage_khr egl_dispatch_.next_egl_swap_damage_khr
+#define next_egl_swap_damage_ext egl_dispatch_.next_egl_swap_damage_ext
+#define next_glx_get_proc glx_dispatch_.next_glx_get_proc
+#define next_egl_get_proc egl_dispatch_.next_egl_get_proc
+#define next_egl_destroy_context egl_dispatch_.next_egl_destroy_context
+#define next_egl_terminate egl_dispatch_.next_egl_terminate
+#define next_glx_destroy_context glx_dispatch_.next_glx_destroy_context
 
 /* The cache worker may load metrics providers with dlopen/dlsym. Create it only
  * after init_once has completed so provider loading cannot recurse into the
@@ -234,18 +276,20 @@ static void render_hud(EGLDisplay egl_display, EGLSurface egl_surface,
     GLint viewport[4];
     uint32_t fps, limit, thread_cpu_quota;
     bool fps_valid, thread_cpu_quota_configured;
+    const struct frame_pacer_gl_dispatch *dispatch =
+        glx_display ? &glx_dispatch_ : &egl_dispatch_;
 
-    if (!hud_available)
+    if (!dispatch->hud_available)
         return;
     (void)frame_pacer_limit_poll(&limit_, now_ns(0));
     if (!frame_pacer_limit_hud_enabled(&limit_))
         return;
-    if ((glx_display && (!dispatch_.next_glx_current_context ||
-                         !dispatch_.next_glx_current_context())) ||
-        (!glx_display && (!dispatch_.next_egl_current_context ||
-                          !dispatch_.next_egl_current_context())))
+    if ((glx_display && (!dispatch->next_glx_current_context ||
+                         !dispatch->next_glx_current_context())) ||
+        (!glx_display && (!dispatch->next_egl_current_context ||
+                          !dispatch->next_egl_current_context())))
         return;
-    dispatch_.gl_get_integer(GL_VIEWPORT, viewport);
+    dispatch->gl_get_integer(GL_VIEWPORT, viewport);
     if (viewport[2] <= 0 || viewport[3] <= 0)
         return;
     (void)pthread_once(&metrics_once, init_metrics);
@@ -260,7 +304,7 @@ static void render_hud(EGLDisplay egl_display, EGLSurface egl_surface,
         &text, &metrics, fps_valid, fps, limit, thread_cpu_quota_configured,
         frame_pacer_thread_cpu_quota_confirmed(&thread_cpu_quota_, 0),
         thread_cpu_quota);
-    frame_pacer_gl_hud_render(&hud_renderer_, &dispatch_, &text, egl_display,
+    frame_pacer_gl_hud_render(&hud_renderer_, dispatch, &text, egl_display,
                               egl_surface, glx_display, glx_drawable);
 }
 
@@ -268,7 +312,7 @@ void glXSwapBuffers(Display *display, GLXDrawable drawable)
 {
     uint64_t accepted;
 
-    (void)pthread_once(&init_once, init);
+    (void)pthread_once(&glx_once, init_glx);
     if (!next_glx_swap) {
         activate_presentation_log();
         logmsg("frame-pacer: glXSwapBuffers has no downstream target\n");
@@ -288,7 +332,7 @@ EGLBoolean eglSwapBuffers(EGLDisplay display, EGLSurface surface)
     EGLBoolean result;
     uint64_t accepted;
 
-    (void)pthread_once(&init_once, init);
+    (void)pthread_once(&egl_once, init_egl);
     if (!next_egl_swap) {
         activate_presentation_log();
         logmsg("frame-pacer: eglSwapBuffers has no downstream target\n");
@@ -313,7 +357,6 @@ static EGLBoolean swap_damage(frame_pacer_egl_swap_damage_fn next,
     EGLBoolean result;
     uint64_t accepted;
 
-    (void)pthread_once(&init_once, init);
     if (!next) {
         activate_presentation_log();
         logmsg("frame-pacer: EGL damage swap has no downstream target\n");
@@ -334,6 +377,7 @@ static EGLBoolean swap_damage(frame_pacer_egl_swap_damage_fn next,
 EGLBoolean eglSwapBuffersWithDamageKHR(EGLDisplay display, EGLSurface surface,
                                        const EGLint *rects, EGLint count)
 {
+    (void)pthread_once(&egl_once, init_egl);
     return swap_damage(next_egl_swap_damage_khr, display, surface, rects,
                        count);
 }
@@ -341,13 +385,14 @@ EGLBoolean eglSwapBuffersWithDamageKHR(EGLDisplay display, EGLSurface surface,
 EGLBoolean eglSwapBuffersWithDamageEXT(EGLDisplay display, EGLSurface surface,
                                        const EGLint *rects, EGLint count)
 {
+    (void)pthread_once(&egl_once, init_egl);
     return swap_damage(next_egl_swap_damage_ext, display, surface, rects,
                        count);
 }
 
 void glXDestroyContext(Display *display, GLXContext context)
 {
-    (void)pthread_once(&init_once, init);
+    (void)pthread_once(&glx_once, init_glx);
     if (!next_glx_destroy_context)
         return;
     next_glx_destroy_context(display, context);
@@ -359,7 +404,7 @@ EGLBoolean eglDestroyContext(EGLDisplay display, EGLContext context)
 {
     EGLBoolean result;
 
-    (void)pthread_once(&init_once, init);
+    (void)pthread_once(&egl_once, init_egl);
     if (!next_egl_destroy_context)
         return EGL_FALSE;
     result = next_egl_destroy_context(display, context);
@@ -374,7 +419,7 @@ EGLBoolean eglTerminate(EGLDisplay display)
 {
     EGLBoolean result;
 
-    (void)pthread_once(&init_once, init);
+    (void)pthread_once(&egl_once, init_egl);
     if (!next_egl_terminate)
         return EGL_FALSE;
     result = next_egl_terminate(display);
@@ -385,11 +430,10 @@ EGLBoolean eglTerminate(EGLDisplay display)
     return result;
 }
 
-void *dlsym(void *handle, const char *name)
+static void *graphics_dlsym(void *handle, const char *name)
 {
     void *replacement;
 
-    (void)pthread_once(&init_once, init);
     if (__atomic_fetch_add(&resolver_requests, 1, __ATOMIC_RELAXED) < 64)
         logmsg("frame-pacer: dlsym requested %s\n", name);
     replacement = interposed_symbol(name);
@@ -400,12 +444,21 @@ void *dlsym(void *handle, const char *name)
     return real_dlsym ? real_dlsym(handle, name) : 0;
 }
 
+frame_pacer_dlsym_fn frame_pacer_dlsym_target(void *handle, const char *name)
+{
+    (void)pthread_once(&init_once, init);
+    if (real_dlsym && (handle == RTLD_NEXT ||
+                       (strncmp(name, "glX", 3) && strncmp(name, "egl", 3))))
+        return real_dlsym;
+    return graphics_dlsym;
+}
+
 __GLXextFuncPtr glXGetProcAddress(const GLubyte *name)
 {
     void *replacement;
     __GLXextFuncPtr function = 0;
 
-    (void)pthread_once(&init_once, init);
+    (void)pthread_once(&glx_once, init_glx);
     if (name &&
         __atomic_fetch_add(&resolver_requests, 1, __ATOMIC_RELAXED) < 64)
         logmsg("frame-pacer: glXGetProcAddress requested %s\n", name);
@@ -428,7 +481,7 @@ __eglMustCastToProperFunctionPointerType eglGetProcAddress(const char *name)
     void *replacement;
     __eglMustCastToProperFunctionPointerType function = 0;
 
-    (void)pthread_once(&init_once, init);
+    (void)pthread_once(&egl_once, init_egl);
     if (name &&
         __atomic_fetch_add(&resolver_requests, 1, __ATOMIC_RELAXED) < 64)
         logmsg("frame-pacer: eglGetProcAddress requested %s\n", name);
@@ -458,5 +511,8 @@ static void __attribute__((destructor)) done(void)
         frame_pacer_limit_destroy(&limit_);
         frame_pacer_clock_destroy(&clock_);
     }
-    frame_pacer_gl_dispatch_destroy(&dispatch_);
+    frame_pacer_gl_dispatch_destroy(&egl_dispatch_);
+    frame_pacer_gl_dispatch_destroy(&glx_dispatch_);
+    if (libc_reference)
+        (void)dlclose(libc_reference);
 }

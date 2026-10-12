@@ -157,6 +157,10 @@ bool frame_pacer_gl_dispatch_init(struct frame_pacer_gl_dispatch *dispatch)
         return false;
 
     dispatch->gl_reference = dlopen("libGL.so.1", RTLD_LAZY | RTLD_NOLOAD);
+    /* GLFW can load GLVND's GLX library locally without legacy libGL.
+     * RTLD_NEXT cannot see that local scope; retain the loaded provider. */
+    if (!dispatch->gl_reference)
+        dispatch->gl_reference = dlopen("libGLX.so.0", RTLD_LAZY | RTLD_NOLOAD);
     dispatch->egl_reference = dlopen("libEGL.so.1", RTLD_LAZY | RTLD_NOLOAD);
     if (dispatch->gl_reference) {
         LOAD_FROM(dispatch->gl_reference, next_glx_swap, "glXSwapBuffers");

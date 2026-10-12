@@ -13,6 +13,19 @@ The GLX/EGL shim is loaded into one selected game with `LD_PRELOAD`. It forwards
 graphics calls to the real libraries and limits the final GLX or EGL buffer
 swap. The shim is deliberately not installed or enabled globally.
 
+Both GL libraries preserve the original caller when forwarding `dlsym` lookups
+for `RTLD_NEXT` and non-graphics symbols. A small x86_64/i386 assembly tail-jump
+keeps the caller's return address intact, so libc handles lookup scopes,
+symbol versions, TLS, and loader errors itself. `RTLD_NEXT` graphics lookups
+are forwarded too, rather than redirected back into frame-pacer. This prevents
+recursive resolution in other interposers, including Java's signal library.
+GLX dispatch recognizes both legacy `libGL.so.1` and GLVND's `libGLX.so.0`,
+including a provider loaded with `RTLD_LOCAL`. It retains an already-loaded
+provider without loading a graphics driver into non-rendering processes.
+GLX and EGL initialize separate, immutable dispatch snapshots on their own
+first use. Loading one API does not cache missing entry points for an API
+loaded later; presentation keeps the same once-initialization fast path.
+
 Each backend fails open: if frame-pacer cannot safely manage a presentation,
 the original graphics call continues rather than intentionally stopping the
 game.

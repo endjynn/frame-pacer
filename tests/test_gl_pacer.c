@@ -40,6 +40,7 @@ int main(void)
     unsigned int (*egl_destroy_calls)(void);
     unsigned int (*egl_terminate_calls)(void);
     const char *reload_path = getenv("FRAME_PACER_TEST_RELOAD_PATH");
+    const int local_glx = getenv("FRAME_PACER_TEST_LOCAL_GLX") != 0;
 
     symbol = dlsym(RTLD_DEFAULT, "glXSwapBuffers");
     assert(symbol);
@@ -58,8 +59,14 @@ int main(void)
     memcpy(&egl_get_proc, &symbol, sizeof(egl_get_proc));
     assert(dlsym(RTLD_DEFAULT, "setenv"));
 
-    provider = dlopen("libGL.so.1", RTLD_NOW | RTLD_GLOBAL);
+    provider = dlopen(local_glx ? "libGLX.so.0" : "libGL.so.1",
+                      RTLD_NOW | (local_glx ? RTLD_LOCAL : RTLD_GLOBAL));
     assert(provider);
+    /* GLFW loads GLVND locally and obtains the resolver from that handle. */
+    symbol = dlsym(provider, "glXGetProcAddress");
+    assert(symbol);
+    memcpy(&glx_get_proc, &symbol, sizeof(glx_get_proc));
+    assert(glx_get_proc((const GLubyte *)"glGetString"));
     glx_swap((Display *)1, 0);
     glx_swap((Display *)1, 0);
     symbol = dlsym(provider, "frame_pacer_test_set_egl_context");

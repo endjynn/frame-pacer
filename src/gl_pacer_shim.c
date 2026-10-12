@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include <EGL/egl.h>
 #include <GL/glx.h>
+#include "gl_dlsym.h"
 
 #include <dlfcn.h>
 #include <limits.h>
@@ -318,13 +319,9 @@ __eglMustCastToProperFunctionPointerType eglGetProcAddress(const char *name)
                     : (real_egl_get_proc ? real_egl_get_proc(name) : 0);
 }
 
-void *dlsym(void *handle, const char *name)
+static void *graphics_dlsym(void *handle, const char *name)
 {
     void *symbol;
-
-    (void)pthread_once(&bootstrap_once, bootstrap);
-    if (!real_dlsym)
-        return 0;
 
     /*
      * Match MangoHud's ordering: preserve the caller's requested lookup before
@@ -335,7 +332,7 @@ void *dlsym(void *handle, const char *name)
      * functions.
      */
     symbol = real_dlsym(handle, name);
-    if (!symbol || !is_graphics_symbol(name))
+    if (!symbol)
         return symbol;
 
     if (is_interposed_symbol(name)) {
@@ -347,6 +344,27 @@ void *dlsym(void *handle, const char *name)
     }
 
     return symbol;
+}
+
+static void *unavailable_dlsym(void *handle, const char *name)
+{
+    (void)handle;
+    (void)name;
+    return 0;
+}
+
+frame_pacer_dlsym_fn frame_pacer_dlsym_target(void *handle, const char *name)
+{
+    (void)pthread_once(&bootstrap_once, bootstrap);
+    if (!real_dlsym)
+        return unavailable_dlsym;
+    /* NEXT must skip the original caller, including for graphics symbols.
+     * Substituting our renderer here would re-enter earlier interposers.
+     * Ordinary lookups also retain caller-relative RTLD_DEFAULT scope.
+     */
+    if (handle == RTLD_NEXT || !is_graphics_symbol(name))
+        return real_dlsym;
+    return graphics_dlsym;
 }
 
 static void __attribute__((destructor)) unload_renderer(void)

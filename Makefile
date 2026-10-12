@@ -58,7 +58,7 @@ VULKAN_SRC := \
 	src/hud_vulkan_vertex_buffer.c \
 	src/hud_vulkan_record.c \
 	src/hud_vulkan_present.c
-GL_SRC := src/gl_pacer_interposer.c src/gl_pacer_dispatch.c \
+GL_SRC := src/gl_pacer_interposer.c src/gl_pacer_dispatch.c src/gl_dlsym.S \
 	src/gl_hud_renderer.c $(PACER_SRC) $(LOG_RETENTION_SRC) $(HUD_SRC)
 HDRS := $(wildcard src/*.h)
 HUD_FONT_ASSETS := assets/fonts/hud/hud-atlas.inc assets/fonts/hud/hud-atlas.bin
@@ -210,12 +210,12 @@ build/x86_64/libframe_pacer_gl.so: $(GL_SRC) $(HDRS) $(HUD_FONT_ASSETS) $(VERSIO
 build/i386/libframe_pacer_gl.so: $(GL_SRC) $(HDRS) $(HUD_FONT_ASSETS) build/hud_nvml_helper_image.h $(VERSION_HEADER)
 	mkdir -p $(@D)
 	$(CC) -m32 $(BUILD_CFLAGS) -shared -Wl,-Bsymbolic -o $@ $(GL_SRC) -ldl -pthread
-build/x86_64/libframe_pacer_gl_shim.so: src/gl_pacer_shim.c
+build/x86_64/libframe_pacer_gl_shim.so: src/gl_pacer_shim.c src/gl_dlsym.S src/gl_dlsym.h
 	mkdir -p $(@D)
-	$(CC) $(BUILD_CFLAGS) -shared -Wl,-Bsymbolic -o $@ $< -ldl -pthread
-build/i386/libframe_pacer_gl_shim.so: src/gl_pacer_shim.c
+	$(CC) $(BUILD_CFLAGS) -shared -Wl,-Bsymbolic -o $@ src/gl_pacer_shim.c src/gl_dlsym.S -ldl -pthread
+build/i386/libframe_pacer_gl_shim.so: src/gl_pacer_shim.c src/gl_dlsym.S src/gl_dlsym.h
 	mkdir -p $(@D)
-	$(CC) -m32 $(BUILD_CFLAGS) -shared -Wl,-Bsymbolic -o $@ $< -ldl -pthread
+	$(CC) -m32 $(BUILD_CFLAGS) -shared -Wl,-Bsymbolic -o $@ src/gl_pacer_shim.c src/gl_dlsym.S -ldl -pthread
 build/frame-pacer-nvml-helper: src/hud_nvml_helper.c src/hud_nvml_protocol.c src/hud_nvml_protocol.h src/hud_nvml_provider.c src/hud_nvml_provider.h
 	mkdir -p $(@D)
 	$(CC) -m64 $(HELPER_CFLAGS) -Isrc -Wl,-s -pie -o $@ \
@@ -247,6 +247,32 @@ build/x86_64/libGL.so.1: tests/gl_swap_provider.c
 build/i386/libGL.so.1: tests/gl_swap_provider.c
 	mkdir -p $(@D)
 	$(CC) -m32 $(BUILD_CFLAGS) -shared -o $@ $<
+build/%/glvnd/libGLX.so.0: build/%/libGL.so.1
+	mkdir -p $(@D)
+	cp $< $@
+build/%/late-providers/libGLX.so.0: tests/gl_late_provider.c
+	mkdir -p $(@D)
+	$(CC) $(if $(filter i386,$*),-m32) $(BUILD_CFLAGS) -shared -o $@ $<
+build/%/late-providers/libEGL.so.1: tests/gl_late_provider.c
+	mkdir -p $(@D)
+	$(CC) $(if $(filter i386,$*),-m32) $(BUILD_CFLAGS) -DFRAME_PACER_TEST_EGL -shared -o $@ $<
+build/%/test-gl-late-provider: tests/test_gl_late_provider.c
+	mkdir -p $(@D)
+	$(CC) $(if $(filter i386,$*),-m32) $(BUILD_CFLAGS) -o $@ $< -ldl
+.PHONY: check-gl-late-provider
+check-gl-late-provider: $(GL_ARTIFACTS) $(foreach arch,x86_64 i386,$(addprefix build/$(arch)/,test-gl-late-provider late-providers/libGLX.so.0 late-providers/libEGL.so.1))
+	@set -e; for arch in x86_64 i386; do \
+	  for first in glx egl; do \
+	    timeout -k 1 10 env LD_PRELOAD= \
+	      LD_LIBRARY_PATH="$(abspath build)/$$arch/late-providers" \
+	      "build/$$arch/test-gl-late-provider" $$first; \
+	    for library in libframe_pacer_gl_shim.so libframe_pacer_gl.so; do \
+	      timeout -k 1 10 env LD_LIBRARY_PATH="$(abspath build)/$$arch/late-providers" \
+	      LD_PRELOAD="$(abspath build)/$$arch/$$library" \
+	      "build/$$arch/test-gl-late-provider" $$first; \
+	    done; \
+	  done; \
+	done
 build/test-gl-pacer: tests/test_gl_pacer.c build/x86_64/libGL.so.1
 	mkdir -p $(@D)
 	$(CC) $(BUILD_CFLAGS) -o $@ tests/test_gl_pacer.c -ldl
@@ -259,6 +285,27 @@ build/test-gl-shim-noop: tests/test_gl_shim_noop.c
 build/test-gl-shim-noop-i386: tests/test_gl_shim_noop.c
 	mkdir -p $(@D)
 	$(CC) -m32 $(BUILD_CFLAGS) -o $@ $< -ldl
+build/%/test-dlsym-next: tests/test_dlsym_next.c
+	mkdir -p $(@D)
+	$(CC) $(if $(filter i386,$*),-m32) $(BUILD_CFLAGS) -o $@ $< -ldl
+build/%/liblookup-provider.so: tests/dlsym_next_provider.c
+	mkdir -p $(@D)
+	$(CC) $(if $(filter i386,$*),-m32) $(BUILD_CFLAGS) -shared -o $@ $<
+build/%/liblookup-local.so: tests/dlsym_local.c
+	mkdir -p $(@D)
+	$(CC) $(if $(filter i386,$*),-m32) $(BUILD_CFLAGS) -shared -o $@ $< -ldl
+build/%/liblookup-first.so: tests/dlsym_next_interposer.c
+	mkdir -p $(@D)
+	$(CC) $(if $(filter i386,$*),-m32) $(BUILD_CFLAGS) -shared -Wl,-Bsymbolic -o $@ $< -ldl
+build/%/liblookup-second.so: build/%/liblookup-first.so
+	cp $< $@
+build/%/libframe_pacer_gl_shim-no-tail.so: src/gl_pacer_shim.c src/gl_dlsym.S src/gl_dlsym.h
+	mkdir -p $(@D)
+	$(CC) $(if $(filter i386,$*),-m32) $(BUILD_CFLAGS) -O0 -fno-optimize-sibling-calls -shared -Wl,-Bsymbolic -o $@ src/gl_pacer_shim.c src/gl_dlsym.S -ldl -pthread
+.PHONY: check-dlsym-next
+check-dlsym-next: $(GL_ARTIFACTS) $(foreach arch,x86_64 i386,$(addprefix build/$(arch)/,test-dlsym-next liblookup-provider.so liblookup-first.so liblookup-second.so liblookup-local.so libframe_pacer_gl_shim-no-tail.so))
+	sh tests/test_dlsym_next.sh
+	sh tests/test_dlsym_next.sh i386
 research: $(GL_ARTIFACTS) winepath-probe dxgi-forward-probe \
 	build/smoke build/smoke-i386 build/smoke-device metrics-probe pci-probe
 build/%/layer/VkLayer_frame_pacer.json: VkLayer_frame_pacer.json.in
@@ -605,6 +652,7 @@ check: all hud-shaders $(GL_ARTIFACTS) $(GL_RUNTIME_ARTIFACTS) \
 	build/test-gl-pacer-i386 \
 	build/test-gl-shim-noop \
 	build/test-gl-shim-noop-i386 \
+	build/x86_64/glvnd/libGLX.so.0 build/i386/glvnd/libGLX.so.0 \
 	build/smoke build/smoke-i386 build/smoke-device build/smoke-device-i386 \
 	build/test-hud-nvml-client-i386 \
 	build/test-hud-nvml-client-retry-i386 \
@@ -612,7 +660,7 @@ check: all hud-shaders $(GL_ARTIFACTS) $(GL_RUNTIME_ARTIFACTS) \
 	build/test-hud-metrics-external-i386 \
 	build/hud-nvml-helper-probe-i386 \
 	check-unit check-shell check-docs check-workflows check-hud-image check-font-assets check-hud-benchmark-comparison \
-	check-hot-path-stack check-abi
+	check-hot-path-stack check-abi check-dlsym-next check-gl-late-provider
 	./build/test-hud-nvml-client-i386
 	./build/test-hud-nvml-client-retry-i386
 	./build/test-hud-nvml-client-target-exit-i386

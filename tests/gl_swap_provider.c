@@ -125,6 +125,12 @@ __GLXextFuncPtr glXGetProcAddress(const GLubyte *name)
     __GLXextFuncPtr result = 0;
     EGLBoolean (*egl_swap)(EGLDisplay, EGLSurface);
 
+    if (name && !strcmp((const char *)name, "glGetString")) {
+        const GLubyte *(*get_string)(GLenum) = glGetString;
+
+        memcpy(&result, &get_string, sizeof(result));
+        return result;
+    }
     if (!name || strcmp((const char *)name, "eglSwapBuffers"))
         return 0;
     egl_swap = eglSwapBuffers;

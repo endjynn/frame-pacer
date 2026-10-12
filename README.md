@@ -89,7 +89,7 @@ for all options.
 Add this only to the game's Steam **Launch Options**:
 
 ```text
-LD_PRELOAD="$HOME/.local/lib/frame-pacer/${LIB}/libframe_pacer_gl_shim.so" %command%
+LD_PRELOAD="$HOME/.local/lib/frame-pacer/\${LIB}/libframe_pacer_gl_shim.so" %command%
 ```
 
 Never add this option globally to Steam. Vulkan and Proton games do not need

@@ -62,6 +62,43 @@ FPS and CPU limits. Both architectures must complete without creating
 frame-pacer state files. Normal and overlapping-swapchain presentation probes
 remain enabled to catch regressions in actual game behaviour.
 
+### Native OpenGL loader regression
+
+A native Java application's launcher hung before Java started. Its child shell was
+blocked inside two nested `libjsig.so` `sigaction` calls, and the library's
+cached downstream pointer equalled its own `sigaction` address. Preloading
+the bundled `libjsig.so` into `/bin/sh -c 'exit 0'` succeeded alone but timed out
+with frame-pacer's shim first. Forwarding `dlsym(RTLD_NEXT, ...)` from the shim
+had changed the lookup origin; libc derives it from the return address.
+
+`make check-dlsym-next` (also in `make check`) exercises two chained
+interposers, ordinary and graphics `RTLD_NEXT` lookups, `RTLD_LOCAL` scopes,
+explicit handles, and `dlerror`, with and without each GL library on both
+architectures. It also tests the shim at `-O0` with sibling-call optimization
+disabled. Before the fix, the shim resolved an interposer back to itself;
+the backend's graphics substitution also recursed. The fix uses a shared
+assembly tail-jump, independent of compiler tail-call optimization, without
+game-specific exceptions or private loader APIs.
+
+A follow-up launch reached GLFW but failed with "Entry point retrieval is
+broken". A standalone probe using the bundled GLFW library reproduced
+the error on X11, but passed without frame-pacer. The debugger showed locally
+loaded `libGLX.so.0`, no `libGL.so.1`, and a null downstream GLX resolver.
+Dispatch now also recognizes the already-loaded GLVND GLX provider.
+`tests/test_gl_pacer.sh` covers this local-library path on both architectures,
+including core-function resolution, presentation, HUD rendering, and teardown;
+it uses the existing fake provider and needs no GLFW dependency.
+
+The next application launch exposed a later step: GLFW successfully created its GLX
+context, then LWJGL loaded EGL and failed `GL.createCapabilities`. A standalone
+diagnostic using the bundled JVM and LWJGL classes reproduced the same exception
+without starting application code. The shared dispatch had cached a null EGL resolver
+before EGL was loaded. Each API now initializes its own immutable snapshot on
+first use. `make check-gl-late-provider`, included in `make check`, covers both
+loading orders and both GL libraries on both architectures, with an unpreloaded
+control. The real LWJGL diagnostic additionally exercises full capability
+creation and presentation, not just JVM startup or GLFW window creation.
+
 ### Formatting and static analysis
 
 Set up the pinned development tools once (Linux x86_64, glibc 2.28 or newer):

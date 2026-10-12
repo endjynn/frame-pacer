@@ -58,6 +58,19 @@ XDG_CONFIG_HOME="$state" XDG_STATE_HOME="$state" \
     LD_LIBRARY_PATH="$root/build/$arch" \
     LD_PRELOAD="$root/build/\${LIB}/libframe_pacer_gl_shim.so" \
     "$test_program"
+
+# GLFW's GLVND path loads libGLX locally, without loading legacy libGL.
+mkdir -p "$state/glvnd"
+XDG_CONFIG_HOME="$state" XDG_STATE_HOME="$state/glvnd" \
+    LD_LIBRARY_PATH="$root/build/$arch/glvnd" \
+    FRAME_PACER_TEST_LOCAL_GLX=1 \
+    FRAME_PACER_LOG=1 \
+    LD_PRELOAD="$root/build/\${LIB}/libframe_pacer_gl_shim.so" \
+    "$test_program"
+glvnd_log=$(find "$state/glvnd/frame-pacer" -type f \
+    -name 'frame-pacer-gl-*.log' -print -quit)
+test -n "$glvnd_log"
+grep -q 'GL shutdown swaps=14' "$glvnd_log"
 if find "$state/frame-pacer" -type f -name 'frame-pacer-gl-*.log' -print -quit | grep -q .; then
     exit 1
 fi

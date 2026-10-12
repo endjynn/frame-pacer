@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fixed startup hangs and display initialization failures in native OpenGL
+  applications.
 - Fixed missing NVIDIA GPU readings in 32-bit applications under some
   AppArmor-confined runtimes.
 
