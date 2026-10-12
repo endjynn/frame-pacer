@@ -2,8 +2,11 @@
 
 ## Unreleased
 
+## 0.1.0-beta.6 - 2026-10-12
+
 - Fixed startup hangs and display initialization failures in native OpenGL
   applications.
+- Prevented frame-pacer from affecting Steam Vulkan shader processing.
 - Fixed missing NVIDIA GPU readings in 32-bit applications under some
   AppArmor-confined runtimes.
 
